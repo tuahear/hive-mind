@@ -9,3 +9,10 @@ projects/**/*.md   merge=union
 # hive-mind setup.sh (git config merge.jsonmerge.driver ...). Deep-merges
 # objects and unions the known permission arrays. See sync/scripts/jsonmerge.sh.
 settings.json      merge=jsonmerge
+
+# Line-based config files that are ok to union on conflict. setup.sh always
+# re-seeds them from the templates, so divergence windows are small anyway.
+# Union beats default 3-way merge here because these are append-style files
+# where duplicate lines are harmless.
+.gitignore         merge=union
+.gitattributes     merge=union
