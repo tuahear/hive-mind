@@ -30,16 +30,48 @@ fi
 git add -A 2>/dev/null
 
 if ! git diff --cached --quiet; then
-  # Deterministic commit summary from the staged paths. Readable at a glance
-  # in `git log`, no permission system involvement, no agent participation.
-  files="$(git diff --cached --name-only)"
-  n="$(echo "$files" | wc -l | tr -d ' ')"
-  if [ "$n" -eq 1 ]; then
-    MSG="update $(basename "$files")"
-  elif [ "$n" -le 3 ]; then
-    MSG="update $(echo "$files" | xargs -n1 basename | paste -sd', ' -)"
-  else
-    MSG="sync $n files"
+  MSG=""
+
+  # Look for <!-- commit: ... --> markers inside staged memory files. The
+  # memory-commit skill instructs agents to embed one of these in their
+  # edit; we extract it as the commit message and strip the marker from the
+  # file so it never enters git history. No separate .commit-msg side-file,
+  # no PostToolUse hook, no permission prompts — sync.sh handles everything
+  # because it reads/writes files outside Claude's tool-permission system.
+  while IFS= read -r f; do
+    [ -f "$f" ] || continue
+    case "$f" in
+      "CLAUDE.md"|projects/*/memory/*) ;;
+      *) continue ;;
+    esac
+    grep -q '<!--[[:space:]]*commit:' "$f" || continue
+    if [ -z "$MSG" ]; then
+      MSG="$(grep -m1 -oE '<!--[[:space:]]*commit:[[:space:]]*[^>]*-->' "$f" \
+        | sed -E 's|<!--[[:space:]]*commit:[[:space:]]*||; s|[[:space:]]*-->||' \
+        | tr -d '\r' | head -c 200)"
+    fi
+    # Strip markers from the working tree file. Full-line markers get
+    # dropped entirely (no empty-line residue); inline markers are stripped
+    # from the line, keeping the rest.
+    tmp="$(mktemp)"
+    awk '
+      /^[[:space:]]*<!--[[:space:]]*commit:.*-->[[:space:]]*$/ { next }
+      { sub(/[[:space:]]*<!--[[:space:]]*commit:[[:space:]]*[^>]*-->/, ""); print }
+    ' "$f" > "$tmp" && mv "$tmp" "$f"
+    git add "$f"
+  done < <(git diff --cached --name-only)
+
+  if [ -z "$MSG" ]; then
+    # Deterministic fallback — first 1–3 basenames or "sync N files".
+    files="$(git diff --cached --name-only)"
+    n="$(echo "$files" | wc -l | tr -d ' ')"
+    if [ "$n" -eq 1 ]; then
+      MSG="update $(basename "$files")"
+    elif [ "$n" -le 3 ]; then
+      MSG="update $(echo "$files" | xargs -n1 basename | paste -sd', ' -)"
+    else
+      MSG="sync $n files"
+    fi
   fi
 
   git commit -q -m "$MSG" 2>>"$LOG"
