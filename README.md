@@ -90,7 +90,7 @@ alias mind='git -C ~/.claude pull --rebase --autostash'
 # Full bidirectional sync — pull then stage/commit/push. Same thing the
 # Stop hook runs; use when you want local changes pushed immediately
 # instead of waiting for the next turn-end.
-alias csync='~/.claude/sync/scripts/sync.sh'
+alias msync='~/.claude/sync/scripts/sync.sh'
 ```
 
 Reload your shell or `source` the rc file afterwards.
