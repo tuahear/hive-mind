@@ -79,17 +79,21 @@ manual merge — would break JSON otherwise.
 
 ## Manual sync
 
-Auto-sync covers normal use. For a mid-session force-sync from anywhere:
+Auto-sync covers normal use. For manual control, two handy aliases — add to
+`~/.zshrc` (Mac/Linux) or `~/.bashrc` (Git Bash on Windows):
 
 ```bash
-~/.claude/sync/scripts/sync.sh
-```
+# Pull latest memory from all machines (use mid-session to catch up on
+# what another machine wrote). Read-only; does not push.
+alias mind='git -C ~/.claude pull --rebase --autostash'
 
-Handy alias — add to `~/.zshrc` / `~/.bashrc`:
-
-```bash
+# Full bidirectional sync — pull then stage/commit/push. Same thing the
+# Stop hook runs; use when you want local changes pushed immediately
+# instead of waiting for the next turn-end.
 alias csync='~/.claude/sync/scripts/sync.sh'
 ```
+
+Reload your shell or `source` the rc file afterwards.
 
 ## Disable temporarily
 
