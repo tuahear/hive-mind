@@ -254,12 +254,20 @@ fi
 manage_claude_snippet
 
 # ---------- install hook config ----------
-log "[4/5] merging hook config into settings.json"
+log "[4/5] merging hook + permission config into settings.json"
 if [ -f "$MEMORY_DIR/settings.json" ]; then
-    # Deep-merge the example hooks into existing settings.json, preserving
-    # all other keys (permissions, effortLevel, etc).
+    # Deep-merge template into existing settings.json. jq's `*` operator
+    # overwrites arrays by default, so we explicitly union permissions.allow
+    # (dedup via `unique`) to preserve user's existing allow rules while
+    # adding ours. Other keys deep-merge normally.
     tmp="$(mktemp)"
-    jq -s '.[0] * .[1]' "$MEMORY_DIR/settings.json" "$SYNC_DIR/templates/settings.json" >"$tmp"
+    jq -s '
+      .[0] as $user | .[1] as $new
+      | ($user * $new)
+      | .permissions.allow = (
+          (($user.permissions.allow // []) + ($new.permissions.allow // [])) | unique
+        )
+    ' "$MEMORY_DIR/settings.json" "$SYNC_DIR/templates/settings.json" > "$tmp"
     mv "$tmp" "$MEMORY_DIR/settings.json"
 else
     cp "$SYNC_DIR/templates/settings.json" "$MEMORY_DIR/settings.json"
