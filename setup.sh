@@ -68,10 +68,17 @@ confirm() {
 add_commit_msg_permission() {
     local settings="$MEMORY_DIR/settings.json"
     [ -f "$settings" ] || return 0
-    local abs="$MEMORY_DIR/.commit-msg"
+    # Use a trailing /** wildcard over the whole memory dir. Two reasons:
+    # (1) Claude Code's permission matcher behaves inconsistently on exact
+    # file paths (especially when the target file doesn't exist — agents
+    # writing .commit-msg are creating, not editing, since sync.sh deletes
+    # the file after consuming it). (2) Everything under ~/.claude is
+    # Claude's own config anyway, so permitting writes throughout is a
+    # reasonable scope.
+    local pattern="$MEMORY_DIR/**"
     local tmp
     tmp="$(mktemp)"
-    jq --arg p "$abs" '
+    jq --arg p "$pattern" '
         .permissions //= {}
         | .permissions.allow //= []
         | .permissions.allow = (
