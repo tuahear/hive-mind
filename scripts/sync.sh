@@ -34,10 +34,10 @@ if ! git diff --cached --quiet; then
 
   # Look for <!-- commit: ... --> markers inside staged memory files. The
   # memory-commit skill instructs agents to embed one of these in their
-  # edit; we extract it as the commit message and strip the marker from the
-  # file so it never enters git history. No separate .commit-msg side-file,
-  # no PostToolUse hook, no permission prompts — sync.sh handles everything
-  # because it reads/writes files outside Claude's tool-permission system.
+  # edit; we extract it as the commit message and strip the marker from
+  # the file so it never enters git history. Hooks bypass Claude's tool
+  # permission system, which is why all of this happens here rather than
+  # asking the agent to do it via a separate Write tool call.
   while IFS= read -r f; do
     [ -f "$f" ] || continue
     case "$f" in
