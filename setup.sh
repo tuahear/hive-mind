@@ -85,8 +85,38 @@ install_hint() {
             echo "  install: usually preinstalled; apt install curl / brew install curl / winget install curl" ;;
     esac
 }
+# Try to auto-install jq using whatever package manager this OS has. Returns
+# 0 if the tool is on PATH after the attempt, 1 otherwise. git/curl are not
+# auto-installed (they're typically prerequisites of the install path itself).
+auto_install_jq() {
+    log "jq not found; attempting auto-install"
+    case "$(uname -s)" in
+        Darwin)
+            command -v brew >/dev/null 2>&1 && brew install jq
+            ;;
+        Linux)
+            if command -v apt-get >/dev/null 2>&1; then sudo apt-get install -y jq
+            elif command -v dnf      >/dev/null 2>&1; then sudo dnf install -y jq
+            elif command -v yum      >/dev/null 2>&1; then sudo yum install -y jq
+            elif command -v pacman   >/dev/null 2>&1; then sudo pacman -S --noconfirm jq
+            elif command -v apk      >/dev/null 2>&1; then sudo apk add jq
+            fi
+            ;;
+        MINGW*|MSYS*|CYGWIN*)
+            if command -v winget >/dev/null 2>&1; then winget install --silent jqlang.jq
+            elif command -v choco >/dev/null 2>&1; then choco install -y jq
+            elif command -v scoop >/dev/null 2>&1; then scoop install jq
+            fi
+            ;;
+    esac
+    command -v jq >/dev/null 2>&1
+}
 for tool in git curl jq; do
     if ! command -v "$tool" >/dev/null 2>&1; then
+        if [ "$tool" = jq ] && auto_install_jq; then
+            log "jq installed"
+            continue
+        fi
         echo "error: missing required tool: $tool" >&2
         install_hint "$tool" >&2
         exit 1
