@@ -37,7 +37,10 @@ if ! git diff --cached --quiet; then
   MSG_FILE="$HOME/.claude/.commit-msg"
   if [ -s "$MSG_FILE" ]; then
     MSG="$(head -1 "$MSG_FILE" | tr -d '\r' | head -c 200)"
-    rm -f "$MSG_FILE"
+    # Truncate rather than delete: keeps the file on disk so the next
+    # agent write is an Edit-existing (matches our permission rule),
+    # not a Create-new (which doesn't match exact-path rules reliably).
+    : > "$MSG_FILE"
   fi
   if [ -z "$MSG" ]; then
     files="$(git diff --cached --name-only)"
