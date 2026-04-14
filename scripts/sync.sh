@@ -41,24 +41,64 @@ if ! git diff --cached --quiet; then
   while IFS= read -r f; do
     [ -f "$f" ] || continue
     case "$f" in
-      "CLAUDE.md"|projects/*/memory/*) ;;
+      "CLAUDE.md"|projects/*/memory/*|skills/*) ;;
       *) continue ;;
     esac
     grep -q '<!--[[:space:]]*commit:' "$f" || continue
-    if [ -z "$MSG" ]; then
-      MSG="$(grep -m1 -oE '<!--[[:space:]]*commit:[[:space:]]*[^>]*-->' "$f" \
-        | sed -E 's|<!--[[:space:]]*commit:[[:space:]]*||; s|[[:space:]]*-->||' \
-        | tr -d '\r' | head -c 200)"
-    fi
-    # Strip markers from the working tree file. Full-line markers get
-    # dropped entirely (no empty-line residue); inline markers are stripped
-    # from the line, keeping the rest.
+
+    # Fence-aware extract + strip in a single awk pass. Markers inside ```
+    # code fences are preserved (SKILL.md docs contain illustrative examples
+    # that would otherwise be picked up as real commit messages). First
+    # non-fenced marker is written to $msg_file; remaining non-fenced markers
+    # are still stripped.
     tmp="$(mktemp)"
-    awk '
-      /^[[:space:]]*<!--[[:space:]]*commit:.*-->[[:space:]]*$/ { next }
-      { sub(/[[:space:]]*<!--[[:space:]]*commit:[[:space:]]*[^>]*-->/, ""); print }
-    ' "$f" > "$tmp" && mv "$tmp" "$f"
-    git add "$f"
+    msg_file="$(mktemp)"
+    awk -v msgfile="$msg_file" '
+      BEGIN { fence = 0; found = 0 }
+      /^[[:space:]]*```/ { fence = 1 - fence; print; next }
+      fence == 1 { print; next }
+      {
+        line = $0
+        # Full-line marker: drop entirely.
+        if (match(line, /^[[:space:]]*<!--[[:space:]]*commit:[[:space:]]*[^>]+-->[[:space:]]*$/)) {
+          if (!found) {
+            msg = line
+            sub(/^[[:space:]]*<!--[[:space:]]*commit:[[:space:]]*/, "", msg)
+            sub(/[[:space:]]*-->[[:space:]]*$/, "", msg)
+            print msg > msgfile
+            close(msgfile)
+            found = 1
+          }
+          next
+        }
+        # Inline marker: strip from line, keep remaining text.
+        if (match(line, /<!--[[:space:]]*commit:[[:space:]]*[^>]+-->/)) {
+          if (!found) {
+            m = substr(line, RSTART, RLENGTH)
+            msg = m
+            sub(/^<!--[[:space:]]*commit:[[:space:]]*/, "", msg)
+            sub(/[[:space:]]*-->$/, "", msg)
+            print msg > msgfile
+            close(msgfile)
+            found = 1
+          }
+          gsub(/[[:space:]]*<!--[[:space:]]*commit:[[:space:]]*[^>]+-->/, "", line)
+        }
+        print line
+      }
+    ' "$f" > "$tmp"
+
+    if [ -z "$MSG" ] && [ -s "$msg_file" ]; then
+      MSG="$(head -1 "$msg_file" | tr -d '\r' | head -c 200)"
+    fi
+    rm -f "$msg_file"
+
+    if ! cmp -s "$f" "$tmp"; then
+      mv "$tmp" "$f"
+      git add "$f"
+    else
+      rm -f "$tmp"
+    fi
   done < <(git diff --cached --name-only)
 
   if [ -z "$MSG" ]; then
