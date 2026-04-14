@@ -1,0 +1,21 @@
+# Whitelist-only pattern for an AI-memory repo. Ignore everything by default,
+# then re-allow the portable bits. Dropped into ~/.claude/.gitignore by setup.sh.
+
+/*
+
+!/.gitignore
+!/.gitattributes
+!/settings.json
+
+# Global user-level Claude instructions (created on demand).
+!/CLAUDE.md
+
+# Per-project auto-memory records.
+!/projects/
+/projects/*
+!/projects/*/
+/projects/*/*
+!/projects/*/memory/
+
+# Mac clutter inside whitelisted dirs.
+**/.DS_Store

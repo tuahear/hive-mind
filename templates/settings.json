@@ -1,0 +1,27 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd ~/.claude && { git pull --rebase --autostash --quiet 2>>.sync-error.log || { git rebase --abort 2>/dev/null; echo \"$(date -u +%FT%TZ) session-start pull failed\" >>.sync-error.log; }; ~/.claude/sync/scripts/check-dupes.sh; true; }",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/sync/scripts/sync.sh",
+            "timeout": 30,
+            "async": true
+          }
+        ]
+      }
+    ]
+  }
+}
