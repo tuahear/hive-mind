@@ -4,3 +4,8 @@
 # duplicates are possible but a later agent turn can dedupe.
 CLAUDE.md          merge=union
 projects/**/*.md   merge=union
+
+# Auto-resolve JSON config conflicts via the jsonmerge driver installed by
+# hive-mind setup.sh (git config merge.jsonmerge.driver ...). Deep-merges
+# objects and unions the known permission arrays. See sync/scripts/jsonmerge.sh.
+settings.json      merge=jsonmerge

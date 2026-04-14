@@ -167,6 +167,9 @@ case "$STATE" in
             log "sync/ already present; pulling latest"
             git -C "$SYNC_DIR" pull --rebase --autostash --quiet
         fi
+        # register_jsonmerge_driver needs SYNC_DIR populated; defined below.
+        git -C "$MEMORY_DIR" config merge.jsonmerge.driver "$SYNC_DIR/scripts/jsonmerge.sh %A %O %B"
+        git -C "$MEMORY_DIR" config merge.jsonmerge.name "Deep-merge JSON with array union (hive-mind)"
         manage_claude_snippet
         exit 0
         ;;
@@ -186,6 +189,18 @@ log "[1/5] cloning hive-mind scripts into $SYNC_DIR"
 rm -rf "$SYNC_DIR"
 git clone --quiet "$HIVE_MIND_REPO" "$SYNC_DIR"
 
+# ---------- register the jsonmerge driver for settings.json conflicts ----------
+# Custom merge drivers must be registered in the LOCAL .git/config (they run
+# arbitrary commands at merge time; git intentionally doesn't let the driver
+# name come from a tracked file for security). We register it up-front so the
+# driver is active BEFORE the unrelated-histories merge below.
+register_jsonmerge_driver() {
+    local target_git="$1"
+    [ -d "$target_git/.git" ] || git -C "$target_git" rev-parse --git-dir >/dev/null 2>&1 || return 0
+    git -C "$target_git" config merge.jsonmerge.driver "$SYNC_DIR/scripts/jsonmerge.sh %A %O %B"
+    git -C "$target_git" config merge.jsonmerge.name "Deep-merge JSON with array union (hive-mind)"
+}
+
 # ---------- seed ignore + attrs ----------
 log "[2/5] seeding memory-repo .gitignore + .gitattributes from templates"
 cp "$SYNC_DIR/templates/gitignore"    "$MEMORY_DIR/.gitignore"
@@ -200,7 +215,6 @@ if [ "$STATE" = fresh ]; then
     if git clone --quiet "$MEMORY_REPO" "$TMP/memory" 2>/dev/null; then
         # Merge cloned files on top of our seeded dir.
         mv "$TMP/memory/.git" "$MEMORY_DIR/.git"
-        # Copy any tracked files the remote already had.
         shopt -s dotglob
         for f in "$TMP/memory"/*; do
             [ -e "$f" ] && cp -a "$f" "$MEMORY_DIR/" 2>/dev/null || true
@@ -209,12 +223,12 @@ if [ "$STATE" = fresh ]; then
         rm -rf "$TMP"
         log "cloned existing remote contents"
     else
-        # Empty remote: init locally + set remote; first push will seed it.
         rm -rf "$TMP"
         log "remote is empty; initializing locally"
         git -C "$MEMORY_DIR" init -b main -q
         git -C "$MEMORY_DIR" remote add origin "$MEMORY_REPO"
     fi
+    register_jsonmerge_driver "$MEMORY_DIR"
 fi
 
 # ---------- flow B: preserve local + merge ----------
@@ -223,6 +237,7 @@ if [ "$STATE" = existing ]; then
     cd "$MEMORY_DIR"
     git init -b main -q
     git remote add origin "$MEMORY_REPO"
+    register_jsonmerge_driver "$MEMORY_DIR"
     git add -A
 
     if git diff --cached --name-only | grep -qE '^(shell-snapshots|sessions|session-env|file-history|telemetry|debug|ide|backups|plugins)/'; then
