@@ -1,9 +1,19 @@
 ---
 name: memory-commit
-description: Writing a one-line commit message for a memory update. Use whenever you are about to write or edit `~/.claude/CLAUDE.md` or any file under `~/.claude/projects/*/memory/` — i.e. when you're saving a user preference, project fact, feedback memory, or any auto-memory record. Ensures the resulting git commit in the memory repo has a meaningful summary instead of a generic "update file.md" fallback.
+description: Editing or writing Claude's memory files — `~/.claude/CLAUDE.md` or anything under `~/.claude/projects/*/memory/`. **Load this skill any time you are about to remember something, save a user preference, update a project memory, add feedback memory, or touch any file in those paths.** The skill tells you to also write a one-line commit summary to `~/.claude/.commit-msg` so the memory-sync git history is meaningful.
 ---
 
 # Memory-commit convention
+
+## When to use
+
+Any time you write or edit:
+- `~/.claude/CLAUDE.md` (global user instructions)
+- Any file under `~/.claude/projects/*/memory/` (per-project auto-memory)
+
+i.e. when the user asks you to "remember", "save", "note", update/add a preference, feedback, or project memory — *before* you touch the file itself, follow the steps below.
+
+## Why
 
 The hive-mind sync script (`~/.claude/hive-mind/scripts/sync.sh`, wired to the `Stop` hook) reads `~/.claude/.commit-msg` to pick up a commit message you supplied for the memory change you're about to make.
 
