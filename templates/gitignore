@@ -17,5 +17,10 @@
 /projects/*/*
 !/projects/*/memory/
 
+# User-level skills (skill definitions, supporting files). Syncable across
+# machines alongside memory.
+!/skills/
+!/skills/**
+
 # Mac clutter inside whitelisted dirs.
 **/.DS_Store
