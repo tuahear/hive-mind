@@ -2,7 +2,7 @@
 # Git merge driver for JSON config files (primarily ~/.claude/settings.json).
 #
 # Registered locally via:
-#   git config merge.jsonmerge.driver '~/.claude/sync/scripts/jsonmerge.sh %A %O %B'
+#   git config merge.jsonmerge.driver '~/.claude/hive-mind/scripts/jsonmerge.sh %A %O %B'
 # Referenced per-file in .gitattributes:
 #   settings.json merge=jsonmerge
 #

@@ -39,7 +39,7 @@ portable bits.
 
 - Detects state: fresh machine / already synced / existing local memory
 - Backs up `~/.claude` before anything destructive (to `~/.claude.backup-<ts>`)
-- Clones this repo to `~/.claude/sync/` (gitignored by the memory repo)
+- Clones this repo to `~/.claude/hive-mind/` (gitignored by the memory repo)
 - Seeds `~/.claude/.gitignore` + `.gitattributes` from `templates/`
 - Clones your memory repo, or merges it with your local state via
   `--allow-unrelated-histories` when you already have local memories
@@ -90,7 +90,7 @@ alias mind='git -C ~/.claude pull --rebase --autostash'
 # Full bidirectional sync — pull then stage/commit/push. Same thing the
 # Stop hook runs; use when you want local changes pushed immediately
 # instead of waiting for the next turn-end.
-alias msync='~/.claude/sync/scripts/sync.sh'
+alias msync='~/.claude/hive-mind/scripts/sync.sh'
 ```
 
 Reload your shell or `source` the rc file afterwards.

@@ -15,7 +15,7 @@
 #   1. Preflight: git / jq / curl / SSH auth to GitHub present
 #   2. Detect current state of the memory dir (fresh / already-synced / existing)
 #   3. Back up ~/.claude before any destructive operation
-#   4. Clone the hive-mind scripts into ~/.claude/sync/ (gitignored by the
+#   4. Clone the hive-mind scripts into ~/.claude/hive-mind/ (gitignored by the
 #      memory repo)
 #   5. Lay down `.gitignore` + `.gitattributes` templates at the memory dir
 #      root BEFORE the first commit so merge drivers are active during merge
@@ -33,7 +33,7 @@ HIVE_MIND_REPO="git@github.com:tuahear/hive-mind.git"
 HIVE_MIND_RAW="https://raw.githubusercontent.com/tuahear/hive-mind/main"
 
 MEMORY_DIR="$HOME/.claude"
-SYNC_DIR="$MEMORY_DIR/sync"
+HIVE_MIND_DIR="$MEMORY_DIR/hive-mind"
 BACKUP_DIR="$HOME/.claude.backup-$(date +%Y%m%d-%H%M%S)"
 
 # Allow caller to pass repo via $1 as an alternative to MEMORY_REPO env var.
@@ -57,7 +57,7 @@ confirm() {
 # propagate on every setup.sh run. Users shouldn't edit hive-mind-installed
 # skills directly; edit them upstream in hive-mind/templates/skills/.
 manage_claude_skills() {
-    local src="$SYNC_DIR/templates/skills"
+    local src="$HIVE_MIND_DIR/templates/skills"
     local dst="$MEMORY_DIR/skills"
     [ -d "$src" ] || return 0
     mkdir -p "$dst"
@@ -138,17 +138,17 @@ case "$STATE" in
     already_synced)
         log "~/.claude is already a git repo with remote $(git -C "$MEMORY_DIR" remote get-url origin)"
         # Ensure sync/ exists even if the memory repo was set up pre-split.
-        if [ ! -d "$SYNC_DIR/.git" ]; then
+        if [ ! -d "$HIVE_MIND_DIR/.git" ]; then
             log "installing sync/ scripts (not present yet)"
-            rm -rf "$SYNC_DIR"
-            git clone --quiet "$HIVE_MIND_REPO" "$SYNC_DIR"
-            log "done — sync scripts now at $SYNC_DIR"
+            rm -rf "$HIVE_MIND_DIR"
+            git clone --quiet "$HIVE_MIND_REPO" "$HIVE_MIND_DIR"
+            log "done — sync scripts now at $HIVE_MIND_DIR"
         else
             log "sync/ already present; pulling latest"
-            git -C "$SYNC_DIR" pull --rebase --autostash --quiet
+            git -C "$HIVE_MIND_DIR" pull --rebase --autostash --quiet
         fi
-        # register_jsonmerge_driver needs SYNC_DIR populated; defined below.
-        git -C "$MEMORY_DIR" config merge.jsonmerge.driver "$SYNC_DIR/scripts/jsonmerge.sh %A %O %B"
+        # register_jsonmerge_driver needs HIVE_MIND_DIR populated; defined below.
+        git -C "$MEMORY_DIR" config merge.jsonmerge.driver "$HIVE_MIND_DIR/scripts/jsonmerge.sh %A %O %B"
         git -C "$MEMORY_DIR" config merge.jsonmerge.name "Deep-merge JSON with array union (hive-mind)"
         manage_claude_skills
         exit 0
@@ -165,9 +165,9 @@ fi
 mkdir -p "$MEMORY_DIR"
 
 # ---------- install sync/ (scripts) ----------
-log "[1/5] cloning hive-mind scripts into $SYNC_DIR"
-rm -rf "$SYNC_DIR"
-git clone --quiet "$HIVE_MIND_REPO" "$SYNC_DIR"
+log "[1/5] cloning hive-mind scripts into $HIVE_MIND_DIR"
+rm -rf "$HIVE_MIND_DIR"
+git clone --quiet "$HIVE_MIND_REPO" "$HIVE_MIND_DIR"
 
 # ---------- register the jsonmerge driver for settings.json conflicts ----------
 # Custom merge drivers must be registered in the LOCAL .git/config (they run
@@ -177,14 +177,14 @@ git clone --quiet "$HIVE_MIND_REPO" "$SYNC_DIR"
 register_jsonmerge_driver() {
     local target_git="$1"
     [ -d "$target_git/.git" ] || git -C "$target_git" rev-parse --git-dir >/dev/null 2>&1 || return 0
-    git -C "$target_git" config merge.jsonmerge.driver "$SYNC_DIR/scripts/jsonmerge.sh %A %O %B"
+    git -C "$target_git" config merge.jsonmerge.driver "$HIVE_MIND_DIR/scripts/jsonmerge.sh %A %O %B"
     git -C "$target_git" config merge.jsonmerge.name "Deep-merge JSON with array union (hive-mind)"
 }
 
 # ---------- seed ignore + attrs ----------
 log "[2/5] seeding memory-repo .gitignore + .gitattributes from templates"
-cp "$SYNC_DIR/templates/gitignore"    "$MEMORY_DIR/.gitignore"
-cp "$SYNC_DIR/templates/gitattributes" "$MEMORY_DIR/.gitattributes"
+cp "$HIVE_MIND_DIR/templates/gitignore"    "$MEMORY_DIR/.gitignore"
+cp "$HIVE_MIND_DIR/templates/gitattributes" "$MEMORY_DIR/.gitattributes"
 
 # ---------- flow A: fresh clone ----------
 if [ "$STATE" = fresh ]; then
@@ -262,16 +262,16 @@ if [ -f "$MEMORY_DIR/settings.json" ]; then
       | .permissions.allow = (
           (($user.permissions.allow // []) + ($new.permissions.allow // [])) | unique
         )
-    ' "$MEMORY_DIR/settings.json" "$SYNC_DIR/templates/settings.json" > "$tmp"
+    ' "$MEMORY_DIR/settings.json" "$HIVE_MIND_DIR/templates/settings.json" > "$tmp"
     mv "$tmp" "$MEMORY_DIR/settings.json"
 else
-    cp "$SYNC_DIR/templates/settings.json" "$MEMORY_DIR/settings.json"
+    cp "$HIVE_MIND_DIR/templates/settings.json" "$MEMORY_DIR/settings.json"
 fi
 
 # ---------- push + verify ----------
 log "[5/5] running a sync cycle to verify and push"
-if [ -x "$SYNC_DIR/scripts/sync.sh" ]; then
-    "$SYNC_DIR/scripts/sync.sh"
+if [ -x "$HIVE_MIND_DIR/scripts/sync.sh" ]; then
+    "$HIVE_MIND_DIR/scripts/sync.sh"
     if [ -s "$MEMORY_DIR/.sync-error.log" ]; then
         echo
         echo "WARNING: sync produced errors:"

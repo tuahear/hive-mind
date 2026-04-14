@@ -5,7 +5,7 @@ description: Writing a one-line commit message for a memory update. Use whenever
 
 # Memory-commit convention
 
-The hive-mind sync script (`~/.claude/sync/scripts/sync.sh`, wired to the `Stop` hook) reads `~/.claude/.commit-msg` to pick up a commit message you supplied for the memory change you're about to make.
+The hive-mind sync script (`~/.claude/hive-mind/scripts/sync.sh`, wired to the `Stop` hook) reads `~/.claude/.commit-msg` to pick up a commit message you supplied for the memory change you're about to make.
 
 ## What to do
 
