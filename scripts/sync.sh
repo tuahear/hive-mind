@@ -30,7 +30,28 @@ fi
 git add -A 2>/dev/null
 
 if ! git diff --cached --quiet; then
-  git commit -q -m 'auto-sync memory' 2>>"$LOG"
+  # Prefer a commit message supplied by the agent via ~/.claude/.commit-msg
+  # (a convention documented in CLAUDE.md). Fall back to a deterministic
+  # summary derived from the staged paths, and finally to a generic message.
+  MSG=""
+  MSG_FILE="$HOME/.claude/.commit-msg"
+  if [ -s "$MSG_FILE" ]; then
+    MSG="$(head -1 "$MSG_FILE" | tr -d '\r' | head -c 200)"
+    rm -f "$MSG_FILE"
+  fi
+  if [ -z "$MSG" ]; then
+    files="$(git diff --cached --name-only)"
+    n="$(echo "$files" | wc -l | tr -d ' ')"
+    if [ "$n" -eq 1 ]; then
+      MSG="update $(basename "$files")"
+    elif [ "$n" -le 3 ]; then
+      MSG="update $(echo "$files" | xargs -n1 basename | paste -sd', ' -)"
+    else
+      MSG="sync $n files"
+    fi
+  fi
+
+  git commit -q -m "$MSG" 2>>"$LOG"
   git push -q 2>>"$LOG" || echo "$TS stop-hook push rejected — will retry next turn" >>"$LOG"
 fi
 
