@@ -47,6 +47,52 @@ confirm() {
     [[ "$ans" =~ ^[yY]$ ]] || { echo "aborted."; exit 1; }
 }
 
+# Install / refresh the hive-mind-managed block inside ~/.claude/CLAUDE.md.
+# Behaves like dotfile managers (oh-my-zsh / rbenv): delimits a region with
+# BEGIN/END HTML comments; replaces the region in place on re-runs; appends
+# or creates the file if no region exists yet; never touches user content
+# outside the markers.
+manage_claude_snippet() {
+    local claude_md="$MEMORY_DIR/CLAUDE.md"
+    local snippet_file="$SYNC_DIR/templates/CLAUDE.snippet.md"
+    local begin='<!-- BEGIN hive-mind managed section — upstream: hive-mind/templates/CLAUDE.snippet.md -->'
+    local end='<!-- END hive-mind managed section -->'
+    [ -f "$snippet_file" ] || return 0
+
+    local action="created"
+    if [ -f "$claude_md" ]; then
+        if grep -qF "$begin" "$claude_md"; then
+            # Strip the existing managed block (everything from begin..end
+            # inclusive); leave all other user content untouched.
+            awk -v b="$begin" -v e="$end" '
+                $0 == b { inside = 1; next }
+                inside && $0 == e { inside = 0; next }
+                !inside { print }
+            ' "$claude_md" > "$claude_md.tmp" && mv "$claude_md.tmp" "$claude_md"
+            # Trim trailing blank lines that may remain after the strip.
+            awk 'NF { last = NR } { lines[NR] = $0 } END { for (i = 1; i <= last; i++) print lines[i] }' \
+                "$claude_md" > "$claude_md.tmp" && mv "$claude_md.tmp" "$claude_md"
+            action="refreshed"
+        else
+            action="appended"
+        fi
+    fi
+
+    # Always append the fresh block at the end of the file. Dotfile-manager
+    # convention: users keep their own content above the managed region.
+    {
+        if [ -s "$claude_md" ]; then
+            cat "$claude_md"
+            echo   # blank line separator from existing content
+        fi
+        echo "$begin"
+        cat "$snippet_file"
+        echo "$end"
+    } > "$claude_md.tmp" && mv "$claude_md.tmp" "$claude_md"
+
+    log "$action hive-mind managed block in CLAUDE.md"
+}
+
 # ---------- preflight ----------
 log "preflight: checking required tools"
 install_hint() {
@@ -121,6 +167,7 @@ case "$STATE" in
             log "sync/ already present; pulling latest"
             git -C "$SYNC_DIR" pull --rebase --autostash --quiet
         fi
+        manage_claude_snippet
         exit 0
         ;;
 esac
@@ -202,6 +249,9 @@ if [ "$STATE" = existing ]; then
         log "remote is empty; nothing to merge"
     fi
 fi
+
+# ---------- install CLAUDE.md snippet ----------
+manage_claude_snippet
 
 # ---------- install hook config ----------
 log "[4/5] merging hook config into settings.json"
