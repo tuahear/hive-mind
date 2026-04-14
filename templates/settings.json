@@ -1,10 +1,4 @@
 {
-  "permissions": {
-    "allow": [
-      "Write(~/.claude/.commit-msg)",
-      "Edit(~/.claude/.commit-msg)"
-    ]
-  },
   "hooks": {
     "SessionStart": [
       {

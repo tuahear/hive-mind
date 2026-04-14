@@ -56,6 +56,33 @@ confirm() {
 # ~/.claude/skills/<name>/, overwriting existing copies so template updates
 # propagate on every setup.sh run. Users shouldn't edit hive-mind-installed
 # skills directly; edit them upstream in hive-mind/templates/skills/.
+# Add a permission rule for THIS machine's absolute path to ~/.claude/.commit-msg.
+# Claude Code's permission matcher doesn't reliably expand `~` or `**` in
+# patterns (notably in the VSCode extension), so glob-style rules like
+# `Write(**/.claude/.commit-msg)` never match real paths and the agent gets
+# prompted on every memory write.
+#
+# Workaround: each machine writes the resolved absolute path. Across machines,
+# the jsonmerge driver unions permissions.allow so every machine's path ends
+# up in the synced allow list. Idempotent via `unique`.
+add_commit_msg_permission() {
+    local settings="$MEMORY_DIR/settings.json"
+    [ -f "$settings" ] || return 0
+    local abs="$MEMORY_DIR/.commit-msg"
+    local tmp
+    tmp="$(mktemp)"
+    jq --arg p "$abs" '
+        .permissions //= {}
+        | .permissions.allow //= []
+        | .permissions.allow = (
+            .permissions.allow + [
+                "Write(" + $p + ")",
+                "Edit(" + $p + ")"
+            ] | unique
+        )
+    ' "$settings" > "$tmp" && mv "$tmp" "$settings"
+}
+
 manage_claude_skills() {
     local src="$HIVE_MIND_DIR/templates/skills"
     local dst="$MEMORY_DIR/skills"
@@ -151,6 +178,7 @@ case "$STATE" in
         git -C "$MEMORY_DIR" config merge.jsonmerge.driver "$HIVE_MIND_DIR/scripts/jsonmerge.sh %A %O %B"
         git -C "$MEMORY_DIR" config merge.jsonmerge.name "Deep-merge JSON with array union (hive-mind)"
         manage_claude_skills
+        add_commit_msg_permission
         exit 0
         ;;
 esac
@@ -267,6 +295,7 @@ if [ -f "$MEMORY_DIR/settings.json" ]; then
 else
     cp "$HIVE_MIND_DIR/templates/settings.json" "$MEMORY_DIR/settings.json"
 fi
+add_commit_msg_permission
 
 # ---------- push + verify ----------
 log "[5/5] running a sync cycle to verify and push"
