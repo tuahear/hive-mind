@@ -5,7 +5,7 @@ description: Load when editing any hive-mind-synced file — `~/.claude/CLAUDE.m
 
 # Hive-mind commit marker
 
-Any edit under `~/.claude/CLAUDE.md`, `~/.claude/projects/*/MEMORY.md`, `~/.claude/projects/*/memory/*`, or `~/.claude/skills/*/*` must embed — in the same edit — an HTML comment on its own line:
+Embed — in the same edit — an HTML comment on its own line:
 
 ```
 <!-- commit: <imperative summary, ≥5 words, ≤80 chars, no trailing period> -->
