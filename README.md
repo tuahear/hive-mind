@@ -24,9 +24,9 @@ hive-mind fixes that. Memory files live in your own private Git repo, quietly pu
 
 ## Get started in 3 steps
 
-### 1. Make an empty private GitHub repo
+### 1. Make an empty private git repo
 
-No README, no license, no `.gitignore`. Just an empty box to hold your memory. Name it whatever feels right — `claude-memory`, `brain`, `second-brain`.
+Any git host works — GitHub, GitLab, Bitbucket, Codeberg, self-hosted, even a local bare repo on another machine. No README, no license, no `.gitignore`. Just an empty box to hold your memory. Name it whatever feels right — `claude-memory`, `brain`, `second-brain`.
 
 ### 2. Run the installer
 
@@ -35,7 +35,7 @@ MEMORY_REPO=git@github.com:<you>/<your-memory-repo>.git \
   bash -c "$(curl -fsSL https://raw.githubusercontent.com/tuahear/hive-mind/main/setup.sh)"
 ```
 
-Works on macOS, Linux, and Windows (Git Bash). You need: `git`, an SSH key registered with GitHub, and Claude Code installed.
+`MEMORY_REPO` accepts any URL `git` understands — SSH (`git@gitlab.com:...`), HTTPS (`https://...`), or a local path. Works on macOS, Linux, and Windows (Git Bash). You need: `git`, SSH access to your memory-repo host, and Claude Code installed. The installer clones hive-mind itself from GitHub over SSH, so it also needs GitHub SSH access one-time during setup.
 
 ### 3. Reload Claude Code
 
