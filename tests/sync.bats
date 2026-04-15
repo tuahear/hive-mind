@@ -102,9 +102,9 @@ marker() {
   run run_sync
   [ "$status" -eq 0 ]
 
-  # Sidecar was written by mirror.
-  [ -f "$variant/memory/.hive-mind-project-id" ]
-  [ "$(cat "$variant/memory/.hive-mind-project-id")" = "github.com/owner/myrepo" ]
+  # Sidecar was written by mirror in the new key=value format.
+  [ -f "$variant/memory/.hive-mind" ]
+  grep -Fq "project-id=github.com/owner/myrepo" "$variant/memory/.hive-mind"
 
   # And it was committed + pushed (proves we did NOT early-exit).
   msg="$(git -C "$HOME/.claude" log -1 --format=%s)"

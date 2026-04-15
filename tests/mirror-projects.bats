@@ -3,8 +3,10 @@
 #
 # The script reads ~/.claude (via `cd ~/.claude`), so each test sandboxes
 # HOME into a temp dir and lays out the projects/ tree before invoking.
-# Identity is established per-variant via .hive-mind-project-id sidecars
-# (or by deriving from a local jsonl + git remote, exercised separately).
+# Identity is established per-variant via .hive-mind sidecars (or by
+# deriving from a local jsonl + git remote, exercised separately).
+# Legacy .hive-mind-project-id sidecars from the first cut of the
+# design are auto-migrated; that path is also tested.
 
 SCRIPT="$BATS_TEST_DIRNAME/../scripts/mirror-projects.sh"
 MARKER=".hive-mind"

@@ -11,9 +11,8 @@ TS="$(date -u +%FT%TZ)"
 
 # Mirror per-project memory across path-variant directories before the
 # early-exit gate. This is local-only and idempotent: it writes any
-# missing <variant>/memory/.hive-mind-project-id sidecars (bootstrap)
-# and unifies content across variants whose normalized git-remote URL
-# matches. Running it BEFORE the gate means a brand-new clone on a
+# missing <variant>/memory/.hive-mind sidecars (bootstrap) and unifies
+# content across variants whose normalized git-remote URL matches. Running it BEFORE the gate means a brand-new clone on a
 # fresh machine bootstraps its sidecars on the very first Stop without
 # any manual step. On steady state it does nothing and the gate below
 # still short-circuits the network call.
