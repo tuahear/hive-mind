@@ -8,7 +8,7 @@ description: Load when editing any hive-mind-synced file — `~/.claude/CLAUDE.m
 Embed — in the same edit — an HTML comment on its own line:
 
 ```
-<!-- commit: <imperative summary, ≥5 words, ≤80 chars, no trailing period> -->
+<!-- commit: <imperative summary of the change, ≥5 words, ≤80 chars, no trailing period> -->
 ```
 
 ## Notes
