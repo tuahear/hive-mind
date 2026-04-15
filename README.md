@@ -109,6 +109,7 @@ No copy-paste between machines, no forgetting what you told it where.
 - **Backups before anything destructive.** The installer copies `~/.claude` to `~/.claude.backup-<timestamp>` before touching a thing.
 - **Works offline.** Sync failures log to `~/.claude/.sync-error.log` and retry next turn. Your AI never blocks on a bad network.
 - **Conflict-tolerant.** Concurrent memory edits from two machines auto-merge via git's `union` driver (concatenates both sides). A tiny `check-dupes.sh` flags duplicates for the next session to clean up.
+- **Path-encoding tolerant.** The same repo cloned at `/Users/nick/Repo/foo` on Mac and `C:\Users\thiti\Repo\foo` on Windows maps to two different `projects/<encoded-cwd>/` dirs. A pre-commit mirror step (`mirror-projects.sh`) groups the variants and line-unions their contents, so whichever encoded dir the local agent reads, it sees the full shared memory.
 - **Meaningful git history.** The bundled `hive-mind` skill trains your agent to drop a one-line commit marker with each edit — so `git log` reads like a changelog, not `update file.md` stubs.
 - **Whitelist-only `.gitignore`.** Default is "ignore everything, re-allow portable bits." No risk of accidentally committing session-secret files.
 
@@ -184,6 +185,7 @@ hive-mind/
 ├── setup.sh                      ← installer (run once per machine)
 ├── scripts/
 │   ├── sync.sh                   ← Stop-hook: pull + commit + push
+│   ├── mirror-projects.sh        ← pre-commit: mirror project memory across path-variant dirs
 │   ├── check-dupes.sh            ← SessionStart-hook: union-merge duplicate detector
 │   ├── jsonmerge.sh              ← custom git merge driver for settings.json
 │   └── install-dev-hooks.sh      ← maintainer-only; pre-commit hook for this repo
@@ -206,7 +208,8 @@ This README is for end users. If you want to hack on hive-mind itself:
 1. Fork the repo and clone
 2. Run `scripts/install-dev-hooks.sh` once in your clone — installs a pre-commit hook that keeps bundled skills clean
 3. Edit `templates/skills/hive-mind/SKILL.md` to change skill content (not the copy in `~/.claude/skills/hive-mind/` — that's the user-facing install target)
-4. PRs welcome
+4. Install [bats-core](https://github.com/bats-core/bats-core) to run the test suite — `brew install bats-core` (macOS), `apt install bats` (Linux), or `npm install -g bats` (Windows / Git Bash). Then `bats tests/` from the repo root.
+5. PRs welcome
 
 ---
 
