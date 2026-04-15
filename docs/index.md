@@ -15,7 +15,7 @@ hero:
 
 features:
   - title: 🌐 Synced everywhere
-    details: Shared global and project memories across macOS, Linux, and Windows.
+    details: Sync your global and project memories across every machine.
   - title: 🔒 Your data, your repo
     details: Memory lives in a private git repo you control. No vendor lock-in.
   - title: 🪶 Ultra-light
