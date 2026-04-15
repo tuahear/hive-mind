@@ -8,17 +8,26 @@
 # on the other.
 #
 # Identity model:
-#   - For each variant dir, read its identity from
-#     <variant>/memory/.hive-mind-project-id (one line: a normalized git
-#     remote URL).
+#   - Each variant carries a metadata sidecar at
+#     <variant>/memory/.hive-mind, a key=value text file. Project
+#     identity is the value of the `project-id` key, normally the
+#     normalized git remote URL but a user may set it manually for
+#     projects without a git remote.
 #   - If the sidecar isn't there yet, scan local *.jsonl session files
 #     for a `cwd` field, run `git -C $cwd remote get-url origin`,
-#     normalize, and persist to the sidecar so the *next* sync (and
-#     other machines, after they pull) can match without local cwd.
-#   - Variants whose identity matches byte-for-byte are treated as the
-#     same project and unified.
+#     normalize, and persist as `project-id=…`. The sidecar IS synced,
+#     so other machines see it after the next pull.
+#   - Variants whose project-id matches byte-for-byte are treated as
+#     the same project and unified.
 #   - A variant with no sidecar AND no usable local cwd+git remote is
 #     left alone — never grouped, never overwritten.
+#   - Legacy `<variant>/memory/.hive-mind-project-id` (single-value
+#     file from the first cut of this design) is auto-migrated to the
+#     new key=value format, then deleted.
+#
+# The sidecar is intentionally a flat text key=value file so future
+# metadata (machine origin, last-mirrored timestamp, etc.) can be added
+# without changing tooling, and so reading is jq-free.
 #
 # Union strategy: only `.md` files are line-merged via `git merge-file
 # --union` (matches the gitattributes union driver). Other files under
@@ -26,14 +35,26 @@
 # or structured non-text content can't be corrupted.
 #
 # Only `MEMORY.md` and files under `memory/` are mirrored — session
-# transcripts and other local state are left alone. The sidecar identity
-# file is excluded from content sync; each variant maintains its own.
+# transcripts and other local state are left alone. The sidecar files
+# (current and legacy) are excluded from content sync; each variant
+# maintains its own.
 
 set +e
 cd ~/.claude || exit 0
 [ -d projects ] || exit 0
 
-MARKER_FILE=".hive-mind-project-id"
+MARKER_FILE=".hive-mind"
+LEGACY_MARKER=".hive-mind-project-id"
+
+# Read a key from a key=value sidecar. Echoes the value (or nothing).
+read_meta() {
+  local file="$1" key="$2"
+  [ -f "$file" ] || return 1
+  awk -F= -v k="$key" '
+    /^[[:space:]]*#/ { next }
+    $1 == k { sub(/^[^=]*=/, ""); print; exit }
+  ' "$file"
+}
 
 # Normalize a git remote URL to a stable host/path form so SSH and HTTPS
 # variants of the same repo group together.
@@ -56,14 +77,29 @@ normalize_remote() {
 # success, returns non-zero on no-id-available.
 discover_id() {
   local pdir="$1"
-  local idfile="$pdir/memory/$MARKER_FILE"
+  local meta="$pdir/memory/$MARKER_FILE"
+  local legacy="$pdir/memory/$LEGACY_MARKER"
+  local id=""
 
-  if [ -s "$idfile" ]; then
-    head -n 1 "$idfile" | tr -d '\r\n'
-    return 0
+  # Migrate legacy single-value sidecar to the new key=value format.
+  if [ -s "$legacy" ] && [ ! -f "$meta" ]; then
+    id="$(head -n 1 "$legacy" | tr -d '\r\n')"
+    if [ -n "$id" ]; then
+      mkdir -p "$pdir/memory"
+      printf 'project-id=%s\n' "$id" > "$meta"
+      rm -f "$legacy"
+    fi
   fi
 
-  # No sidecar — try to derive from a local session jsonl in this dir.
+  if [ -f "$meta" ]; then
+    id="$(read_meta "$meta" "project-id" | tr -d '\r\n')"
+    if [ -n "$id" ]; then
+      printf '%s' "$id"
+      return 0
+    fi
+  fi
+
+  # No usable sidecar — try to derive from a local session jsonl.
   local cwd="" f
   for f in "$pdir"/*.jsonl; do
     [ -f "$f" ] || continue
@@ -78,13 +114,12 @@ discover_id() {
   remote="$(git -C "$cwd" remote get-url origin 2>/dev/null)"
   [ -z "$remote" ] && return 1
 
-  local id
   id="$(normalize_remote "$remote")"
   [ -z "$id" ] && return 1
 
   # Persist for next time + cross-machine matching.
   mkdir -p "$pdir/memory"
-  printf '%s\n' "$id" > "$idfile"
+  printf 'project-id=%s\n' "$id" > "$meta"
   printf '%s' "$id"
   return 0
 }
@@ -110,7 +145,8 @@ list_rels() {
   [ -f "$v/MEMORY.md" ] && printf 'MEMORY.md\n'
   if [ -d "$v/memory" ]; then
     (cd "$v" && find memory -type f 2>/dev/null) \
-      | grep -v "^memory/$MARKER_FILE\$"
+      | grep -v "^memory/$MARKER_FILE\$" \
+      | grep -v "^memory/$LEGACY_MARKER\$"
   fi
 }
 
