@@ -11,8 +11,6 @@ Embed — in the same edit — an HTML comment on its own line:
 <!-- commit: <imperative summary, ≥5 words, ≤80 chars, no trailing period> -->
 ```
 
-The sync script extracts the text as the git commit message and strips the marker from the file.
-
 ## Notes
 
 - Multiple markers across staged files are joined with ` + ` (final message clipped to 500 chars)
