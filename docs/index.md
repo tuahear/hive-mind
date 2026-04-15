@@ -19,11 +19,11 @@ features:
   - title: 🔁 Works offline
     details: Sync failures retry next turn. Your AI never blocks on a bad network.
   - title: 🧬 Conflict-tolerant
-    details: Concurrent edits auto-merge; your AI dedupes any leftovers next session.
+    details: Edit memory from two machines at once — conflicts handled for you.
   - title: 🌐 Cross-platform
-    details: Same memory across macOS, Linux, and Windows.
+    details: Every project, every OS — memory stays in sync.
   - title: 📜 Meaningful git history
-    details: Your AI writes each commit message, so git history is a real changelog.
+    details: Every lesson becomes a commit — git log is your AI's learning journal.
   - title: 🔒 Your data, your repo
     details: Memory lives in a private git repo you control. No vendor lock-in.
 ---
