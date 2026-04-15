@@ -4,7 +4,7 @@
 
 You teach Claude something useful on your laptop in the morning — a project quirk, a shell preference, a debugging insight. By lunchtime you're at your desktop and Claude has no idea. You explain it again. And again tomorrow on the work machine.
 
-hive-mind fixes that. Memory files live in your own private Git repo, quietly pulled when Claude starts a session and pushed back when it finishes. Your assistant carries every lesson forward, everywhere.
+hive-mind fixes that. It's a **Claude Code skill** today — architected to grow AI-agnostic as other assistants ship similar hook / skill surfaces. Memory files live in your own private git repo, quietly pulled when Claude starts a session and pushed back when it finishes. Your assistant carries every lesson forward, everywhere.
 
 ```
   laptop ──┐                  ┌── desktop
