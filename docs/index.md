@@ -15,7 +15,7 @@ hero:
 
 features:
   - title: 🌐 Synced everywhere
-    details: Shared memories across macOS, Linux, and Windows.
+    details: Shared global and project memories across macOS, Linux, and Windows.
   - title: 🧬 Conflict-tolerant
     details: Edit memory from any machine, anytime. No problem.
   - title: 🔒 Your data, your repo
