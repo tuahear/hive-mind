@@ -7,7 +7,6 @@ export default defineConfig({
   cleanUrls: true,
   lastUpdated: true,
   head: [
-    ['link', { rel: 'icon', href: '/hive-mind/favicon.svg', type: 'image/svg+xml' }],
     ['meta', { name: 'theme-color', content: '#646cff' }],
   ],
 
