@@ -22,6 +22,18 @@
           }
         ]
       }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hive-mind/scripts/marker-nudge.sh",
+            "timeout": 2
+          }
+        ]
+      }
     ]
   }
 }
