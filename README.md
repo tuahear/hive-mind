@@ -11,7 +11,7 @@ hive-mind fixes that. Memory files live in your own private Git repo, quietly pu
            │                  │
            ▼                  ▼
      ┌──────────────────────────────┐
-     │  your private memory repo    │   ← any git remote you control
+     │  your private memory git repo │   ← any git remote you control
      │  (CLAUDE.md, projects/,      │
      │   skills/, settings)         │
      └──────────────────────────────┘
@@ -75,7 +75,7 @@ The bundled **`hive-mind` skill** installs automatically — it teaches your age
 
 Two hooks do everything:
 
-- **Session starts** → `git pull --rebase` from your memory repo so you're caught up with what another machine wrote since you were last here
+- **Session starts** → `git pull --rebase` from your memory git repo so you're caught up with what another machine wrote since you were last here
 - **Agent turn ends** → if anything changed, commit + push in ~1 second
 
 Between those two moments, no network traffic. Claude runs at full speed. If the network is down, sync fails silently and retries next turn.
@@ -89,7 +89,7 @@ Monday 10am:  laptop — you ask Claude to remember a new Kafka setup gotcha
                        ↓
               Stop hook fires → commit → push
                        ↓
-              (your memory remote)
+              (your memory git remote)
 
 Monday 2pm:   desktop — you start a Claude session
                        ↓
@@ -159,7 +159,7 @@ Fallback (no markers found): `update <basename>` or `update <f1>, <f2>, <f3>, +N
 
 ### What gets synced vs ignored
 
-The memory repo's `.gitignore` (seeded from [templates/gitignore](templates/gitignore)) is whitelist-only:
+The memory git repo's `.gitignore` (seeded from [templates/gitignore](templates/gitignore)) is whitelist-only:
 
 - `!/CLAUDE.md`
 - `!/settings.json` (via a hook snippet merge, not wholesale replacement)
@@ -186,7 +186,7 @@ hive-mind/
 │   ├── jsonmerge.sh              ← custom git merge driver for settings.json
 │   └── install-dev-hooks.sh      ← maintainer-only; pre-commit hook for this repo
 ├── templates/
-│   ├── gitignore                 ← whitelist-only pattern dropped into memory repo
+│   ├── gitignore                 ← whitelist-only pattern dropped into memory git repo
 │   ├── gitattributes             ← union driver + jsonmerge driver bindings
 │   ├── settings.json             ← hook + permission snippet merged into user settings
 │   └── skills/
