@@ -4,7 +4,7 @@
 
 You teach your AI something useful on your laptop in the morning — a project quirk, a shell preference, a debugging insight. By lunchtime you're at your desktop and it has no idea. You explain it again. And again tomorrow on the work machine.
 
-hive-mind fixes that. It's a **Claude Code skill** today. **Your existing memory files stay exactly where they are** — hive-mind doesn't migrate, move, or reformat anything; it installs on top of whatever you already have and starts syncing it to your private git repo. Quietly pulled when your AI starts a session, pushed back when it finishes. Your assistant carries every lesson forward, everywhere.
+hive-mind fixes that. It's a **Claude Code skill** today. **Your existing memory files stay exactly where they are** — hive-mind doesn't migrate, move, or reformat anything; it installs on top of whatever you already have and starts syncing it to your private git repo. Quietly pulled when your AI starts a session, pushed back when it finishes. Per-project memory auto-bridges across machines too. Your assistant carries every lesson forward, everywhere.
 
 ```
   laptop ──┐                  ┌── desktop
@@ -142,6 +142,14 @@ Or stop pushing without removing hooks:
 ```bash
 git -C ~/.claude remote remove origin
 ```
+
+---
+
+## Auto-bridging project memory
+
+Same repo on two machines often lives in two totally different folders under the hood — the path encoding bakes in your OS and username, so `/Users/alice/Repo/foo` on Mac and `C:\Users\bob\Repo\foo` on Windows look like unrelated projects to Claude Code.
+
+hive-mind auto-bridges them. If both variants' underlying project points at the same git remote, hive-mind treats them as one project and keeps their memory in sync — no setup, no config. An edit on one machine cleanly replaces the old content on the others; true concurrent additions from two offline machines merge together; projects with different remotes (or no remote) stay isolated.
 
 ---
 
