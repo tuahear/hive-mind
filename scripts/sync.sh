@@ -48,7 +48,7 @@ if ! git diff --cached --quiet; then
   # the file so it never enters git history. Hooks bypass Claude's tool
   # permission system, which is why all of this happens here rather than
   # asking the agent to do it via a separate Write tool call.
-  while IFS= read -r f; do
+  while IFS= read -r -d '' f; do
     [ -f "$f" ] || continue
     case "$f" in
       "CLAUDE.md"|projects/*/memory/*|projects/*/MEMORY.md|skills/*) ;;
@@ -120,7 +120,7 @@ if ! git diff --cached --quiet; then
     else
       rm -f "$tmp"
     fi
-  done < <(git diff --cached --name-only)
+  done < <(git diff --cached --name-only -z)
 
   # Clip the joined message so git log doesn't blow up on pathological cases
   # (many markers in one turn). 500 chars covers ~5-8 reasonable markers.
@@ -130,15 +130,31 @@ if ! git diff --cached --quiet; then
 
   if [ -z "$MSG" ]; then
     # Deterministic fallback — always list at least the first 3 basenames so
-    # the commit message is never just "sync N files".
-    files="$(git diff --cached --name-only)"
-    n="$(echo "$files" | wc -l | tr -d ' ')"
+    # the commit message is never just "sync N files". Collect via
+    # NUL-delimited read so filenames with spaces, tabs, newlines, or a
+    # leading "-" don't break the loop. `${f##*/}` avoids a basename
+    # subprocess per file.
+    basenames=()
+    while IFS= read -r -d '' f; do
+      # Collapse any control chars (newlines, tabs, CR) in the basename to
+      # a single space. The NUL-delimited read lets a filename legally
+      # contain \n, but awk's record separator is \n and commit subjects
+      # can't contain control chars anyway.
+      bn="${f##*/}"
+      bn="${bn//[[:cntrl:]]/ }"
+      basenames+=("$bn")
+    done < <(git diff --cached --name-only -z)
+    n="${#basenames[@]}"
+    # Join with ", " via awk — BSD paste's -d cycles separator characters
+    # (yields "a,b c,d"), and post-hoc sed would also expand commas inside
+    # filenames themselves.
+    join_names() { awk 'NR>1{printf ", "}{printf "%s", $0} END{print ""}'; }
     if [ "$n" -eq 1 ]; then
-      MSG="update $(basename "$files")"
+      MSG="update ${basenames[0]}"
     elif [ "$n" -le 3 ]; then
-      MSG="update $(echo "$files" | xargs -n1 basename | paste -sd', ' -)"
+      MSG="update $(printf '%s\n' "${basenames[@]}" | join_names)"
     else
-      head3="$(echo "$files" | head -n 3 | xargs -n1 basename | paste -sd', ' -)"
+      head3="$(printf '%s\n' "${basenames[@]:0:3}" | join_names)"
       MSG="update $head3, +$((n - 3)) more"
     fi
   fi
