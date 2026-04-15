@@ -19,13 +19,13 @@ features:
   - title: 🔁 Works offline
     details: Sync failures retry next turn. Your AI never blocks on a bad network.
   - title: 🧬 Conflict-tolerant
-    details: Concurrent edits from two machines auto-merge via git's union driver.
-  - title: 🧭 Path-encoding tolerant
-    details: Same project on Mac + Windows maps to one shared memory.
+    details: Concurrent edits from multiple machines auto-merge. Any leftover duplicates get cleaned up by your AI on the next session.
+  - title: 🌐 Cross-platform
+    details: Works the same on macOS, Linux, and Windows. Your memory of a project follows you across every OS.
   - title: 📜 Meaningful git history
-    details: Bundled skill trains your agent to drop one-line commit markers per edit.
-  - title: 🔒 Whitelist-only .gitignore
-    details: No risk of leaking session-secret files.
+    details: Your AI writes each commit message itself, so `git log` reads like a changelog of what it learned.
+  - title: 🔒 Your data, your repo
+    details: Memory lives in a private git repo you control. No vendor cloud, no lock-in, full audit trail.
 ---
 
 ## The problem
