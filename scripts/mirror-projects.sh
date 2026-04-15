@@ -83,7 +83,23 @@ discover_id() {
     fi
   fi
 
-  # No usable sidecar — try to derive from a local session jsonl.
+  # No usable sidecar — would need to CREATE one. Only do so when the
+  # variant already has real memory content (MEMORY.md or any file
+  # under memory/ other than the sidecar itself). Without this gate,
+  # every project you've ever opened in Claude Code gets a bootstrapped
+  # empty directory published to the shared memory repo just because a
+  # session jsonl exists there.
+  local has_content=0
+  [ -f "$pdir/MEMORY.md" ] && has_content=1
+  if [ "$has_content" -eq 0 ] && [ -d "$pdir/memory" ]; then
+    if find "$pdir/memory" -type f ! -name "$MARKER_FILE" 2>/dev/null \
+         | head -n 1 | grep -q .; then
+      has_content=1
+    fi
+  fi
+  [ "$has_content" -eq 0 ] && return 1
+
+  # Try to derive from a local session jsonl.
   local cwd="" f
   for f in "$pdir"/*.jsonl; do
     [ -f "$f" ] || continue

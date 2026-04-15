@@ -188,6 +188,45 @@ run_mirror() {
   grep -Fq "project-id=github.com/owner/myrepo" "$variant/memory/$MARKER"
 }
 
+@test "content-less variant is left alone — no sidecar is bootstrapped into an empty project dir" {
+  # Every project you've opened in Claude Code has a session jsonl that
+  # points at a real git repo. Without gating, discover_id would write
+  # a .hive-mind sidecar into every one of those and publish empty
+  # <variant>/memory/ directories to the shared memory repo. Only
+  # variants with actual memory content should be bootstrapped.
+  proj_dir="$HOME/empty-repo"
+  git -c init.defaultBranch=main init -q "$proj_dir"
+  git -C "$proj_dir" remote add origin git@github.com:me/empty-repo.git
+
+  variant="$HOME/.claude/projects/-Users-alice-Repo-empty"
+  mkdir -p "$variant"
+  printf '{"cwd":"%s"}\n' "$proj_dir" > "$variant/session.jsonl"
+  # No MEMORY.md, no memory/ dir, no memory/*.md.
+
+  run run_mirror
+  [ "$status" -eq 0 ]
+  [ ! -f "$variant/memory/$MARKER" ]
+  [ ! -d "$variant/memory" ]
+}
+
+@test "variant with MEMORY.md (content) DOES bootstrap a sidecar" {
+  # Companion to the content-less test: when real content exists,
+  # discover_id must still write the sidecar.
+  proj_dir="$HOME/live-repo"
+  git -c init.defaultBranch=main init -q "$proj_dir"
+  git -C "$proj_dir" remote add origin git@github.com:me/live-repo.git
+
+  variant="$HOME/.claude/projects/-Users-alice-Repo-live"
+  mkdir -p "$variant"
+  printf '{"cwd":"%s"}\n' "$proj_dir" > "$variant/session.jsonl"
+  printf '# live memory\n' > "$variant/MEMORY.md"
+
+  run run_mirror
+  [ "$status" -eq 0 ]
+  [ -f "$variant/memory/$MARKER" ]
+  grep -Fq "project-id=github.com/me/live-repo" "$variant/memory/$MARKER"
+}
+
 @test "user-supplied identity (no git remote) is honored — manual override path" {
   # User creates the sidecar by hand for a project that doesn't have a
   # git remote (or that they want to group under a custom id). Mirror
