@@ -14,18 +14,18 @@ hero:
       link: https://github.com/tuahear/hive-mind
 
 features:
+  - title: 🪶 Ultralight
+    details: ~175 tokens fully loaded, ~85 tokens idle. Almost zero context overhead.
   - title: 🌐 Synced everywhere
-    details: Sync your global and project memories across every machine.
+    details: Sync your global and project memories across every machine. macOS, Linux, Windows.
   - title: 🔒 Your data, your repo
     details: Memory lives in a private git repo you control. No vendor lock-in.
-  - title: 🪶 Ultra-light
-    details: ~175 tokens fully loaded, ~85 tokens idle. Almost zero context overhead.
   - title: 🧬 Conflict-tolerant
     details: Edit memory from any machine, anytime. No problem.
+  - title: 📚 Meaningful git history
+    details: Every lesson is auto-committed — git log becomes your AI's learning journal.
   - title: 🔁 Works offline
     details: Sync failures retry next turn. Your AI never blocks on a bad network.
-  - title: 📚 Meaningful git history
-    details: Every lesson is auto-committed — git log is your AI's learning journal.
 ---
 
 ## The problem

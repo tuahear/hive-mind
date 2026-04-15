@@ -55,12 +55,12 @@ Type `/hooks` in any session or start a fresh one — the sync hooks activate. T
 
 ## Highlights
 
-- **Synced everywhere** — Sync your global and project memories across every machine.
+- **Ultralight** — ~175 tokens fully loaded, ~85 tokens idle. Almost zero context overhead.
+- **Synced everywhere** — Sync your global and project memories across every machine. macOS, Linux, Windows.
 - **Your data, your repo** — Memory lives in a private git repo you control. No vendor lock-in.
-- **Ultra-light** — ~175 tokens fully loaded, ~85 tokens idle. Almost zero context overhead.
 - **Conflict-tolerant** — Edit memory from any machine, anytime. No problem.
+- **Meaningful git history** — Every lesson is auto-committed — git log becomes your AI's learning journal.
 - **Works offline** — Sync failures retry next turn. Your AI never blocks on a bad network.
-- **Meaningful git history** — Every lesson is auto-committed — git log is your AI's learning journal.
 
 Deeper explanations of each — plus the sync flow, conflict resolution, commit marker convention, and repo layout — live in the **[docs site](https://tuahear.github.io/hive-mind)**.
 
