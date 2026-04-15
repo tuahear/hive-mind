@@ -53,20 +53,14 @@ Type `/hooks` in any session or start a fresh one — the sync hooks activate. T
 
 ---
 
-## Ultra-light skill
+## Highlights
 
-Two things by design: the `hive-mind` skill adds **almost nothing** to your context, and those few tokens only load when actually needed. An idle session sees only the one-line skill description (~85 tokens); the body (~90 tokens) loads on demand, only while your AI is editing a memory, settings, or skill file. **Fully loaded: only ~175 tokens.**
-
----
-
-## Features
-
-- **Backups before anything destructive** — installer copies `~/.claude` to `~/.claude.backup-<timestamp>` first.
-- **Works offline** — sync failures log to `~/.claude/.sync-error.log` and retry next turn. Your AI never blocks on a bad network.
-- **Conflict-tolerant** — concurrent memory edits from two machines auto-merge via git's `union` driver.
-- **Path-encoding tolerant** — same project on Mac + Windows maps to one shared memory.
-- **Meaningful git history** — bundled skill trains your agent to drop a one-line commit marker per edit, so `git log` reads like a changelog.
-- **Whitelist-only `.gitignore`** — no risk of accidentally committing session-secret files.
+- **Synced everywhere** — Sync your global and project memories across every machine.
+- **Your data, your repo** — Memory lives in a private git repo you control. No vendor lock-in.
+- **Ultra-light** — ~175 tokens fully loaded, ~85 tokens idle. Almost zero context overhead.
+- **Conflict-tolerant** — Edit memory from any machine, anytime. No problem.
+- **Works offline** — Sync failures retry next turn. Your AI never blocks on a bad network.
+- **Meaningful git history** — Every lesson is auto-committed — git log is your AI's learning journal.
 
 Deeper explanations of each — plus the sync flow, conflict resolution, commit marker convention, and repo layout — live in the **[docs site](https://tuahear.github.io/hive-mind)**.
 
