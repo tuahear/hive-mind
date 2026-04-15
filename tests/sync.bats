@@ -182,6 +182,20 @@ marker() {
   grep -q 'fake' "$HOME/.claude/settings.json"
 }
 
+@test "basename containing spaces survives the fallback join (no xargs word-splitting)" {
+  # Round-2 regression guard: the old pipeline (echo | xargs -n1 basename |
+  # paste) split on whitespace, so 'two word.md' became three tokens. With
+  # the NUL-delimited read + parameter-expansion basename, spaces pass
+  # through untouched.
+  mkdir -p "$HOME/.claude/skills"
+  printf 'x\n' > "$HOME/.claude/skills/a.md"
+  printf 'x\n' > "$HOME/.claude/skills/two word.md"
+
+  run run_sync
+  [ "$status" -eq 0 ]
+  [ "$(git -C "$HOME/.claude" log -1 --format=%s)" = "update a.md, two word.md" ]
+}
+
 @test "basename containing a newline is sanitized so the commit message doesn't split or break" {
   # NUL-delimited read preserves any char in a filename, including \n. The
   # downstream awk join uses \n as record separator — without the cntrl-
