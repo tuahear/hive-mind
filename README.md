@@ -4,7 +4,7 @@
 
 You teach your AI something useful on your laptop in the morning — a project quirk, a shell preference, a debugging insight. By lunchtime you're at your desktop and it has no idea. You explain it again. And again tomorrow on the work machine.
 
-hive-mind fixes that. It's a **Claude Code skill** today — architected to grow AI-agnostic as other assistants ship similar hook / skill surfaces. Memory files live in your own private git repo, quietly pulled when your AI starts a session and pushed back when it finishes. Your assistant carries every lesson forward, everywhere.
+hive-mind fixes that. It's a **Claude Code skill** today — architected to grow AI-agnostic as other assistants ship similar hook / skill surfaces. **Your existing memory files stay exactly where they are** — hive-mind doesn't migrate, move, or reformat anything; it installs on top of whatever you already have and starts syncing it to your private git repo. Quietly pulled when your AI starts a session, pushed back when it finishes. Your assistant carries every lesson forward, everywhere.
 
 ```
   laptop ──┐                  ┌── desktop
