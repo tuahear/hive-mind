@@ -79,26 +79,28 @@ normalize_remote() {
 
 # Derive a project id from a variant's session jsonl + git remote.
 # Echoes the normalized id on success; returns non-zero otherwise.
+#
+# Iterates every *.jsonl — earlier sessions may point to a path the user
+# has since moved or deleted, so stopping at the first cwd leaves later,
+# still-valid sessions unused and misclassifies the variant as
+# unidentifiable.
 derive_id_from_cwd() {
   local pdir="$1"
-  local cwd="" f
+  local f cwd remote id
   for f in "$pdir"/*.jsonl; do
     [ -f "$f" ] || continue
     cwd="$(grep -m1 -oE '"cwd":"[^"]+"' "$f" 2>/dev/null \
              | sed -e 's/^"cwd":"//' -e 's/"$//' )"
-    [ -n "$cwd" ] && break
+    [ -z "$cwd" ] && continue
+    [ -d "$cwd/.git" ] || [ -f "$cwd/.git" ] || continue
+    remote="$(git -C "$cwd" remote get-url origin 2>/dev/null)"
+    [ -z "$remote" ] && continue
+    id="$(normalize_remote "$remote")"
+    [ -z "$id" ] && continue
+    printf '%s' "$id"
+    return 0
   done
-  [ -z "$cwd" ] && return 1
-  [ -d "$cwd/.git" ] || [ -f "$cwd/.git" ] || return 1
-
-  local remote
-  remote="$(git -C "$cwd" remote get-url origin 2>/dev/null)"
-  [ -z "$remote" ] && return 1
-
-  local id
-  id="$(normalize_remote "$remote")"
-  [ -z "$id" ] && return 1
-  printf '%s' "$id"
+  return 1
 }
 
 # Determine the project identity for a variant dir. Echoes the id on
@@ -189,8 +191,10 @@ list_rels() {
   local v="$1"
   [ -f "$v/MEMORY.md" ] && printf 'MEMORY.md\n'
   if [ -d "$v/memory" ]; then
-    (cd "$v" && find memory -type f 2>/dev/null) \
-      | grep -v "^memory/$MARKER_FILE\$"
+    # `find -name` excludes the sidecar by literal basename; avoids the
+    # regex-metachar pitfall of filtering via `grep "$MARKER_FILE"` where
+    # the `.` would match any char.
+    (cd "$v" && find memory -type f ! -name "$MARKER_FILE" 2>/dev/null)
   fi
 }
 

@@ -92,6 +92,11 @@ marker() {
   variant="$HOME/.claude/projects/-Users-alice-myrepo"
   mkdir -p "$variant"
   printf '{"cwd":"%s"}\n' "$proj_dir" > "$variant/session.jsonl"
+  # Real memory content is required for mirror's bootstrap gate to fire
+  # (content-less variants are intentionally left alone). The point of
+  # this test is ordering — that mirror runs before the early-exit gate —
+  # not the content-gate behavior, which is exercised in mirror-projects.bats.
+  printf '# notes\n' > "$variant/MEMORY.md"
 
   # Install the real mirror-projects.sh into the location sync.sh checks.
   mkdir -p "$HOME/.claude/hive-mind/scripts"

@@ -419,6 +419,100 @@ run_mirror() {
   [ "$status" -eq 0 ]
 }
 
+@test "discover_id iterates jsonls: stale-cwd first session, valid-cwd later session → id resolves" {
+  # The variant has two session jsonls. The older one points at a cwd
+  # that no longer exists (project moved/deleted). The newer one points
+  # at the real repo. derive_id_from_cwd must not stop at the first
+  # cwd field — it has to keep trying until one yields a git remote.
+  live="$HOME/live-repo"
+  git -c init.defaultBranch=main init -q "$live"
+  git -C "$live" remote add origin git@github.com:me/live-repo.git
+
+  variant="$HOME/.claude/projects/-Users-alice-Repo-live"
+  mkdir -p "$variant"
+  # Glob iteration is alphabetical, so "a-*.jsonl" is visited first —
+  # its cwd is stale and must not short-circuit discovery.
+  printf '{"cwd":"%s/ghost-dir"}\n' "$HOME" > "$variant/a-old-session.jsonl"
+  printf '{"cwd":"%s"}\n' "$live"          > "$variant/b-new-session.jsonl"
+  printf '# live notes\n' > "$variant/MEMORY.md"
+
+  run run_mirror
+  [ "$status" -eq 0 ]
+  [ -f "$variant/memory/$MARKER" ]
+  grep -Fq "project-id=github.com/me/live-repo" "$variant/memory/$MARKER"
+}
+
+@test "n=3 variants, only one edits: edit replaces baseline on the other two (no union)" {
+  # Three-way variant grouping (e.g. mac + windows + linux machines all
+  # pulling the same memory repo). Only alice edits; bob and carol still
+  # hold the pre-edit baseline. The edit must propagate cleanly to both
+  # without dragging the old line along as a union.
+  git -C "$HOME/.claude" -c init.defaultBranch=main init -q
+  git -C "$HOME/.claude" config user.email t@t.t
+  git -C "$HOME/.claude" config user.name t
+
+  mkvariant "-Users-alice-Repo-tri"
+  mkvariant "C--Users-bob-Repo-tri"
+  mkvariant "-home-carol-Repo-tri"
+  mark "-Users-alice-Repo-tri" "github.com/me/tri"
+  mark "C--Users-bob-Repo-tri" "github.com/me/tri"
+  mark "-home-carol-Repo-tri"  "github.com/me/tri"
+
+  for d in -Users-alice-Repo-tri C--Users-bob-Repo-tri -home-carol-Repo-tri; do
+    printf 'line one\ncapital: Paris\nline three\n' \
+      > "$HOME/.claude/projects/$d/memory/note.md"
+  done
+
+  git -C "$HOME/.claude" add -A
+  git -C "$HOME/.claude" commit -q -m baseline
+
+  # Only alice edits.
+  printf 'line one\ncapital: Lyon\nline three\n' \
+    > "$HOME/.claude/projects/-Users-alice-Repo-tri/memory/note.md"
+
+  run run_mirror
+  [ "$status" -eq 0 ]
+
+  for d in -Users-alice-Repo-tri C--Users-bob-Repo-tri -home-carol-Repo-tri; do
+    p="$HOME/.claude/projects/$d/memory/note.md"
+    [ "$(wc -l < "$p" | tr -d ' ')" = "3" ]
+    run grep -Fq "Paris" "$p"
+    [ "$status" -ne 0 ]
+    grep -Fq "Lyon" "$p"
+  done
+}
+
+@test "no git baseline in ~/.claude: divergent MD variants union (safe fallback)" {
+  # Without a git repo at ~/.claude, the script can't distinguish an
+  # edit from a concurrent add — there's no HEAD to diverge from. The
+  # only data-preserving answer is union; anything else risks silently
+  # dropping one side's content. In steady-state hive-mind usage,
+  # setup.sh guarantees ~/.claude IS a git repo, so this fallback only
+  # fires in pre-install / manually-broken setups. Documenting it here
+  # pins the contract so future refactors don't accidentally pick a
+  # lossy strategy.
+  mkvariant "-Users-alice-Repo-nogit"
+  mkvariant "C--Users-bob-Repo-nogit"
+  mark "-Users-alice-Repo-nogit" "github.com/me/nogit"
+  mark "C--Users-bob-Repo-nogit" "github.com/me/nogit"
+
+  printf 'header\nALICE LINE\n' \
+    > "$HOME/.claude/projects/-Users-alice-Repo-nogit/memory/note.md"
+  printf 'header\nBOB LINE\n' \
+    > "$HOME/.claude/projects/C--Users-bob-Repo-nogit/memory/note.md"
+
+  [ ! -d "$HOME/.claude/.git" ]  # precondition: no git repo
+
+  run run_mirror
+  [ "$status" -eq 0 ]
+
+  for d in -Users-alice-Repo-nogit C--Users-bob-Repo-nogit; do
+    p="$HOME/.claude/projects/$d/memory/note.md"
+    grep -Fq "ALICE LINE" "$p"
+    grep -Fq "BOB LINE"   "$p"
+  done
+}
+
 @test "the .hive-mind sidecar itself is NOT mirrored as content" {
   # Each variant must keep its OWN sidecar. The sidecar is identity
   # metadata, not synced content — the script must skip it when listing
