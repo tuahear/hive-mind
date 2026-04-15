@@ -77,6 +77,40 @@ marker() {
   [ "$(git -C "$HOME/.claude" rev-parse HEAD)" = "$before" ]
 }
 
+@test "mirror runs BEFORE the early-exit gate so a fresh project bootstraps in one sync" {
+  # Stage a real git repo to act as a project's cwd, drop a session jsonl
+  # pointing at it, and a stub mirror script that — like the real one —
+  # writes a sidecar derived from the cwd. With a clean working tree and
+  # no unpushed commits, the OLD ordering early-exited before mirror got
+  # to run, leaving sidecars unwritten until the user manually triggered
+  # something that dirtied the tree. Mirror must run first so that the
+  # bootstrap commit happens on the very first sync.
+  proj_dir="$HOME/myrepo"
+  git -c init.defaultBranch=main init -q "$proj_dir"
+  git -C "$proj_dir" remote add origin git@github.com:Owner/MyRepo.git
+
+  variant="$HOME/.claude/projects/-Users-nick-myrepo"
+  mkdir -p "$variant"
+  printf '{"cwd":"%s"}\n' "$proj_dir" > "$variant/session.jsonl"
+
+  # Install the real mirror-projects.sh into the location sync.sh checks.
+  mkdir -p "$HOME/.claude/hive-mind/scripts"
+  cp "$BATS_TEST_DIRNAME/../scripts/mirror-projects.sh" \
+     "$HOME/.claude/hive-mind/scripts/mirror-projects.sh"
+  chmod +x "$HOME/.claude/hive-mind/scripts/mirror-projects.sh"
+
+  run run_sync
+  [ "$status" -eq 0 ]
+
+  # Sidecar was written by mirror.
+  [ -f "$variant/memory/.hive-mind-project-id" ]
+  [ "$(cat "$variant/memory/.hive-mind-project-id")" = "github.com/owner/myrepo" ]
+
+  # And it was committed + pushed (proves we did NOT early-exit).
+  msg="$(git -C "$HOME/.claude" log -1 --format=%s)"
+  [ "$msg" != "add whitelist gitignore" ]
+}
+
 @test "fallback commit message: 1 file → 'update <basename>'" {
   printf 'hello\n' > "$HOME/.claude/CLAUDE.md"
 

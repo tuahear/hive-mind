@@ -9,6 +9,20 @@ cd ~/.claude || exit 0
 LOG=.sync-error.log
 TS="$(date -u +%FT%TZ)"
 
+# Mirror per-project memory across path-variant directories before the
+# early-exit gate. This is local-only and idempotent: it writes any
+# missing <variant>/memory/.hive-mind-project-id sidecars (bootstrap)
+# and unifies content across variants whose normalized git-remote URL
+# matches. Running it BEFORE the gate means a brand-new clone on a
+# fresh machine bootstraps its sidecars on the very first Stop without
+# any manual step. On steady state it does nothing and the gate below
+# still short-circuits the network call.
+if [ -x "$HOME/.claude/hive-mind/scripts/mirror-projects.sh" ]; then
+  if ! "$HOME/.claude/hive-mind/scripts/mirror-projects.sh" 2>>"$LOG"; then
+    echo "$TS stop-hook mirror-projects failed" >>"$LOG"
+  fi
+fi
+
 # Early gate: if nothing has changed in the working tree AND there are no
 # unpushed local commits, skip entirely — no network, no git, no cost. This
 # makes the Stop hook a near-no-op on turns that didn't touch memory/config.
@@ -24,16 +38,6 @@ fi
 if ! git pull --rebase --autostash --quiet 2>>"$LOG"; then
   git rebase --abort 2>/dev/null
   echo "$TS stop-hook pull-rebase failed — local edits preserved, resolve in ~/.claude" >>"$LOG"
-fi
-
-# Mirror per-project memory across path-variant directories before staging,
-# so the same project cloned on Mac + Windows (different encoded cwd paths)
-# converges on identical memory content. Failures are non-fatal — mirror is
-# a best-effort consistency pass, not a correctness gate.
-if [ -x "$HOME/.claude/hive-mind/scripts/mirror-projects.sh" ]; then
-  if ! "$HOME/.claude/hive-mind/scripts/mirror-projects.sh" 2>>"$LOG"; then
-    echo "$TS stop-hook mirror-projects failed" >>"$LOG"
-  fi
 fi
 
 # Stage whatever changed in whitelisted paths (gitignore filters the rest).
