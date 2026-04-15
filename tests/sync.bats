@@ -127,15 +127,25 @@ marker() {
   [ "$status" -ne 0 ]
 }
 
-@test "marker inside a fenced code block is preserved and NOT extracted" {
+@test "marker inside a fenced code block is preserved while a marker outside the fence in the same file IS extracted" {
+  # Two markers in one file: one outside a code fence (must be extracted +
+  # stripped), one inside (must be preserved as-is). Using both together is
+  # the only way to positively prove the fence-aware scan actually ran on
+  # this path — if the file were skipped entirely, the fenced marker would
+  # also survive but the outside marker would too, which this test rejects.
   mkdir -p "$HOME/.claude/skills/foo"
-  printf 'doc line\n\n```\n%s\n```\n\nafter\n' "$(marker 'inside fence')" \
+  printf 'header\n%s\n\n```\n%s\n```\n\nafter\n' \
+    "$(marker 'real extract')" "$(marker 'inside fence')" \
     > "$HOME/.claude/skills/foo/SKILL.md"
 
   run run_sync
   [ "$status" -eq 0 ]
-  [ "$(git -C "$HOME/.claude" log -1 --format=%s)" = "update SKILL.md" ]
-  grep -q 'inside fence' "$HOME/.claude/skills/foo/SKILL.md"
+  [ "$(git -C "$HOME/.claude" log -1 --format=%s)" = "real extract" ]
+  # Outside-fence marker is gone (extracted + stripped).
+  run grep -Fq 'real extract' "$HOME/.claude/skills/foo/SKILL.md"
+  [ "$status" -ne 0 ]
+  # Inside-fence marker preserved verbatim.
+  grep -Fq 'inside fence' "$HOME/.claude/skills/foo/SKILL.md"
 }
 
 @test "multiple markers across files are joined with ' + '" {

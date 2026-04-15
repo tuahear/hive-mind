@@ -43,7 +43,7 @@ LONG_LINE='This is a reasonably long duplicate content line for testing.'
   [ -n "$output" ]
 
   ctx="$(printf '%s' "$output" | jq -r '.hookSpecificOutput.additionalContext')"
-  printf '%s' "$ctx" | grep -q '~/.claude/CLAUDE.md'
+  printf '%s' "$ctx" | grep -Fq '~/.claude/CLAUDE.md'
   [ "$(printf '%s' "$output" | jq -r '.hookSpecificOutput.hookEventName')" = "SessionStart" ]
 }
 
@@ -88,7 +88,7 @@ LONG_LINE='This is a reasonably long duplicate content line for testing.'
   run run_check
   [ "$status" -eq 0 ]
   ctx="$(printf '%s' "$output" | jq -r '.hookSpecificOutput.additionalContext')"
-  printf '%s' "$ctx" | grep -q '.claude/projects/-Users-nick-Repo-foo/memory/note.md'
+  printf '%s' "$ctx" | grep -Fq '.claude/projects/-Users-nick-Repo-foo/memory/note.md'
 }
 
 @test "multiple flagged files: listed comma-separated in the message" {
@@ -100,9 +100,9 @@ LONG_LINE='This is a reasonably long duplicate content line for testing.'
   run run_check
   [ "$status" -eq 0 ]
   ctx="$(printf '%s' "$output" | jq -r '.hookSpecificOutput.additionalContext')"
-  printf '%s' "$ctx" | grep -q '~/.claude/CLAUDE.md'
-  printf '%s' "$ctx" | grep -q 'projects/v1/memory/note.md'
-  printf '%s' "$ctx" | grep -q ', '
+  printf '%s' "$ctx" | grep -Fq '~/.claude/CLAUDE.md'
+  printf '%s' "$ctx" | grep -Fq 'projects/v1/memory/note.md'
+  printf '%s' "$ctx" | grep -Fq ', '
 }
 
 @test "missing CLAUDE.md: projects still scanned, exit 0" {
@@ -113,7 +113,7 @@ LONG_LINE='This is a reasonably long duplicate content line for testing.'
   run run_check
   [ "$status" -eq 0 ]
   ctx="$(printf '%s' "$output" | jq -r '.hookSpecificOutput.additionalContext')"
-  printf '%s' "$ctx" | grep -q 'projects/v1/memory/note.md'
+  printf '%s' "$ctx" | grep -Fq 'projects/v1/memory/note.md'
 }
 
 @test "missing projects/ directory: exit 0, no output" {

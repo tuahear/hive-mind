@@ -130,19 +130,25 @@ if ! git diff --cached --quiet; then
 
   if [ -z "$MSG" ]; then
     # Deterministic fallback — always list at least the first 3 basenames so
-    # the commit message is never just "sync N files".
-    files="$(git diff --cached --name-only)"
-    n="$(echo "$files" | wc -l | tr -d ' ')"
-    # Join basenames with ", " via awk — BSD paste's -d cycles separator
-    # characters (yields "a,b c,d"), and a post-hoc sed would also expand
-    # any commas inside filenames themselves.
-    join_basenames() { awk 'NR>1{printf ", "}{printf "%s", $0} END{print ""}'; }
+    # the commit message is never just "sync N files". Collect via
+    # NUL-delimited read so filenames with spaces, tabs, newlines, or a
+    # leading "-" don't break the loop. `${f##*/}` avoids a basename
+    # subprocess per file.
+    basenames=()
+    while IFS= read -r -d '' f; do
+      basenames+=("${f##*/}")
+    done < <(git diff --cached --name-only -z)
+    n="${#basenames[@]}"
+    # Join with ", " via awk — BSD paste's -d cycles separator characters
+    # (yields "a,b c,d"), and post-hoc sed would also expand commas inside
+    # filenames themselves.
+    join_names() { awk 'NR>1{printf ", "}{printf "%s", $0} END{print ""}'; }
     if [ "$n" -eq 1 ]; then
-      MSG="update $(basename "$files")"
+      MSG="update ${basenames[0]}"
     elif [ "$n" -le 3 ]; then
-      MSG="update $(echo "$files" | xargs -n1 basename | join_basenames)"
+      MSG="update $(printf '%s\n' "${basenames[@]}" | join_names)"
     else
-      head3="$(echo "$files" | head -n 3 | xargs -n1 basename | join_basenames)"
+      head3="$(printf '%s\n' "${basenames[@]:0:3}" | join_names)"
       MSG="update $head3, +$((n - 3)) more"
     fi
   fi
