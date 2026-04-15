@@ -33,7 +33,7 @@ if ! git diff --cached --quiet; then
   MSG=""
 
   # Look for <!-- commit: ... --> markers inside staged memory files. The
-  # memory-commit skill instructs agents to embed one of these in their
+  # hive-mind skill instructs agents to embed one of these in their
   # edit; we extract it as the commit message and strip the marker from
   # the file so it never enters git history. Hooks bypass Claude's tool
   # permission system, which is why all of this happens here rather than

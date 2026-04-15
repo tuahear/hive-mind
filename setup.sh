@@ -48,37 +48,29 @@ confirm() {
 }
 
 # Install / refresh hive-mind skills under ~/.claude/skills/.
-# Each bundled skill carries a `.hive-mind` sentinel file identifying it as
-# managed by this installer. On install:
-#   - if the destination dir exists WITH our sentinel: rm -rf + overwrite
-#     (template updates propagate cleanly on every setup.sh run)
-#   - if the destination dir exists WITHOUT our sentinel: user happens to
-#     have a coincidentally-named skill; move it aside to
-#     <name>.user-backup-<ts>/ and log the path, then install ours
-#   - if the destination dir doesn't exist: cp fresh
-# Users shouldn't edit hive-mind-installed skills in place; edit the
-# upstream templates/skills/ copy and push to the hive-mind repo instead.
+# Bundled skills use uniquely-namespaced folder names (e.g. `hive-mind`, not
+# `memory-commit`) so collision with a user's own skills is unlikely. Users
+# shouldn't edit hive-mind-installed skills in place; edit the upstream
+# templates/skills/ copy and push to the hive-mind repo instead.
+#
+# Migration: if an older install left `skills/memory-commit/` behind, remove
+# it (renamed to `skills/hive-mind/` on 2026-04-15). Safe because
+# `memory-commit` was only ever shipped by hive-mind.
 manage_claude_skills() {
     local src="$HIVE_MIND_DIR/templates/skills"
     local dst="$MEMORY_DIR/skills"
     [ -d "$src" ] || return 0
     mkdir -p "$dst"
+    if [ -d "$dst/memory-commit" ]; then
+        log "migrating old memory-commit skill → hive-mind (removing $dst/memory-commit)"
+        rm -rf "$dst/memory-commit"
+    fi
     local count=0
-    local ts
-    ts="$(date +%Y%m%d-%H%M%S)"
     for skill_dir in "$src"/*/; do
         [ -d "$skill_dir" ] || continue
         local name
         name="$(basename "$skill_dir")"
-        if [ -d "$dst/$name" ]; then
-            if [ -f "$dst/$name/.hive-mind" ]; then
-                rm -rf "$dst/$name"
-            else
-                local bak="$dst/$name.user-backup-$ts"
-                log "found user-owned skill at $dst/$name; backing up to $bak"
-                mv "$dst/$name" "$bak"
-            fi
-        fi
+        rm -rf "$dst/$name"
         cp -r "$skill_dir" "$dst/$name"
         count=$((count + 1))
     done

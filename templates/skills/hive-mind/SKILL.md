@@ -1,9 +1,9 @@
 ---
-name: memory-commit
+name: hive-mind
 description: Editing or writing any of Claude's hive-mind-synced files — `~/.claude/CLAUDE.md`, anything under `~/.claude/projects/*/memory/`, `~/.claude/projects/*/MEMORY.md` (index), or anything under `~/.claude/skills/*/`. **Load this skill any time you are about to remember something, save a user preference, update a project memory, update a project MEMORY index, add feedback memory, create or modify a skill, or touch any file in those paths.** Embed a one-line commit-summary marker inside the edit; the hive-mind sync script extracts it, strips it from the file, and uses it as the git commit message.
 ---
 
-# Memory-commit convention
+# Hive-mind commit-marker convention
 
 ## When to use
 

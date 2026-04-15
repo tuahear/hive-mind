@@ -1,6 +1,0 @@
-owned-by: hive-mind
-upstream: ~/.claude/hive-mind/templates/skills/memory-commit/
-repo: https://github.com/tuahear/hive-mind
-
-Do not edit this skill directly — setup.sh overwrites it on every run.
-Edit the upstream template and push to the hive-mind repo instead.
