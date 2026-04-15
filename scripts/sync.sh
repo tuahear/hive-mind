@@ -48,48 +48,50 @@ if ! git diff --cached --quiet; then
 
     # Fence-aware extract + strip in a single awk pass. Markers inside ```
     # code fences are preserved (SKILL.md docs contain illustrative examples
-    # that would otherwise be picked up as real commit messages). First
-    # non-fenced marker is written to $msg_file; remaining non-fenced markers
-    # are still stripped.
+    # that would otherwise be picked up as real commit messages). Every
+    # non-fenced marker in the file is extracted into $msg_file (one per
+    # line) and stripped from disk; across files, all messages are joined
+    # with " + " into a single commit message.
     tmp="$(mktemp)"
     msg_file="$(mktemp)"
     awk -v msgfile="$msg_file" '
-      BEGIN { fence = 0; found = 0 }
+      BEGIN { fence = 0 }
       /^[[:space:]]*```/ { fence = 1 - fence; print; next }
       fence == 1 { print; next }
       {
         line = $0
         # Full-line marker: drop entirely.
         if (match(line, /^[[:space:]]*<!--[[:space:]]*commit:[[:space:]]*[^>]+-->[[:space:]]*$/)) {
-          if (!found) {
-            msg = line
-            sub(/^[[:space:]]*<!--[[:space:]]*commit:[[:space:]]*/, "", msg)
-            sub(/[[:space:]]*-->[[:space:]]*$/, "", msg)
-            print msg > msgfile
-            close(msgfile)
-            found = 1
-          }
+          msg = line
+          sub(/^[[:space:]]*<!--[[:space:]]*commit:[[:space:]]*/, "", msg)
+          sub(/[[:space:]]*-->[[:space:]]*$/, "", msg)
+          print msg >> msgfile
           next
         }
         # Inline marker: strip from line, keep remaining text.
         if (match(line, /<!--[[:space:]]*commit:[[:space:]]*[^>]+-->/)) {
-          if (!found) {
-            m = substr(line, RSTART, RLENGTH)
-            msg = m
-            sub(/^<!--[[:space:]]*commit:[[:space:]]*/, "", msg)
-            sub(/[[:space:]]*-->$/, "", msg)
-            print msg > msgfile
-            close(msgfile)
-            found = 1
-          }
+          m = substr(line, RSTART, RLENGTH)
+          msg = m
+          sub(/^<!--[[:space:]]*commit:[[:space:]]*/, "", msg)
+          sub(/[[:space:]]*-->$/, "", msg)
+          print msg >> msgfile
           gsub(/[[:space:]]*<!--[[:space:]]*commit:[[:space:]]*[^>]+-->/, "", line)
         }
         print line
       }
+      END { close(msgfile) }
     ' "$f" > "$tmp"
 
-    if [ -z "$MSG" ] && [ -s "$msg_file" ]; then
-      MSG="$(head -1 "$msg_file" | tr -d '\r' | head -c 200)"
+    if [ -s "$msg_file" ]; then
+      while IFS= read -r extracted; do
+        extracted="$(printf %s "$extracted" | tr -d '\r')"
+        [ -z "$extracted" ] && continue
+        if [ -z "$MSG" ]; then
+          MSG="$extracted"
+        else
+          MSG="$MSG + $extracted"
+        fi
+      done < "$msg_file"
     fi
     rm -f "$msg_file"
 
@@ -100,6 +102,12 @@ if ! git diff --cached --quiet; then
       rm -f "$tmp"
     fi
   done < <(git diff --cached --name-only)
+
+  # Clip the joined message so git log doesn't blow up on pathological cases
+  # (many markers in one turn). 500 chars covers ~5-8 reasonable markers.
+  if [ -n "$MSG" ]; then
+    MSG="$(printf %s "$MSG" | head -c 500)"
+  fi
 
   if [ -z "$MSG" ]; then
     # Deterministic fallback — first 1–3 basenames or "sync N files".
