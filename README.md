@@ -20,6 +20,8 @@ hive-mind fixes that. It's a **Claude Code skill** today — architected to grow
   work mac ┘                  └── any new machine you set up
 ```
 
+Only using one computer? hive-mind still earns its keep: automatic memory backup, a full `git log` of every memory edit, easy rollback if a bad memory gets written, and your memory stays in your own private repo — not a vendor cloud.
+
 ---
 
 ## Get started in 3 steps
@@ -99,15 +101,6 @@ Monday 2pm:   desktop — you start a new AI session
 ```
 
 No copy-paste between machines, no forgetting what you told it where.
-
-### Even on a single machine
-
-Cross-machine sync is the headline — but hive-mind earns its keep on one computer too:
-
-- **Backup** — machine dies, you reinstall and pull; memory restored.
-- **Edit history** — `git log` shows every memory change, with diffs.
-- **Rollback** — bad memory got written? Revert the commit.
-- **You own it** — memory lives in your private repo, not a vendor cloud.
 
 ---
 
