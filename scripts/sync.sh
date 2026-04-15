@@ -82,6 +82,15 @@ if ! git diff --cached --quiet; then
       END { close(msgfile) }
     ' "$f" > "$tmp"
 
+    # Trim trailing blank lines. Full-line markers near EOF leave behind the
+    # empty line(s) that framed them; without this, every marker round-trip
+    # adds another blank to the file tail over time.
+    awk '{ lines[NR]=$0; last=NR }
+         END {
+           while (last > 0 && lines[last] ~ /^[[:space:]]*$/) last--
+           for (i=1; i<=last; i++) print lines[i]
+         }' "$tmp" > "$tmp.trim" && mv "$tmp.trim" "$tmp"
+
     if [ -s "$msg_file" ]; then
       while IFS= read -r extracted; do
         extracted="$(printf %s "$extracted" | tr -d '\r')"
