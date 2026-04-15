@@ -41,7 +41,7 @@ MEMORY_REPO=<your-memory-repo-url> \
 - HTTPS: `https://<host>/you/repo.git`
 - Local: `/path/to/bare.git` or `file:///path/to/bare.git`
 
-Works on macOS, Linux, and Windows (Git Bash). You need: `git`, SSH access (or HTTPS credentials) for your memory-repo host, and Claude Code installed. The installer itself clones hive-mind from GitHub over SSH once, so GitHub SSH access is required for the setup step only — not for ongoing sync.
+Works on macOS, Linux, and Windows (Git Bash). You need: `git` and SSH access (or HTTPS credentials) for your memory-repo host. The installer itself clones hive-mind from GitHub over SSH once, so GitHub SSH access is required for this step only — not for ongoing sync.
 
 ### 3. Reload Claude Code
 
