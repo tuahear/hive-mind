@@ -2,9 +2,9 @@
 
 **Your AI's memory, synced across every machine you work on.**
 
-You teach Claude something useful on your laptop in the morning — a project quirk, a shell preference, a debugging insight. By lunchtime you're at your desktop and Claude has no idea. You explain it again. And again tomorrow on the work machine.
+You teach your AI something useful on your laptop in the morning — a project quirk, a shell preference, a debugging insight. By lunchtime you're at your desktop and it has no idea. You explain it again. And again tomorrow on the work machine.
 
-hive-mind fixes that. It's a **Claude Code skill** today — architected to grow AI-agnostic as other assistants ship similar hook / skill surfaces. Memory files live in your own private git repo, quietly pulled when Claude starts a session and pushed back when it finishes. Your assistant carries every lesson forward, everywhere.
+hive-mind fixes that. It's a **Claude Code skill** today — architected to grow AI-agnostic as other assistants ship similar hook / skill surfaces. Memory files live in your own private git repo, quietly pulled when your AI starts a session and pushed back when it finishes. Your assistant carries every lesson forward, everywhere.
 
 ```
   laptop ──┐                  ┌── desktop
@@ -51,7 +51,7 @@ Type `/hooks` in any session or start a fresh one — the sync hooks activate. T
 
 ## Ultra-light skill
 
-Two things by design: the `hive-mind` skill adds **almost nothing** to your context, and those few tokens only load when actually needed. An idle session sees only the one-line skill description (~80 tokens); the body (~100 tokens) loads on demand, only while Claude is editing a memory or skill file. **Fully loaded: only ~180 tokens.**
+Two things by design: the `hive-mind` skill adds **almost nothing** to your context, and those few tokens only load when actually needed. An idle session sees only the one-line skill description (~80 tokens); the body (~100 tokens) loads on demand, only while your AI is editing a memory or skill file. **Fully loaded: only ~180 tokens.**
 
 ---
 
@@ -62,9 +62,9 @@ Only the portable stuff. Machine-local noise (session transcripts, shell history
 | File | What it is |
 |---|---|
 | `CLAUDE.md` | Your global instructions (the preferences that apply to every project) |
-| `projects/<name>/MEMORY.md` | Per-project memory index — the TOC of what you've taught Claude about each project |
+| `projects/<name>/MEMORY.md` | Per-project memory index — the TOC of what you've taught your AI about each project |
 | `projects/<name>/memory/*.md` | Individual per-project memory entries |
-| `skills/*/` | Claude's "skills" (on-demand playbooks that load when relevant) |
+| `skills/*/` | Claude Code's on-demand playbooks (other assistants ship equivalent skill/plugin systems) |
 | `settings.json` | Global hook + permission config |
 
 The bundled **`hive-mind` skill** installs automatically — it teaches your agent to embed one-line commit markers in memory edits, which sync.sh extracts as the git commit message. Every change to your memory gets a real, meaningful commit in git log.
@@ -78,12 +78,12 @@ Two hooks do everything:
 - **Session starts** → `git pull --rebase` from your memory git repo so you're caught up with what another machine wrote since you were last here
 - **Agent turn ends** → if anything changed, commit + push in ~1 second
 
-Between those two moments, no network traffic. Claude runs at full speed. If the network is down, sync fails silently and retries next turn.
+Between those two moments, no network traffic. Your AI runs at full speed. If the network is down, sync fails silently and retries next turn.
 
 ### The cross-machine story
 
 ```
-Monday 10am:  laptop — you ask Claude to remember a new Kafka setup gotcha
+Monday 10am:  laptop — you ask your AI to remember a new Kafka setup gotcha
                        ↓
               agent writes projects/kafka-thing/memory/gotcha.md
                        ↓
@@ -91,21 +91,21 @@ Monday 10am:  laptop — you ask Claude to remember a new Kafka setup gotcha
                        ↓
               (your memory git remote)
 
-Monday 2pm:   desktop — you start a Claude session
+Monday 2pm:   desktop — you start a new AI session
                        ↓
               SessionStart hook → pull
                        ↓
-              Claude sees Monday-10am's memory and continues where laptop left off
+              your AI sees Monday-10am's memory and continues where laptop left off
 ```
 
-No copy-paste between machines, no forgetting what you told Claude where.
+No copy-paste between machines, no forgetting what you told it where.
 
 ---
 
 ## Features you'll appreciate
 
 - **Backups before anything destructive.** The installer copies `~/.claude` to `~/.claude.backup-<timestamp>` before touching a thing.
-- **Works offline.** Sync failures log to `~/.claude/.sync-error.log` and retry next turn. Claude never blocks on a bad network.
+- **Works offline.** Sync failures log to `~/.claude/.sync-error.log` and retry next turn. Your AI never blocks on a bad network.
 - **Conflict-tolerant.** Concurrent memory edits from two machines auto-merge via git's `union` driver (concatenates both sides). A tiny `check-dupes.sh` flags duplicates for the next session to clean up.
 - **Meaningful git history.** The bundled `hive-mind` skill trains your agent to drop a one-line commit marker with each edit — so `git log` reads like a changelog, not `update file.md` stubs.
 - **Whitelist-only `.gitignore`.** Default is "ignore everything, re-allow portable bits." No risk of accidentally committing session-secret files.
@@ -153,7 +153,7 @@ git -C ~/.claude remote remove origin
 
 ### Commit marker convention
 
-The bundled `hive-mind` skill instructs Claude to embed an HTML comment like `<!-- commit: <one-line summary> -->` inside any memory/skill edit. `sync.sh` extracts non-fenced markers, joins them with ` + ` across files, strips them from disk (so they never enter history), then commits with that message. Markers inside ` ``` ` code fences are preserved — lets the skill's own docs show example markers without triggering extraction.
+The bundled `hive-mind` skill instructs the agent to embed an HTML comment like `<!-- commit: <one-line summary> -->` inside any memory/skill edit. `sync.sh` extracts non-fenced markers, joins them with ` + ` across files, strips them from disk (so they never enter history), then commits with that message. Markers inside ` ``` ` code fences are preserved — lets the skill's own docs show example markers without triggering extraction.
 
 Fallback (no markers found): `update <basename>` or `update <f1>, <f2>, <f3>, +N more` so even uninstrumented edits get a recognizable commit message.
 
