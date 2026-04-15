@@ -31,7 +31,9 @@ fi
 # converges on identical memory content. Failures are non-fatal — mirror is
 # a best-effort consistency pass, not a correctness gate.
 if [ -x "$HOME/.claude/hive-mind/scripts/mirror-projects.sh" ]; then
-  "$HOME/.claude/hive-mind/scripts/mirror-projects.sh" 2>>"$LOG"
+  if ! "$HOME/.claude/hive-mind/scripts/mirror-projects.sh" 2>>"$LOG"; then
+    echo "$TS stop-hook mirror-projects failed" >>"$LOG"
+  fi
 fi
 
 # Stage whatever changed in whitelisted paths (gitignore filters the rest).
