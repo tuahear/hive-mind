@@ -31,7 +31,6 @@ After your turn ends, the `Stop` hook runs `sync.sh`, which:
 2. Extracts the message inside it
 3. Strips the marker from the file (so it doesn't leak into git history)
 
-<!-- commit: reword marker-strip step in memory-commit skill -->
 4. Re-stages the cleaned file
 5. Commits with that message
 
