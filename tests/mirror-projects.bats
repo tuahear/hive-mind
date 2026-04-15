@@ -181,6 +181,10 @@ run_mirror() {
   variant="$HOME/.claude/projects/-Users-alice-myrepo"
   mkdir -p "$variant"
   printf '{"cwd":"%s","other":"junk"}\n' "$proj_dir" > "$variant/session.jsonl"
+  # Real memory content so the content gate lets the bootstrap proceed —
+  # this test focuses on the id normalization path, covered separately
+  # from the "content-less / cross-machine pull-down" cases.
+  printf '# notes\n' > "$variant/MEMORY.md"
 
   run run_mirror
   [ "$status" -eq 0 ]
@@ -207,6 +211,43 @@ run_mirror() {
   [ "$status" -eq 0 ]
   [ ! -f "$variant/memory/$MARKER" ]
   [ ! -d "$variant/memory" ]
+}
+
+@test "cross-machine pull-down: content-less variant bootstraps when another variant has matching id sidecar" {
+  # Scenario: alice has been working on the 'adtof' repo and pushed her
+  # memory. bob pulls — he now has alice's variant dir with sidecar and
+  # content. Then bob clones 'adtof' locally for the first time on his
+  # own machine. Claude Code creates bob's variant dir with a session
+  # jsonl. Without the escape hatch, discover_id would skip bob's
+  # content-less variant, leaving it un-mirrored. With the escape
+  # hatch, the derived id matches alice's pre-existing sidecar → bob's
+  # variant bootstraps and receives alice's content.
+  proj_dir="$HOME/adtof"
+  git -c init.defaultBranch=main init -q "$proj_dir"
+  git -C "$proj_dir" remote add origin git@github.com:me/adtof.git
+
+  # alice's variant (pulled from remote) — has content + sidecar.
+  alice="$HOME/.claude/projects/-Users-alice-Repo-adtof"
+  mkdir -p "$alice/memory"
+  printf 'project-id=github.com/me/adtof\n' > "$alice/memory/$MARKER"
+  printf 'alice memory line\n' > "$alice/memory/notes.md"
+  printf '# adtof alice\n' > "$alice/MEMORY.md"
+
+  # bob's fresh variant — session jsonl only, NO memory content, NO sidecar.
+  bob="$HOME/.claude/projects/C--Users-bob-Repo-adtof"
+  mkdir -p "$bob"
+  printf '{"cwd":"%s"}\n' "$proj_dir" > "$bob/session.jsonl"
+
+  run run_mirror
+  [ "$status" -eq 0 ]
+
+  # bob's sidecar was bootstrapped because the derived id matched alice's.
+  [ -f "$bob/memory/$MARKER" ]
+  grep -Fq "project-id=github.com/me/adtof" "$bob/memory/$MARKER"
+  # alice's content mirrored into bob's variant.
+  [ -f "$bob/memory/notes.md" ]
+  grep -Fq "alice memory line" "$bob/memory/notes.md"
+  [ -f "$bob/MEMORY.md" ]
 }
 
 @test "variant with MEMORY.md (content) DOES bootstrap a sidecar" {

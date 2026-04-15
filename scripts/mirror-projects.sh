@@ -68,38 +68,10 @@ normalize_remote() {
   printf '%s' "$u" | tr '[:upper:]' '[:lower:]'
 }
 
-# Determine the project identity for a variant dir. Echoes the id on
-# success, returns non-zero on no-id-available.
-discover_id() {
+# Derive a project id from a variant's session jsonl + git remote.
+# Echoes the normalized id on success; returns non-zero otherwise.
+derive_id_from_cwd() {
   local pdir="$1"
-  local meta="$pdir/memory/$MARKER_FILE"
-  local id=""
-
-  if [ -f "$meta" ]; then
-    id="$(read_meta "$meta" "project-id" | tr -d '\r\n')"
-    if [ -n "$id" ]; then
-      printf '%s' "$id"
-      return 0
-    fi
-  fi
-
-  # No usable sidecar — would need to CREATE one. Only do so when the
-  # variant already has real memory content (MEMORY.md or any file
-  # under memory/ other than the sidecar itself). Without this gate,
-  # every project you've ever opened in Claude Code gets a bootstrapped
-  # empty directory published to the shared memory repo just because a
-  # session jsonl exists there.
-  local has_content=0
-  [ -f "$pdir/MEMORY.md" ] && has_content=1
-  if [ "$has_content" -eq 0 ] && [ -d "$pdir/memory" ]; then
-    if find "$pdir/memory" -type f ! -name "$MARKER_FILE" 2>/dev/null \
-         | head -n 1 | grep -q .; then
-      has_content=1
-    fi
-  fi
-  [ "$has_content" -eq 0 ] && return 1
-
-  # Try to derive from a local session jsonl.
   local cwd="" f
   for f in "$pdir"/*.jsonl; do
     [ -f "$f" ] || continue
@@ -114,22 +86,86 @@ discover_id() {
   remote="$(git -C "$cwd" remote get-url origin 2>/dev/null)"
   [ -z "$remote" ] && return 1
 
+  local id
   id="$(normalize_remote "$remote")"
   [ -z "$id" ] && return 1
+  printf '%s' "$id"
+}
 
-  # Persist for next time + cross-machine matching.
+# Determine the project identity for a variant dir. Echoes the id on
+# success, returns non-zero on no-id-available. $2 is a newline-
+# separated list of project-ids already observed in other variants'
+# sidecars — used as the escape hatch for bootstrapping a content-less
+# variant that's actually a cross-machine peer of an existing project.
+discover_id() {
+  local pdir="$1"
+  local known="$2"
+  local meta="$pdir/memory/$MARKER_FILE"
+  local id=""
+
+  # Sidecar already present → use it verbatim.
+  if [ -f "$meta" ]; then
+    id="$(read_meta "$meta" "project-id" | tr -d '\r\n')"
+    if [ -n "$id" ]; then
+      printf '%s' "$id"
+      return 0
+    fi
+  fi
+
+  # No sidecar — derive from cwd+remote; a variant with no jsonl or no
+  # git remote is unidentifiable and must be skipped.
+  id="$(derive_id_from_cwd "$pdir")" || return 1
+  [ -z "$id" ] && return 1
+
+  # Gate the bootstrap: only create a sidecar when either
+  #  (a) this variant has real memory content, OR
+  #  (b) the derived id matches a project-id already present in another
+  #      variant's sidecar (cross-machine pull-down — an existing peer
+  #      lets mirror replicate content INTO this fresh variant).
+  # Both conditions must fail before we skip; without them, every
+  # empty project Claude Code has ever opened gets published.
+  local has_content=0
+  [ -f "$pdir/MEMORY.md" ] && has_content=1
+  if [ "$has_content" -eq 0 ] && [ -d "$pdir/memory" ]; then
+    if find "$pdir/memory" -type f ! -name "$MARKER_FILE" 2>/dev/null \
+         | head -n 1 | grep -q .; then
+      has_content=1
+    fi
+  fi
+
+  if [ "$has_content" -eq 0 ]; then
+    if ! printf '%s\n' "$known" | grep -Fxq "$id"; then
+      return 1
+    fi
+  fi
+
   mkdir -p "$pdir/memory"
   printf 'project-id=%s\n' "$id" > "$meta"
   printf '%s' "$id"
   return 0
 }
 
-# Build a manifest: id<TAB>variant_dir, one line per variant with an id.
+# Pass 1: collect every project-id already persisted to a sidecar.
+# discover_id uses this set as the escape hatch that lets a content-
+# less variant still bootstrap (and thus receive mirrored content)
+# when it's a known peer — the cross-machine pull-down case.
+known_ids=""
+for d in projects/*/; do
+  [ -d "$d" ] || continue
+  pdir="${d%/}"
+  meta="$pdir/memory/$MARKER_FILE"
+  [ -f "$meta" ] || continue
+  id="$(read_meta "$meta" "project-id" | tr -d '\r\n')"
+  [ -n "$id" ] && known_ids="$known_ids$id"$'\n'
+done
+
+# Pass 2: build the manifest (id<TAB>variant_dir, one line per variant
+# that resolves to an id).
 manifest=""
 for d in projects/*/; do
   [ -d "$d" ] || continue
   pdir="${d%/}"
-  id="$(discover_id "$pdir" 2>/dev/null)" || continue
+  id="$(discover_id "$pdir" "$known_ids" 2>/dev/null)" || continue
   [ -z "$id" ] && continue
   manifest="$manifest$id"$'\t'"$pdir"$'\n'
 done
