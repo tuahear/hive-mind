@@ -4,7 +4,7 @@
 
 You teach your AI something useful on your laptop in the morning — a project quirk, a shell preference, a debugging insight. By lunchtime you're at your desktop and it has no idea. You explain it again. And again tomorrow on the work machine.
 
-hive-mind fixes that. It's a **Claude Code skill** today — architected to grow AI-agnostic as other assistants ship similar hook / skill surfaces. **Your existing memory files stay exactly where they are** — hive-mind doesn't migrate, move, or reformat anything; it installs on top of whatever you already have and starts syncing it to your private git repo. Quietly pulled when your AI starts a session, pushed back when it finishes. Your assistant carries every lesson forward, everywhere.
+hive-mind fixes that. It's a **Claude Code skill** today. **Your existing memory files stay exactly where they are** — hive-mind doesn't migrate, move, or reformat anything; it installs on top of whatever you already have and starts syncing it to your private git repo. Quietly pulled when your AI starts a session, pushed back when it finishes. Your assistant carries every lesson forward, everywhere.
 
 ```
   laptop ──┐                  ┌── desktop
@@ -210,6 +210,14 @@ This README is for end users. If you want to hack on hive-mind itself:
 
 ---
 
+## Roadmap: AI-agnostic
+
+hive-mind currently plugs into Claude Code's hook + skill surfaces. The architecture underneath — a git-backed memory directory, event-driven sync, portable file conventions — is deliberately independent of which AI reads those files. As other assistants (Cursor, Aider, Windsurf, local agents, …) stabilise similar hook and skill mechanisms, hive-mind is built to grow with them: swap the CLI-specific adapter, keep the sync core.
+
+If you maintain an AI coding assistant that stores memory in a directory and runs per-session / per-turn hooks, a hive-mind adapter for your tool is likely a few hundred lines of shell at most. PRs and issues welcome.
+
+---
+
 ## Troubleshooting
 
 **"Permission denied (publickey)" on push** — your SSH key isn't set up for your memory-repo host on this machine. Add one:
@@ -229,4 +237,4 @@ This README is for end users. If you want to hack on hive-mind itself:
 
 MIT — see [LICENSE](LICENSE).
 
-Built for [Claude Code](https://claude.com/claude-code), architected to grow for any AI assistant that keeps memory in a directory.
+Built for [Claude Code](https://claude.com/claude-code). See the Roadmap section for how it's designed to grow.
