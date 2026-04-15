@@ -8,7 +8,7 @@
 
 **Hooks don't fire** — Claude Code needs to reload them. Type `/hooks` in an active session, or start a fresh one.
 
-**`.sync-error.log` fills up** — check the log; usually a push rejection from someone else pushing first. Next turn's auto-rebase-and-retry clears it. If it doesn't, run `git -C ~/.claude pull --rebase --autostash` and `git -C ~/.claude push` manually.
+**`.sync-error.log` fills up** — check the log; usually a push rejection from someone else pushing first. The underlying issue typically resolves on the next turn's auto-rebase-and-retry, but the log file itself is append-only — it won't be cleared unless you remove it manually. If the sync problem doesn't resolve on its own, run `git -C ~/.claude pull --rebase --autostash` and `git -C ~/.claude push` manually.
 
 **I accidentally committed something sensitive** — git history is permanent. Rotate the secret, force-push a cleaned history, and consider amending the `.gitignore` to prevent recurrence.
 

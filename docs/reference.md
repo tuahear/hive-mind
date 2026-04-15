@@ -4,7 +4,7 @@
 
 | Event | Script | Behavior |
 |---|---|---|
-| `SessionStart` | `scripts/check-dupes.sh` | `git pull --rebase --autostash`, then scan memory files for union-merge duplicates and nudge the model to clean them up |
+| `SessionStart` | `scripts/check-dupes.sh` | Hook wrapper runs `git pull --rebase --autostash`, then invokes `scripts/check-dupes.sh` to scan memory files for union-merge duplicates and nudge the model to clean them up |
 | `Stop` (end of each turn) | `scripts/sync.sh` | Early-exit in ~20 ms if nothing changed; otherwise pull-rebase, commit, push |
 
 ## Commit marker convention
@@ -29,7 +29,7 @@ Everything else under `~/.claude/` stays local by default.
 
 Text-content conflicts in `CLAUDE.md` or `projects/**/*.md` auto-merge with git's `union` driver (concatenates both sides' hunks). Duplicates may result; `check-dupes.sh` detects union-merged regions and asks the next session to dedupe.
 
-`settings.json` merges are trickier because JSON breaks under union semantics. We register a custom `jsonmerge` driver (in `scripts/jsonmerge.sh`) that deep-merges both versions of `settings.json` at the key level and unions the `permissions.allow` array.
+`settings.json` merges are trickier because JSON breaks under union semantics. We register a custom `jsonmerge` driver (in `scripts/jsonmerge.sh`) that deep-merges both versions of `settings.json` at the key level and unions the `permissions.allow`, `permissions.deny`, `permissions.ask`, and `permissions.additionalDirectories` arrays.
 
 ## Repo layout
 
