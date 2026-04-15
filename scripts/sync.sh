@@ -41,7 +41,7 @@ if ! git diff --cached --quiet; then
   while IFS= read -r f; do
     [ -f "$f" ] || continue
     case "$f" in
-      "CLAUDE.md"|projects/*/memory/*|skills/*) ;;
+      "CLAUDE.md"|projects/*/memory/*|projects/*/MEMORY.md|skills/*) ;;
       *) continue ;;
     esac
     grep -q '<!--[[:space:]]*commit:' "$f" || continue

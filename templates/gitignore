@@ -16,6 +16,7 @@
 !/projects/*/
 /projects/*/*
 !/projects/*/memory/
+!/projects/*/MEMORY.md
 
 # User-level skills (skill definitions, supporting files). Syncable across
 # machines alongside memory.
