@@ -302,6 +302,78 @@ run_mirror() {
   [ -f "$HOME/.claude/projects/C--Users-bob-Repo-bothforms/memory/a.md" ]
 }
 
+@test "edit on one side propagates cleanly (no old+new line duplication)" {
+  # User edits a word in memory on one machine; the other variant must
+  # receive the change as-is, not a union of old+new. Baseline: both
+  # variants hold identical committed content. Then one side edits.
+  git -C "$HOME/.claude" -c init.defaultBranch=main init -q
+  git -C "$HOME/.claude" config user.email t@t.t
+  git -C "$HOME/.claude" config user.name t
+
+  mkvariant "-Users-alice-Repo-foo"
+  mkvariant "C--Users-bob-Repo-foo"
+  mark "-Users-alice-Repo-foo" "github.com/me/foo"
+  mark "C--Users-bob-Repo-foo" "github.com/me/foo"
+  printf 'line one\ncapital: Paris\nline three\n' \
+    > "$HOME/.claude/projects/-Users-alice-Repo-foo/memory/note.md"
+  printf 'line one\ncapital: Paris\nline three\n' \
+    > "$HOME/.claude/projects/C--Users-bob-Repo-foo/memory/note.md"
+
+  git -C "$HOME/.claude" add -A
+  git -C "$HOME/.claude" commit -q -m baseline
+
+  # Edit on alice's side only.
+  printf 'line one\ncapital: Lyon\nline three\n' \
+    > "$HOME/.claude/projects/-Users-alice-Repo-foo/memory/note.md"
+
+  run run_mirror
+  [ "$status" -eq 0 ]
+
+  # Both files have exactly 3 lines — Lyon replaced Paris, no union.
+  [ "$(wc -l < "$HOME/.claude/projects/-Users-alice-Repo-foo/memory/note.md" | tr -d ' ')" = "3" ]
+  [ "$(wc -l < "$HOME/.claude/projects/C--Users-bob-Repo-foo/memory/note.md" | tr -d ' ')" = "3" ]
+  run grep -Fq "Paris" "$HOME/.claude/projects/-Users-alice-Repo-foo/memory/note.md"
+  [ "$status" -ne 0 ]
+  run grep -Fq "Paris" "$HOME/.claude/projects/C--Users-bob-Repo-foo/memory/note.md"
+  [ "$status" -ne 0 ]
+  grep -Fq "Lyon" "$HOME/.claude/projects/-Users-alice-Repo-foo/memory/note.md"
+  grep -Fq "Lyon" "$HOME/.claude/projects/C--Users-bob-Repo-foo/memory/note.md"
+}
+
+@test "concurrent additions on both sides: both survive via union merge" {
+  # Two machines each add different new memory while offline, then
+  # sync. Both additions must end up on both sides — neither side's
+  # new content is silently dropped. This is the safety case that
+  # justifies keeping union-merge as the fallback.
+  git -C "$HOME/.claude" -c init.defaultBranch=main init -q
+  git -C "$HOME/.claude" config user.email t@t.t
+  git -C "$HOME/.claude" config user.name t
+
+  mkvariant "-Users-alice-Repo-foo"
+  mkvariant "C--Users-bob-Repo-foo"
+  mark "-Users-alice-Repo-foo" "github.com/me/foo"
+  mark "C--Users-bob-Repo-foo" "github.com/me/foo"
+  printf 'header\n' > "$HOME/.claude/projects/-Users-alice-Repo-foo/memory/note.md"
+  printf 'header\n' > "$HOME/.claude/projects/C--Users-bob-Repo-foo/memory/note.md"
+
+  git -C "$HOME/.claude" add -A
+  git -C "$HOME/.claude" commit -q -m baseline
+
+  # Both sides add different content.
+  printf 'header\nALICE LINE\n' \
+    > "$HOME/.claude/projects/-Users-alice-Repo-foo/memory/note.md"
+  printf 'header\nBOB LINE\n' \
+    > "$HOME/.claude/projects/C--Users-bob-Repo-foo/memory/note.md"
+
+  run run_mirror
+  [ "$status" -eq 0 ]
+
+  grep -Fq "ALICE LINE" "$HOME/.claude/projects/-Users-alice-Repo-foo/memory/note.md"
+  grep -Fq "BOB LINE"   "$HOME/.claude/projects/-Users-alice-Repo-foo/memory/note.md"
+  grep -Fq "ALICE LINE" "$HOME/.claude/projects/C--Users-bob-Repo-foo/memory/note.md"
+  grep -Fq "BOB LINE"   "$HOME/.claude/projects/C--Users-bob-Repo-foo/memory/note.md"
+}
+
 @test "non-markdown files are NOT byte-concatenated when variants differ" {
   mkvariant "-Users-alice-Repo-foo"
   mkvariant "C--Users-bob-Repo-foo"

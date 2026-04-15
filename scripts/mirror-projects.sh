@@ -55,6 +55,15 @@ read_meta() {
 # variants of the same repo group together.
 #   git@github.com:user/repo.git  →  github.com/user/repo
 #   https://github.com/user/repo  →  github.com/user/repo
+# Does $1 (a path relative to ~/.claude) match its last committed
+# version in HEAD? Non-zero for any modification, new-file, or untracked
+# state. Used to distinguish an edit (one side diverged from HEAD) from
+# concurrent additions (multiple sides diverged independently).
+file_matches_head() {
+  local path="$1"
+  [ -z "$(git status --porcelain -- "$path" 2>/dev/null)" ]
+}
+
 normalize_remote() {
   local u="$1"
   u="${u#git@}"
@@ -221,22 +230,43 @@ while IFS= read -r key; do
     if [ "$n" -eq 1 ]; then
       cp "$(printf '%s' "$existing" | awk 'NF' | head -n1)" "$merged"
     elif [ "$is_md" -eq 1 ]; then
-      first=1
+      # Distinguish an EDIT (exactly one side diverged from the last
+      # committed version) from CONCURRENT ADDITIONS (multiple sides
+      # diverged independently). For an edit, take the diverged side
+      # whole so old lines are replaced cleanly — the "edit a word
+      # and both copies show the word changed" UX. For concurrent
+      # adds, union-merge so neither side's new content is lost.
+      modified_srcs=""
       while IFS= read -r src; do
         [ -z "$src" ] && continue
-        if [ "$first" -eq 1 ]; then
-          cp "$src" "$merged"
-          first=0
-          continue
-        fi
-        cmp -s "$merged" "$src" && continue
-        tmp="$(mktemp)"
-        if git merge-file --union -p "$merged" /dev/null "$src" > "$tmp" 2>/dev/null && [ -s "$tmp" ]; then
-          mv "$tmp" "$merged"
-        else
-          rm -f "$tmp"
+        if ! file_matches_head "$src"; then
+          modified_srcs="$modified_srcs$src"$'\n'
         fi
       done <<<"$existing"
+      modified_count="$(printf '%s\n' "$modified_srcs" | awk 'NF' | wc -l | tr -d ' ')"
+
+      if [ "$modified_count" -eq 1 ]; then
+        cp "$(printf '%s' "$modified_srcs" | awk 'NF' | head -n1)" "$merged"
+      else
+        # Zero modified = all pristine (cmp short-circuit handles the
+        # no-op). Two-or-more = true concurrent divergence → union.
+        first=1
+        while IFS= read -r src; do
+          [ -z "$src" ] && continue
+          if [ "$first" -eq 1 ]; then
+            cp "$src" "$merged"
+            first=0
+            continue
+          fi
+          cmp -s "$merged" "$src" && continue
+          tmp="$(mktemp)"
+          if git merge-file --union -p "$merged" /dev/null "$src" > "$tmp" 2>/dev/null && [ -s "$tmp" ]; then
+            mv "$tmp" "$merged"
+          else
+            rm -f "$tmp"
+          fi
+        done <<<"$existing"
+      fi
     else
       cp "$(printf '%s' "$existing" | awk 'NF' | head -n1)" "$merged"
     fi
