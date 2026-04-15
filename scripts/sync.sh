@@ -136,7 +136,13 @@ if ! git diff --cached --quiet; then
     # subprocess per file.
     basenames=()
     while IFS= read -r -d '' f; do
-      basenames+=("${f##*/}")
+      # Collapse any control chars (newlines, tabs, CR) in the basename to
+      # a single space. The NUL-delimited read lets a filename legally
+      # contain \n, but awk's record separator is \n and commit subjects
+      # can't contain control chars anyway.
+      bn="${f##*/}"
+      bn="${bn//[[:cntrl:]]/ }"
+      basenames+=("$bn")
     done < <(git diff --cached --name-only -z)
     n="${#basenames[@]}"
     # Join with ", " via awk — BSD paste's -d cycles separator characters
