@@ -14,5 +14,4 @@ Embed — in the same edit — an HTML comment on its own line:
 ## Notes
 
 - Multiple markers across staged files are joined with ` + ` (final message clipped to 500 chars)
-- Keep memory/skill content compact — every word enters future agents' context windows
 - Always embed a marker; without it the commit falls back to a basename summary
