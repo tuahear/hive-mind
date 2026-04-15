@@ -10,11 +10,11 @@ hive-mind fixes that. It's a **Claude Code skill** today — architected to grow
   laptop ──┐                  ┌── desktop
            │                  │
            ▼                  ▼
-     ┌──────────────────────────────┐
+     ┌───────────────────────────────┐
      │  your private memory git repo │   ← any git remote you control
-     │  (CLAUDE.md, projects/,      │
-     │   skills/, settings)         │
-     └──────────────────────────────┘
+     │  (CLAUDE.md, projects/,       │
+     │   skills/, settings)          │
+     └───────────────────────────────┘
            ▲                  ▲
            │                  │
   work mac ┘                  └── any new machine you set up
