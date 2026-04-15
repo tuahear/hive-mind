@@ -26,6 +26,14 @@ if ! git pull --rebase --autostash --quiet 2>>"$LOG"; then
   echo "$TS stop-hook pull-rebase failed — local edits preserved, resolve in ~/.claude" >>"$LOG"
 fi
 
+# Mirror per-project memory across path-variant directories before staging,
+# so the same project cloned on Mac + Windows (different encoded cwd paths)
+# converges on identical memory content. Failures are non-fatal — mirror is
+# a best-effort consistency pass, not a correctness gate.
+if [ -x "$HOME/.claude/hive-mind/scripts/mirror-projects.sh" ]; then
+  "$HOME/.claude/hive-mind/scripts/mirror-projects.sh" 2>>"$LOG"
+fi
+
 # Stage whatever changed in whitelisted paths (gitignore filters the rest).
 git add -A 2>/dev/null
 
