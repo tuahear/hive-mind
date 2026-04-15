@@ -208,7 +208,8 @@ This README is for end users. If you want to hack on hive-mind itself:
 1. Fork the repo and clone
 2. Run `scripts/install-dev-hooks.sh` once in your clone — installs a pre-commit hook that keeps bundled skills clean
 3. Edit `templates/skills/hive-mind/SKILL.md` to change skill content (not the copy in `~/.claude/skills/hive-mind/` — that's the user-facing install target)
-4. PRs welcome
+4. Install [bats-core](https://github.com/bats-core/bats-core) to run the test suite — `brew install bats-core` (macOS), `apt install bats` (Linux), or `npm install -g bats` (Windows / Git Bash). Then `bats tests/` from the repo root.
+5. PRs welcome
 
 ---
 
