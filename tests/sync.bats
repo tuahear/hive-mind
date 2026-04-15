@@ -193,6 +193,22 @@ marker() {
   [ "$msg" = "msg1 + msg2" ] || [ "$msg" = "msg2 + msg1" ]
 }
 
+@test "identical markers across staged files are deduped (no 'msg + msg')" {
+  # mirror-projects.sh copies an edited file — marker and all — into
+  # its path-variant peer, so two staged files end up carrying the
+  # same marker body. The commit subject must not double it.
+  mkdir -p "$HOME/.claude/projects/p1/memory" \
+           "$HOME/.claude/projects/p2/memory"
+  printf 'shared\n%s\n' "$(marker 'one edit')" \
+    > "$HOME/.claude/projects/p1/memory/note.md"
+  printf 'shared\n%s\n' "$(marker 'one edit')" \
+    > "$HOME/.claude/projects/p2/memory/note.md"
+
+  run run_sync
+  [ "$status" -eq 0 ]
+  [ "$(git -C "$HOME/.claude" log -1 --format=%s)" = "one edit" ]
+}
+
 @test "trailing blank lines are trimmed after full-line marker at EOF" {
   printf 'content\n%s\n' "$(marker 'eof')" > "$HOME/.claude/CLAUDE.md"
 

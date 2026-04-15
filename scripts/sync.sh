@@ -108,6 +108,13 @@ if ! git diff --cached --quiet; then
       while IFS= read -r extracted; do
         extracted="$(printf %s "$extracted" | tr -d '\r')"
         [ -z "$extracted" ] && continue
+        # Dedup: mirror-projects.sh copies an edited file (marker and
+        # all) into path-variant peers, so the same marker shows up in
+        # multiple staged files. Without this check the commit subject
+        # reads "msg + msg" instead of "msg".
+        case " + $MSG + " in
+          *" + $extracted + "*) continue ;;
+        esac
         if [ -z "$MSG" ]; then
           MSG="$extracted"
         else
