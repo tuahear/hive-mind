@@ -19,9 +19,9 @@ features:
   - title: 🔁 Works offline
     details: Sync failures retry next turn. Your AI never blocks on a bad network.
   - title: 🧬 Conflict-tolerant
-    details: Edit memory from two machines at once — conflicts handled for you.
+    details: Edit memory from two machines at once — without worry.
   - title: 🌐 Cross-platform
-    details: Every project, every OS — memory stays in sync.
+    details: Every project, synced across macOS, Linux, and Windows.
   - title: 📜 Meaningful git history
     details: Every lesson becomes a commit — git log is your AI's learning journal.
   - title: 🔒 Your data, your repo
