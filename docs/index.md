@@ -19,13 +19,13 @@ features:
   - title: 🔁 Works offline
     details: Sync failures retry next turn. Your AI never blocks on a bad network.
   - title: 🧬 Conflict-tolerant
-    details: Concurrent edits from multiple machines auto-merge. Any leftover duplicates get cleaned up by your AI on the next session.
+    details: Concurrent edits auto-merge; your AI dedupes any leftovers next session.
   - title: 🌐 Cross-platform
-    details: Works the same on macOS, Linux, and Windows. Your memory of a project follows you across every OS.
+    details: Same memory across macOS, Linux, and Windows.
   - title: 📜 Meaningful git history
-    details: Your AI writes each commit message itself, so `git log` reads like a changelog of what it learned.
+    details: Your AI writes each commit message, so git history is a real changelog.
   - title: 🔒 Your data, your repo
-    details: Memory lives in a private git repo you control. No vendor cloud, no lock-in, full audit trail.
+    details: Memory lives in a private git repo you control. No vendor lock-in.
 ---
 
 ## The problem
