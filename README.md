@@ -11,7 +11,7 @@ hive-mind fixes that. Memory files live in your own private Git repo, quietly pu
            │                  │
            ▼                  ▼
      ┌──────────────────────────────┐
-     │  your private memory repo    │   ← GitHub (or your own remote)
+     │  your private memory repo    │   ← any git remote you control
      │  (CLAUDE.md, projects/,      │
      │   skills/, settings)         │
      └──────────────────────────────┘
@@ -31,11 +31,17 @@ Any git host works — GitHub, GitLab, Bitbucket, Codeberg, self-hosted, even a 
 ### 2. Run the installer
 
 ```bash
-MEMORY_REPO=git@github.com:<you>/<your-memory-repo>.git \
+MEMORY_REPO=<your-memory-repo-url> \
   bash -c "$(curl -fsSL https://raw.githubusercontent.com/tuahear/hive-mind/main/setup.sh)"
 ```
 
-`MEMORY_REPO` accepts any URL `git` understands — SSH (`git@gitlab.com:...`), HTTPS (`https://...`), or a local path. Works on macOS, Linux, and Windows (Git Bash). You need: `git`, SSH access to your memory-repo host, and Claude Code installed. The installer clones hive-mind itself from GitHub over SSH, so it also needs GitHub SSH access one-time during setup.
+`MEMORY_REPO` accepts any URL `git` understands:
+
+- SSH: `git@<host>:you/repo.git` (GitHub, GitLab, Bitbucket, self-hosted…)
+- HTTPS: `https://<host>/you/repo.git`
+- Local: `/path/to/bare.git` or `file:///path/to/bare.git`
+
+Works on macOS, Linux, and Windows (Git Bash). You need: `git`, SSH access (or HTTPS credentials) for your memory-repo host, and Claude Code installed. The installer itself clones hive-mind from GitHub over SSH once, so GitHub SSH access is required for the setup step only — not for ongoing sync.
 
 ### 3. Reload Claude Code
 
@@ -83,7 +89,7 @@ Monday 10am:  laptop — you ask Claude to remember a new Kafka setup gotcha
                        ↓
               Stop hook fires → commit → push
                        ↓
-                   (github)
+              (your memory remote)
 
 Monday 2pm:   desktop — you start a Claude session
                        ↓
@@ -204,7 +210,10 @@ This README is for end users. If you want to hack on hive-mind itself:
 
 ## Troubleshooting
 
-**"Permission denied (publickey)" on push** — your GitHub SSH key isn't set up on this machine. Add one: <https://github.com/settings/keys>.
+**"Permission denied (publickey)" on push** — your SSH key isn't set up for your memory-repo host on this machine. Add one:
+- GitHub: <https://github.com/settings/keys>
+- GitLab: <https://gitlab.com/-/user_settings/ssh_keys>
+- Bitbucket / self-hosted: whatever your host's docs say.
 
 **Hooks don't fire** — Claude Code needs to reload them. Type `/hooks` in an active session, or start a fresh one.
 
