@@ -182,6 +182,24 @@ marker() {
   grep -q 'fake' "$HOME/.claude/settings.json"
 }
 
+@test "basename containing a newline is sanitized so the commit message doesn't split or break" {
+  # NUL-delimited read preserves any char in a filename, including \n. The
+  # downstream awk join uses \n as record separator — without the cntrl-
+  # collapse step, a two-file sync where one name contains a newline would
+  # produce three awk records and a mangled commit subject.
+  mkdir -p "$HOME/.claude/skills"
+  weird=$'weird\nname.md'
+  printf 'x\n' > "$HOME/.claude/skills/a.md"
+  printf 'x\n' > "$HOME/.claude/skills/$weird"
+
+  run run_sync
+  [ "$status" -eq 0 ]
+  msg="$(git -C "$HOME/.claude" log -1 --format=%s)"
+  [ "$msg" = "update a.md, weird name.md" ]
+  # Subject must itself contain no literal newline.
+  [[ "$msg" != *$'\n'* ]]
+}
+
 @test "pull-rebase conflict: clean abort, exit 0, logged to .sync-error.log, local commit preserved" {
   # Seed the remote with a conflicting commit via a second clone.
   other="$(mktemp -d)"
