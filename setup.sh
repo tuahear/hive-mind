@@ -48,25 +48,37 @@ confirm() {
 }
 
 # Install / refresh hive-mind skills under ~/.claude/skills/.
-# Skills are Claude Code's standard on-demand extension point: loaded when
-# the model matches the skill's description against the current task. Unlike
-# CLAUDE.md (always loaded), skills don't inflate every session's preamble.
-#
-# Behavior: copy each skill from templates/skills/<name>/ to
-# ~/.claude/skills/<name>/, overwriting existing copies so template updates
-# propagate on every setup.sh run. Users shouldn't edit hive-mind-installed
-# skills directly; edit them upstream in hive-mind/templates/skills/.
+# Each bundled skill carries a `.hive-mind` sentinel file identifying it as
+# managed by this installer. On install:
+#   - if the destination dir exists WITH our sentinel: rm -rf + overwrite
+#     (template updates propagate cleanly on every setup.sh run)
+#   - if the destination dir exists WITHOUT our sentinel: user happens to
+#     have a coincidentally-named skill; move it aside to
+#     <name>.user-backup-<ts>/ and log the path, then install ours
+#   - if the destination dir doesn't exist: cp fresh
+# Users shouldn't edit hive-mind-installed skills in place; edit the
+# upstream templates/skills/ copy and push to the hive-mind repo instead.
 manage_claude_skills() {
     local src="$HIVE_MIND_DIR/templates/skills"
     local dst="$MEMORY_DIR/skills"
     [ -d "$src" ] || return 0
     mkdir -p "$dst"
     local count=0
+    local ts
+    ts="$(date +%Y%m%d-%H%M%S)"
     for skill_dir in "$src"/*/; do
         [ -d "$skill_dir" ] || continue
         local name
         name="$(basename "$skill_dir")"
-        rm -rf "$dst/$name"
+        if [ -d "$dst/$name" ]; then
+            if [ -f "$dst/$name/.hive-mind" ]; then
+                rm -rf "$dst/$name"
+            else
+                local bak="$dst/$name.user-backup-$ts"
+                log "found user-owned skill at $dst/$name; backing up to $bak"
+                mv "$dst/$name" "$bak"
+            fi
+        fi
         cp -r "$skill_dir" "$dst/$name"
         count=$((count + 1))
     done
