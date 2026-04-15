@@ -133,12 +133,15 @@ if ! git diff --cached --quiet; then
     # the commit message is never just "sync N files".
     files="$(git diff --cached --name-only)"
     n="$(echo "$files" | wc -l | tr -d ' ')"
+    # BSD paste's -d cycles through separator characters (", " would yield
+    # "a,b c,d"), so join with "," then widen to ", " via sed for a stable
+    # cross-platform result.
     if [ "$n" -eq 1 ]; then
       MSG="update $(basename "$files")"
     elif [ "$n" -le 3 ]; then
-      MSG="update $(echo "$files" | xargs -n1 basename | paste -sd', ' -)"
+      MSG="update $(echo "$files" | xargs -n1 basename | paste -sd',' - | sed 's/,/, /g')"
     else
-      head3="$(echo "$files" | head -n 3 | xargs -n1 basename | paste -sd', ' -)"
+      head3="$(echo "$files" | head -n 3 | xargs -n1 basename | paste -sd',' - | sed 's/,/, /g')"
       MSG="update $head3, +$((n - 3)) more"
     fi
   fi
