@@ -53,7 +53,7 @@ Type `/hooks` in any session or start a fresh one — the sync hooks activate. T
 
 ## Ultra-light skill
 
-Two things by design: the `hive-mind` skill adds **almost nothing** to your context, and those few tokens only load when actually needed. An idle session sees only the one-line skill description (~80 tokens); the body (~100 tokens) loads on demand, only while your AI is editing a memory or skill file. **Fully loaded: only ~180 tokens.**
+Two things by design: the `hive-mind` skill adds **almost nothing** to your context, and those few tokens only load when actually needed. An idle session sees only the one-line skill description (~85 tokens); the body (~90 tokens) loads on demand, only while your AI is editing a memory, settings, or skill file. **Fully loaded: only ~175 tokens.**
 
 ---
 

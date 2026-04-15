@@ -1,6 +1,6 @@
 ---
 name: hive-mind
-description: Load when editing any hive-mind-synced file — `~/.claude/CLAUDE.md`, `~/.claude/projects/*/MEMORY.md`, `~/.claude/projects/*/memory/*`, or `~/.claude/skills/*/*`. Trigger phrases — remembering something, saving a user preference, updating a project memory or its index, adding feedback memory, creating or modifying a skill.
+description: Load when editing a hive-mind-synced file — `~/.claude/CLAUDE.md`, `~/.claude/settings.json`, `~/.claude/projects/*/MEMORY.md`, `~/.claude/projects/*/memory/*`, `~/.claude/skills/*/*`. Triggers — remembering, saving a preference, updating project memory, adding feedback, modifying a skill/hook/permission.
 ---
 
 # Hive-mind commit marker
