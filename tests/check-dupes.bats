@@ -81,14 +81,14 @@ LONG_LINE='This is a reasonably long duplicate content line for testing.'
 }
 
 @test "duplicate in a projects/<variant>/memory file emits JSON" {
-  mkdir -p "$HOME/.claude/projects/-Users-nick-Repo-foo/memory"
+  mkdir -p "$HOME/.claude/projects/-Users-alice-Repo-foo/memory"
   printf '%s\n%s\n' "$LONG_LINE" "$LONG_LINE" \
-    > "$HOME/.claude/projects/-Users-nick-Repo-foo/memory/note.md"
+    > "$HOME/.claude/projects/-Users-alice-Repo-foo/memory/note.md"
 
   run run_check
   [ "$status" -eq 0 ]
   ctx="$(printf '%s' "$output" | jq -r '.hookSpecificOutput.additionalContext')"
-  printf '%s' "$ctx" | grep -Fq '.claude/projects/-Users-nick-Repo-foo/memory/note.md'
+  printf '%s' "$ctx" | grep -Fq '.claude/projects/-Users-alice-Repo-foo/memory/note.md'
 }
 
 @test "multiple flagged files: listed comma-separated in the message" {

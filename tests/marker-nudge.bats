@@ -39,7 +39,7 @@ run_nudge() {
 }
 
 @test "edit to projects/<variant>/memory/<X>.md emits the nudge" {
-  payload="$(jq -cn --arg p "$HOME/.claude/projects/-Users-nick-Repo-foo/memory/note.md" '{tool_input:{file_path:$p}}')"
+  payload="$(jq -cn --arg p "$HOME/.claude/projects/-Users-alice-Repo-foo/memory/note.md" '{tool_input:{file_path:$p}}')"
   run bash -c "printf '%s' '$payload' | bash '$SCRIPT'"
   [ "$status" -eq 0 ]
   [ -n "$output" ]

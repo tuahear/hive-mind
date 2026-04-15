@@ -109,7 +109,7 @@ No copy-paste between machines, no forgetting what you told it where.
 - **Backups before anything destructive.** The installer copies `~/.claude` to `~/.claude.backup-<timestamp>` before touching a thing.
 - **Works offline.** Sync failures log to `~/.claude/.sync-error.log` and retry next turn. Your AI never blocks on a bad network.
 - **Conflict-tolerant.** Concurrent memory edits from two machines auto-merge via git's `union` driver (concatenates both sides). A tiny `check-dupes.sh` flags duplicates for the next session to clean up.
-- **Path-encoding tolerant.** The same repo cloned at `/Users/nick/Repo/foo` on Mac and `C:\Users\thiti\Repo\foo` on Windows maps to two different `projects/<encoded-cwd>/` dirs. A pre-commit mirror step (`mirror-projects.sh`) groups the variants and line-unions their contents, so whichever encoded dir the local agent reads, it sees the full shared memory.
+- **Path-encoding tolerant.** The same repo cloned at `/Users/alice/Repo/foo` on Mac and `C:\Users\bob\Repo\foo` on Windows maps to two different `projects/<encoded-cwd>/` dirs. A pre-commit mirror step (`mirror-projects.sh`) groups the variants and line-unions their contents, so whichever encoded dir the local agent reads, it sees the full shared memory.
 - **Meaningful git history.** The bundled `hive-mind` skill trains your agent to drop a one-line commit marker with each edit — so `git log` reads like a changelog, not `update file.md` stubs.
 - **Whitelist-only `.gitignore`.** Default is "ignore everything, re-allow portable bits." No risk of accidentally committing session-secret files.
 

@@ -21,9 +21,6 @@
 #     the same project and unified.
 #   - A variant with no sidecar AND no usable local cwd+git remote is
 #     left alone — never grouped, never overwritten.
-#   - Legacy `<variant>/memory/.hive-mind-project-id` (single-value
-#     file from the first cut of this design) is auto-migrated to the
-#     new key=value format, then deleted.
 #
 # The sidecar is intentionally a flat text key=value file so future
 # metadata (machine origin, last-mirrored timestamp, etc.) can be added
@@ -35,16 +32,14 @@
 # or structured non-text content can't be corrupted.
 #
 # Only `MEMORY.md` and files under `memory/` are mirrored — session
-# transcripts and other local state are left alone. The sidecar files
-# (current and legacy) are excluded from content sync; each variant
-# maintains its own.
+# transcripts and other local state are left alone. The sidecar is
+# excluded from content sync; each variant maintains its own.
 
 set +e
 cd ~/.claude || exit 0
 [ -d projects ] || exit 0
 
 MARKER_FILE=".hive-mind"
-LEGACY_MARKER=".hive-mind-project-id"
 
 # Read a key from a key=value sidecar. Echoes the value (or nothing).
 read_meta() {
@@ -78,18 +73,7 @@ normalize_remote() {
 discover_id() {
   local pdir="$1"
   local meta="$pdir/memory/$MARKER_FILE"
-  local legacy="$pdir/memory/$LEGACY_MARKER"
   local id=""
-
-  # Migrate legacy single-value sidecar to the new key=value format.
-  if [ -s "$legacy" ] && [ ! -f "$meta" ]; then
-    id="$(head -n 1 "$legacy" | tr -d '\r\n')"
-    if [ -n "$id" ]; then
-      mkdir -p "$pdir/memory"
-      printf 'project-id=%s\n' "$id" > "$meta"
-      rm -f "$legacy"
-    fi
-  fi
 
   if [ -f "$meta" ]; then
     id="$(read_meta "$meta" "project-id" | tr -d '\r\n')"
@@ -145,8 +129,7 @@ list_rels() {
   [ -f "$v/MEMORY.md" ] && printf 'MEMORY.md\n'
   if [ -d "$v/memory" ]; then
     (cd "$v" && find memory -type f 2>/dev/null) \
-      | grep -v "^memory/$MARKER_FILE\$" \
-      | grep -v "^memory/$LEGACY_MARKER\$"
+      | grep -v "^memory/$MARKER_FILE\$"
   fi
 }
 

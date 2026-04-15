@@ -89,7 +89,7 @@ marker() {
   git -c init.defaultBranch=main init -q "$proj_dir"
   git -C "$proj_dir" remote add origin git@github.com:Owner/MyRepo.git
 
-  variant="$HOME/.claude/projects/-Users-nick-myrepo"
+  variant="$HOME/.claude/projects/-Users-alice-myrepo"
   mkdir -p "$variant"
   printf '{"cwd":"%s"}\n' "$proj_dir" > "$variant/session.jsonl"
 
