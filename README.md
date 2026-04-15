@@ -100,6 +100,15 @@ Monday 2pm:   desktop — you start a new AI session
 
 No copy-paste between machines, no forgetting what you told it where.
 
+### Even on a single machine
+
+Cross-machine sync is the headline — but hive-mind earns its keep on one computer too:
+
+- **Backup** — machine dies, you reinstall and pull; memory restored.
+- **Edit history** — `git log` shows every memory change, with diffs.
+- **Rollback** — bad memory got written? Revert the commit.
+- **You own it** — memory lives in your private repo, not a vendor cloud.
+
 ---
 
 ## Features you'll appreciate
