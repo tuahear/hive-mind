@@ -16,12 +16,12 @@ hero:
 features:
   - title: 🌐 Synced everywhere
     details: Shared global and project memories across macOS, Linux, and Windows.
-  - title: 🧬 Conflict-tolerant
-    details: Edit memory from any machine, anytime. No problem.
   - title: 🔒 Your data, your repo
     details: Memory lives in a private git repo you control. No vendor lock-in.
   - title: 🪶 Ultra-light
     details: ~175 tokens fully loaded, ~85 tokens idle. Almost zero context overhead.
+  - title: 🧬 Conflict-tolerant
+    details: Edit memory from any machine, anytime. No problem.
   - title: 🔁 Works offline
     details: Sync failures retry next turn. Your AI never blocks on a bad network.
   - title: 📜 Meaningful git history
