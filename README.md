@@ -53,13 +53,7 @@ Type `/hooks` in any session or start a fresh one — the sync hooks activate. T
 
 ---
 
-## Ultra-light skill
-
-Two things by design: the `hive-mind` skill adds **almost nothing** to your context, and those few tokens only load when actually needed. An idle session sees only the one-line skill description (~85 tokens); the body (~90 tokens) loads on demand, only while your AI is editing a memory, settings, or skill file. **Fully loaded: only ~175 tokens.**
-
----
-
-## Features
+## Highlights
 
 - 🌐 **Synced everywhere** — Sync your global and project memories across every machine.
 - 🔒 **Your data, your repo** — Memory lives in a private git repo you control. No vendor lock-in.
