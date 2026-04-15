@@ -8,6 +8,7 @@
 SCRIPT="$BATS_TEST_DIRNAME/../scripts/jsonmerge.sh"
 
 setup() {
+  command -v jq >/dev/null || skip "jq not on PATH"
   WORK="$(mktemp -d)"
   OURS="$WORK/ours.json"
   BASE="$WORK/base.json"

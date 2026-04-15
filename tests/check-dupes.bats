@@ -8,6 +8,7 @@
 SCRIPT="$BATS_TEST_DIRNAME/../scripts/check-dupes.sh"
 
 setup() {
+  command -v jq >/dev/null || skip "jq not on PATH"
   HOME="$(mktemp -d)"
   export HOME
   mkdir -p "$HOME/.claude"
