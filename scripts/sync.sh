@@ -48,7 +48,7 @@ if ! git diff --cached --quiet; then
   # the file so it never enters git history. Hooks bypass Claude's tool
   # permission system, which is why all of this happens here rather than
   # asking the agent to do it via a separate Write tool call.
-  while IFS= read -r f; do
+  while IFS= read -r -d '' f; do
     [ -f "$f" ] || continue
     case "$f" in
       "CLAUDE.md"|projects/*/memory/*|projects/*/MEMORY.md|skills/*) ;;
@@ -120,7 +120,7 @@ if ! git diff --cached --quiet; then
     else
       rm -f "$tmp"
     fi
-  done < <(git diff --cached --name-only)
+  done < <(git diff --cached --name-only -z)
 
   # Clip the joined message so git log doesn't blow up on pathological cases
   # (many markers in one turn). 500 chars covers ~5-8 reasonable markers.

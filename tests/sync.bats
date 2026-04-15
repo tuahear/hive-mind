@@ -182,6 +182,25 @@ marker() {
   grep -q 'fake' "$HOME/.claude/settings.json"
 }
 
+@test "marker-scan loop handles a staged filename containing a newline (NUL-delimited read)" {
+  # Round-4 regression guard: the marker-scan loop previously read staged
+  # paths newline-delimited, so a filename containing \n would be split
+  # across two read iterations — the marker inside it would be skipped.
+  # With `git diff --cached --name-only -z` + `read -d ''`, the filename
+  # passes through intact and the marker is extracted normally.
+  mkdir -p "$HOME/.claude/skills"
+  weird=$'weird\nname.md'
+  printf 'before\n%s\nafter\n' "$(marker 'across newline filename')" \
+    > "$HOME/.claude/skills/$weird"
+
+  run run_sync
+  [ "$status" -eq 0 ]
+  [ "$(git -C "$HOME/.claude" log -1 --format=%s)" = "across newline filename" ]
+  # Marker must be stripped from the file on disk.
+  run grep -Fq 'commit:' "$HOME/.claude/skills/$weird"
+  [ "$status" -ne 0 ]
+}
+
 @test "basename containing spaces survives the fallback join (no xargs word-splitting)" {
   # Round-2 regression guard: the old pipeline (echo | xargs -n1 basename |
   # paste) split on whitespace, so 'two word.md' became three tokens. With
