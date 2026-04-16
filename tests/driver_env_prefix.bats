@@ -74,6 +74,31 @@ _load_helper() {
   [ "$output" = "FIRST=1 " ]
 }
 
+@test "register_merge_drivers registers NO drivers when ADAPTER_SETTINGS_MERGE_BINDINGS is empty" {
+  # Docs contract: empty ADAPTER_SETTINGS_MERGE_BINDINGS means "no
+  # drivers for this adapter." Previously the function silently
+  # registered jsonmerge as a legacy fallback, which both contradicted
+  # the docs and forced a jq dependency onto adapters that don't use
+  # JSON configs. Legacy back-compat for pre-adapter-contract installs
+  # lives in the already_synced case inline, not in register_merge_drivers.
+  target="$(mktemp -d)"
+  git -c init.defaultBranch=main init -q "$target"
+
+  HIVE_MIND_DIR="$(mktemp -d)"
+  mkdir -p "$HIVE_MIND_DIR/core"
+  : > "$HIVE_MIND_DIR/core/jsonmerge.sh"
+
+  ADAPTER_SETTINGS_MERGE_BINDINGS=""
+  ADAPTER_MERGE_DRIVER_ENV=""
+
+  eval "$(awk '/^register_merge_drivers\(\)/,/^}/' "$SETUP")"
+  register_merge_drivers "$target"
+
+  # No merge.* configs should be set.
+  run git -C "$target" config --get-regexp '^merge\.'
+  [ "$status" -ne 0 ]
+}
+
 @test "register_merge_drivers quotes the %A/%O/%B placeholders in the git config" {
   # Regression: the merge-driver command string registered via
   # `git config merge.<drv>.driver "...<script> %A %O %B"` must

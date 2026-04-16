@@ -258,11 +258,16 @@ register_merge_drivers() {
         git -C "$target_git" config "merge.${drv}.name" "hive-mind ${drv} driver"
     done <<< "$drivers"
 
-    if [ -z "$drivers" ] && [ -f "$HIVE_MIND_DIR/core/jsonmerge.sh" ]; then
-        # Quoted script path AND placeholders — see main loop above.
-        git -C "$target_git" config merge.jsonmerge.driver "'$HIVE_MIND_DIR/core/jsonmerge.sh' '%A' '%O' '%B'"
-        git -C "$target_git" config merge.jsonmerge.name "Deep-merge JSON with array union (hive-mind)"
-    fi
+    # No implicit-jsonmerge fallback: the adapter contract requires
+    # ADAPTER_SETTINGS_MERGE_BINDINGS to be declared (may be empty),
+    # and empty explicitly means "no merge drivers for this adapter".
+    # Registering jsonmerge unconditionally here would add a jq
+    # dependency to adapters that don't use JSON configs (e.g. a pure-
+    # TOML adapter) and contradict the documented contract. The legacy
+    # pre-adapter-contract installs still get covered by the inline
+    # jsonmerge registration inside the already_synced case below
+    # when adapter-load fails — scoped to that specific back-compat
+    # path, not leaked into new adapters.
 }
 register_jsonmerge_driver() { register_merge_drivers "$@"; }
 
