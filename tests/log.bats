@@ -56,3 +56,34 @@ setup() {
   )"
   [ "$out" = "https://***@host.com/repo" ]
 }
+
+@test "@ later in path is NOT mangled (userinfo-only anchor)" {
+  # The old regex `://[^@]*@` was greedy up to the first `@` anywhere
+  # in the URL. For a URL like `https://github.com/owner/foo@tag/bar`
+  # (a submodule/ref form that git does accept) the old pattern
+  # swallowed `://github.com/owner/foo@` and produced `https://***@tag/bar`
+  # — mangled. The new anchor `[^@/]*` stops at the first `/` so only
+  # the userinfo segment is eligible for masking.
+  out="$(hm_sanitize_url 'https://github.com/owner/foo@v1.2.3/bar')"
+  [ "$out" = "https://github.com/owner/foo@v1.2.3/bar" ]
+}
+
+@test "credential URL with @-in-path both present: only userinfo is masked" {
+  # Defense in depth: if a URL genuinely has both embedded creds AND
+  # a later `@`, the mask must stop at the end of userinfo. Otherwise
+  # the wrong substring gets redacted and log readers can't tell the
+  # host apart from a ref token.
+  out="$(hm_sanitize_url 'https://user:pw@host.example.com/owner/repo@tag/file')"
+  [ "$out" = "https://***@host.example.com/owner/repo@tag/file" ]
+}
+
+@test "setup.sh sanitize_remote_url also preserves @-in-path" {
+  # Parity with hm_sanitize_url is required — both run at install
+  # time against the same URLs.
+  local setup="$BATS_TEST_DIRNAME/../setup.sh"
+  out="$(
+    eval "$(awk '/^sanitize_remote_url\(\)/,/^}/' "$setup")"
+    sanitize_remote_url 'https://github.com/owner/foo@v1.2.3/bar'
+  )"
+  [ "$out" = "https://github.com/owner/foo@v1.2.3/bar" ]
+}

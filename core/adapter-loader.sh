@@ -64,6 +64,21 @@ load_adapter() {
     return 1
   fi
 
+  # Clear any ADAPTER_* variables and adapter_* functions from a
+  # previously-loaded adapter. Without this, a second call to
+  # load_adapter can silently inherit values or functions from the
+  # first adapter — an omission in the second adapter's declarations
+  # (e.g. forgot to set ADAPTER_LOG_PATH, forgot to define
+  # adapter_migrate) would be masked by the leftover, defeating
+  # _validate_adapter's contract check.
+  local _v _f
+  for _v in $(compgen -v ADAPTER_ 2>/dev/null); do
+    unset "$_v"
+  done
+  for _f in $(compgen -A function adapter_ 2>/dev/null); do
+    unset -f "$_f"
+  done
+
   # ADAPTER_ROOT is set before sourcing so the adapter can reference its
   # own bundled assets (gitignore template, skills, etc.) portably.
   ADAPTER_ROOT="$adapters_dir/$adapter_name"

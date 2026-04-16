@@ -45,7 +45,11 @@ hm_log() {
 # Strip embedded credentials from a URL before logging.
 # https://x-access-token:ghp_xxx@github.com/… → https://***@github.com/…
 # POSIX basic regex — no -E flag (some minimal / busybox sed installs lack it).
+# The pattern is anchored to the userinfo segment only (between `://`
+# and the first `/`) so a `@` elsewhere in the URL — e.g. a tag or
+# submodule reference like `github.com/owner/repo@tag` — isn't mangled
+# into `***@tag`. Keep in sync with setup.sh's sanitize_remote_url.
 hm_sanitize_url() {
   local url="$1"
-  printf '%s' "$url" | sed 's|://[^@]*@|://***@|'
+  printf '%s' "$url" | sed 's|://[^@/]*@|://***@|'
 }

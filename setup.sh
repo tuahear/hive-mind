@@ -62,8 +62,12 @@ log() { echo "--> $*"; }
 # git remote URL before printing it -- token leaks to terminal/CI logs
 # are otherwise silent and permanent. Used for both MEMORY_REPO (user-
 # supplied) and the `origin` URL read back from git config.
+# Anchored to the userinfo segment (between `://` and the first `/`)
+# so an `@` later in the URL path — e.g. `github.com/owner/repo@tag` —
+# is not mistakenly redacted into `***@tag`. Mirror change to
+# core/log.sh's hm_sanitize_url; docs/tests cover both.
 sanitize_remote_url() {
-    printf '%s' "$1" | sed 's|://[^@]*@|://***@|'
+    printf '%s' "$1" | sed 's|://[^@/]*@|://***@|'
 }
 confirm() {
     local prompt="${1:-continue?}"

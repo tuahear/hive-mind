@@ -176,3 +176,54 @@ unset -f adapter_list_memory_files'
   run try_load "healthy"
   [ "$status" -eq 0 ]
 }
+
+# === cross-load state isolation ===========================================
+
+@test "load_adapter clears previous ADAPTER_* vars before sourcing the next adapter" {
+  # Scenario: load adapter A (healthy, all vars declared), then load
+  # adapter B which "forgets" to declare ADAPTER_LOG_PATH. Without
+  # state clearing, B inherits A's ADAPTER_LOG_PATH and passes
+  # validation — silently masking a contract omission. With clearing,
+  # B's missing declaration is caught by _validate_adapter.
+  write_adapter "first"  ''
+  write_adapter "second" 'unset ADAPTER_LOG_PATH'
+
+  run bash -c "
+    HIVE_MIND_ADAPTERS_DIR='$TEST_ADAPTERS_DIR' source '$LOADER'
+    HIVE_MIND_ADAPTERS_DIR='$TEST_ADAPTERS_DIR' load_adapter 'first' || exit 11
+    HIVE_MIND_ADAPTERS_DIR='$TEST_ADAPTERS_DIR' load_adapter 'second'
+  "
+  # The second load must fail (non-zero) because ADAPTER_LOG_PATH is
+  # missing. If state-clearing is broken, the leftover value from
+  # 'first' would let 'second' pass validation and this assertion
+  # wrongly holds.
+  [ "$status" -ne 0 ]
+  [[ "$output" = *"ADAPTER_LOG_PATH"* ]]
+}
+
+@test "load_adapter clears previous adapter_* functions before sourcing the next adapter" {
+  # Same class of bug for functions. adapter_migrate is in the
+  # required-function contract; if the second adapter forgets to
+  # define it, the loader must not let the first adapter's definition
+  # leak through. Since _validate_adapter does not currently reject
+  # missing functions (they are checked at call sites by the docs),
+  # assert the absence directly via `declare -f` in a post-load probe.
+  write_adapter "first_fn"  'adapter_migrate() { echo "from-first"; }'
+  write_adapter "second_fn" 'unset -f adapter_migrate'
+
+  run bash -c "
+    HIVE_MIND_ADAPTERS_DIR='$TEST_ADAPTERS_DIR' source '$LOADER'
+    HIVE_MIND_ADAPTERS_DIR='$TEST_ADAPTERS_DIR' load_adapter 'first_fn' >/dev/null 2>&1 || exit 11
+    HIVE_MIND_ADAPTERS_DIR='$TEST_ADAPTERS_DIR' load_adapter 'second_fn' >/dev/null 2>&1 || true
+    # Probe: adapter_migrate must NOT be defined after 'second_fn'
+    # was sourced. Print a sentinel the parent can grep.
+    if declare -f adapter_migrate >/dev/null 2>&1; then
+      echo 'LEAK: adapter_migrate still defined from first adapter'
+      exit 1
+    fi
+    echo 'CLEAN'
+  "
+  [ "$status" -eq 0 ]
+  [[ "$output" = *"CLEAN"* ]]
+  [[ "$output" != *"LEAK"* ]]
+}
