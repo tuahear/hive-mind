@@ -254,7 +254,12 @@ awk -F'\t' '
       local_key = key
     }
     if (sec != section) {
-      if (section != "" || sec != "") print ""
+      # No blank line before the new section header. toml_flatten
+      # rejects blank lines after content (blank lines carry visual
+      # grouping intent we do not track), so emitting one here would
+      # make our own output non-round-trippable: a second merge on
+      # the first merge output would parse-fail and fall back to git
+      # default merger.
       if (sec != "") print "[" sec "]"
       section = sec
     }

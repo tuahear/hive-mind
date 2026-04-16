@@ -205,3 +205,43 @@ run_merge() {
   run grep '"a"' "$OURS"
   [ "$status" -ne 0 ]
 }
+
+@test "self-round-trip: tomlmerge's output is re-mergeable without fallback" {
+  # The reconstruction step must not emit blank lines between sections
+  # because toml_flatten rejects blank lines after content. If it did,
+  # merging once would produce output that parses-fail on the second
+  # merge, and every subsequent merge on the file would silently fall
+  # back to git's default 3-way merger — defeating the point of
+  # registering the driver at all.
+  #
+  # Scenario: first merge, feed the result back in as OURS of a new
+  # merge against an unrelated THEIRS. Both merges must succeed.
+  printf '[alpha]\nk = "1"\n[beta]\nk = "2"\n' > "$OURS"
+  printf '[alpha]\nk = "1"\n[beta]\nk = "2b"\n' > "$THEIRS"
+  run run_merge
+  [ "$status" -eq 0 ]
+
+  # Sanity: output contains both sections.
+  grep -q '^\[alpha\]$' "$OURS"
+  grep -q '^\[beta\]$' "$OURS"
+
+  # Second merge uses the first merge's output as OURS.
+  printf '[alpha]\nk = "1"\n[beta]\nk = "2c"\n[gamma]\nk = "3"\n' > "$THEIRS"
+  run run_merge
+  [ "$status" -eq 0 ]
+  grep -q 'k = "2c"' "$OURS"
+  grep -q '^\[gamma\]$' "$OURS"
+}
+
+@test "reconstruction emits no blank lines between sections" {
+  # Explicit pin: the output of a merge must contain zero fully-blank
+  # lines. This is the exact invariant the self-round-trip test above
+  # depends on, asserted directly so a regression shows up with a
+  # clearer error than "the second merge fell back".
+  printf '[a]\nk = "1"\n[b]\nk = "2"\n' > "$OURS"
+  printf '[a]\nk = "1x"\n[b]\nk = "2"\n' > "$THEIRS"
+  run run_merge
+  [ "$status" -eq 0 ]
+  run grep -cE '^$' "$OURS"
+  [ "$output" = "0" ]
+}

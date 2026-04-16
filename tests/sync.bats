@@ -436,6 +436,41 @@ EOF
   git -C "$fresh" rev-parse --abbrev-ref '@{u}' >/dev/null 2>&1
 }
 
+@test "deprecated scripts/sync.sh shim loads claude adapter so non-.md files under skills/ get marker-scanned" {
+  # The shim at scripts/sync.sh exec's core/sync.sh. If the shim does
+  # NOT pre-load the claude adapter, core/sync.sh falls back to the
+  # generic *.md pattern for marker targets — which never matches a
+  # non-.md file under skills/. Pre-refactor behavior was to scan the
+  # full Claude whitelist (including `skills/*`), so the shim must
+  # reproduce that or commit markers in .txt / other extensions silently
+  # leak into committed content instead of becoming the commit message.
+  shim="$BATS_TEST_DIRNAME/../scripts/sync.sh"
+
+  # The seed()-written .gitignore already whitelists skills/** so a
+  # staged .txt file inside is committable without further setup.
+  mkdir -p "$HOME/.claude/skills/test-skill"
+  marker_body="marker inside a non-markdown skills file"
+  printf '%s\nsome shell or plain text content\n' "$(marker "$marker_body")" \
+    > "$HOME/.claude/skills/test-skill/notes.txt"
+
+  run bash "$shim"
+  [ "$status" -eq 0 ]
+
+  # If the shim loaded claude-code, ADAPTER_MARKER_TARGETS includes
+  # `skills/*`, which in POSIX case globs (`*` spans `/`) matches
+  # `skills/test-skill/notes.txt`. The marker gets extracted and
+  # becomes the commit subject instead of the "update notes.txt"
+  # fallback.
+  subject="$(git -C "$HOME/.claude" log -1 --format=%s)"
+  [ "$subject" = "$marker_body" ]
+
+  # And the marker itself is stripped from the committed file —
+  # confirms the marker-extract pass actually ran on the path, not
+  # that the commit message coincidentally matched.
+  run grep -F "$(marker "$marker_body")" "$HOME/.claude/skills/test-skill/notes.txt"
+  [ "$status" -ne 0 ]
+}
+
 @test "release_lock does not remove the lock dir after another process reclaimed it" {
   # Race guarded: legitimate sync A runs long (>STALE_AGE_SEC); sync B
   # deems A's lock stale, removes it, and acquires a fresh lock. A's
