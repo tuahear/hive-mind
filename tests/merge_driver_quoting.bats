@@ -99,6 +99,28 @@ REPO_ROOT="$BATS_TEST_DIRNAME/.."
   printf '%s\n' "$block" | grep -qE '^[[:space:]]*exit 0[[:space:]]*$'
 }
 
+@test "setup.sh already_synced sync invocation provides ADAPTER_DIR fallback for set -u" {
+  # Regression: setup.sh runs under `set -euo pipefail`. If the adapter
+  # failed to load (adapter-loader.sh missing or load_adapter returned
+  # non-zero), ADAPTER_DIR is never set by the adapter. A bare
+  # `ADAPTER_DIR="$ADAPTER_DIR"` expansion would then crash the
+  # installer with "unbound variable" — right in the path that is
+  # supposed to degrade gracefully. Pin the ${ADAPTER_DIR:-...} default
+  # so a future refactor doesn't silently reintroduce the crash.
+  setup="$BATS_TEST_DIRNAME/../setup.sh"
+  [ -f "$setup" ]
+  block="$(awk '/^    already_synced\)/,/^        ;;/' "$setup")"
+  [ -n "$block" ]
+  # The sync invocation must use a fallback form, not bare $ADAPTER_DIR.
+  # Accept any `${ADAPTER_DIR:-...}` spelling; reject a bare
+  # `ADAPTER_DIR="$ADAPTER_DIR"` on the sync env line.
+  if printf '%s\n' "$block" | grep -qE 'ADAPTER_DIR="\$ADAPTER_DIR"[[:space:]]*\\?$'; then
+    echo "bare \$ADAPTER_DIR (no :- fallback) in already_synced sync invocation" >&2
+    return 1
+  fi
+  printf '%s\n' "$block" | grep -qE 'ADAPTER_DIR="\$\{ADAPTER_DIR:-[^}]+\}"'
+}
+
 @test "docs/*.md: any git config merge.*.driver example uses quoted %A %O %B" {
   # Same drift risk in contributor / adapter docs. If no doc yet
   # mentions the pattern this test trivially passes; if docs add a

@@ -344,7 +344,14 @@ case "$STATE" in
         # hook-driven runs. Non-blocking: errors log to the adapter's
         # log, installer exits 0 regardless.
         if [ -x "$HIVE_MIND_DIR/core/sync.sh" ]; then
-            ADAPTER_DIR="$ADAPTER_DIR" \
+            # ADAPTER_DIR falls back to $MEMORY_DIR when the adapter
+            # failed to load — in that branch adapter.sh never sourced
+            # so ADAPTER_DIR is unset, and under `set -u` the bare
+            # `$ADAPTER_DIR` expansion would crash the installer right
+            # in the path that is supposed to degrade gracefully.
+            # $MEMORY_DIR is always defined by this point and points
+            # at the memory repo sync.sh needs to cd into.
+            ADAPTER_DIR="${ADAPTER_DIR:-$MEMORY_DIR}" \
             ADAPTER_LOG_PATH="${ADAPTER_LOG_PATH:-}" \
             ADAPTER_MARKER_TARGETS="${ADAPTER_MARKER_TARGETS:-}" \
             ADAPTER_SECRET_FILES="${ADAPTER_SECRET_FILES:-}" \
