@@ -151,6 +151,8 @@ _validate_adapter() {
     ADAPTER_FALLBACK_STRATEGY
     ADAPTER_SKILL_ROOT
     ADAPTER_SKILL_FORMAT
+    ADAPTER_HUB_MAP
+    ADAPTER_PROJECT_CONTENT_RULES
   )
   for var in "${required_defined_vars[@]}"; do
     if [ -z "${!var+x}" ]; then

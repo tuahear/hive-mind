@@ -205,6 +205,16 @@ teardown() {
   [ "${ADAPTER_FALLBACK_STRATEGY+x}" = "x" ]
 }
 
+# === I. Hub mapping (v0.3.0) ===============================================
+
+@test "ADAPTER_HUB_MAP is declared (may be empty)" {
+  [ "${ADAPTER_HUB_MAP+x}" = "x" ]
+}
+
+@test "ADAPTER_PROJECT_CONTENT_RULES is declared (may be empty)" {
+  [ "${ADAPTER_PROJECT_CONTENT_RULES+x}" = "x" ]
+}
+
 @test "fallback strategy is valid if hook system is absent" {
   [ "$ADAPTER_HAS_HOOK_SYSTEM" = "true" ] && skip "has hook system"
   [[ "$ADAPTER_FALLBACK_STRATEGY" =~ ^(watcher|polling|manual)$ ]]

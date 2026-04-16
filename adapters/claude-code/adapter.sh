@@ -171,6 +171,30 @@ adapter_disable_instructions() {
 # --- G. Fallback -----------------------------------------------------------
 ADAPTER_FALLBACK_STRATEGY=""  # not needed — Claude Code has hooks
 
+# --- I. Hub mapping (v0.3.0 hub topology) ---------------------------------
+# Declares how the hub's provider-agnostic schema maps to Claude's
+# tool-native layout. The hub sync engine reads this bidirectionally:
+# harvest (tool → hub) and fan-out (hub → tool). Entries are
+# newline-separated TAB-delimited pairs `<hub-path>\t<tool-rel-path>`.
+# Tool paths are relative to ADAPTER_DIR ($HOME/.claude).
+#
+# Not yet consumed by any code — landing the contract first so future
+# commits can layer the hub harvest / fan-out logic on top without
+# another contract change.
+ADAPTER_HUB_MAP=$'memory.md\tCLAUDE.md
+skills\tskills
+config/hooks\tsettings.json#hooks
+config/permissions/allow.txt\tsettings.json#permissions.allow
+config/permissions/deny.txt\tsettings.json#permissions.deny
+config/permissions/ask.txt\tsettings.json#permissions.ask'
+
+# Rules for hub's `projects/<id>/` subtree ↔ Claude's per-project
+# layout. Claude uses `projects/<encoded-cwd>/memory/*` + the top-level
+# `projects/<encoded-cwd>/MEMORY.md`. The hub keeps both under
+# `projects/<id>/` with lowercase canonical names.
+ADAPTER_PROJECT_CONTENT_RULES=$'memory.md\tMEMORY.md
+memory\tmemory'
+
 # --- H. Logging ------------------------------------------------------------
 ADAPTER_LOG_PATH="${ADAPTER_DIR}/.sync-error.log"
 

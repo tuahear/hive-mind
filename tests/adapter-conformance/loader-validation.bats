@@ -67,6 +67,8 @@ ADAPTER_SETTINGS_MERGE_BINDINGS=""
 adapter_activation_instructions() { echo "activate"; }
 adapter_disable_instructions() { echo "disable"; }
 ADAPTER_FALLBACK_STRATEGY=""
+ADAPTER_HUB_MAP=""
+ADAPTER_PROJECT_CONTENT_RULES=""
 ADAPTER_LOG_PATH="\$ADAPTER_DIR/.sync-error.log"
 adapter_healthcheck() { :; }
 adapter_migrate() { :; }

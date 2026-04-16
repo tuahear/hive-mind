@@ -41,6 +41,8 @@ These pass validation with an empty string but the assignment itself must be pre
 | `ADAPTER_FALLBACK_STRATEGY` | How the adapter behaves when the tool's config is missing (empty = adapter's default) |
 | `ADAPTER_SKILL_ROOT` | Absolute path to the tool's skills dir (empty = fall back to `$MEMORY_DIR/skills`) |
 | `ADAPTER_SKILL_FORMAT` | Skill file layout identifier (empty = the tool has no distinct skill system) |
+| `ADAPTER_HUB_MAP` | (v0.3.0 hub topology) Newline-separated TAB-delimited pairs `<hub-path>\t<tool-rel-path>` mapping hub-canonical items to the tool's native layout. The hub sync engine reads this bidirectionally (harvest and fan-out). Empty = adapter doesn't participate in hub sync yet. |
+| `ADAPTER_PROJECT_CONTENT_RULES` | (v0.3.0 hub topology) Newline-separated TAB-delimited pairs `<hub-rel>\t<tool-rel>` for files under `projects/<project-id>/**`. Lets the adapter whitelist what's safe to harvest/fan-out in per-project subtrees. Empty = adapter has no per-project concept. |
 
 **Conditional — required only under certain memory models:**
 
