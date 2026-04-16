@@ -85,7 +85,21 @@ fi
 
 # Early gate: if nothing has changed in the working tree AND there are no
 # unpushed local commits, skip entirely -- no network, no git, no cost.
-if [ -z "$(git status --porcelain)" ] && [ -z "$(git log @{u}.. --oneline 2>/dev/null)" ]; then
+# Determine "unpushed" with the same fallback used by the push block:
+# prefer @{u}, fall back to origin/<branch>, give up (treat as unpushed
+# so we don't short-circuit) when neither is configured.
+_early_unpushed=0
+_current_branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)"
+if git rev-parse --abbrev-ref @{u} >/dev/null 2>&1; then
+  [ -n "$(git log @{u}.. --oneline 2>/dev/null)" ] && _early_unpushed=1
+elif git rev-parse --verify "origin/$_current_branch" >/dev/null 2>&1; then
+  [ -n "$(git log "origin/$_current_branch..HEAD" --oneline 2>/dev/null)" ] && _early_unpushed=1
+else
+  # No upstream and no matching remote branch — never short-circuit,
+  # the push block below needs to do the first push.
+  _early_unpushed=1
+fi
+if [ -z "$(git status --porcelain)" ] && [ "$_early_unpushed" -eq 0 ]; then
   exit 0
 fi
 

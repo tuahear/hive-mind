@@ -1,6 +1,10 @@
 #!/usr/bin/env bats
 # Tests for memory repo format version management.
 # Covers .hive-mind-format seeding, remote-newer abort, remote-equal pass.
+#
+# Tool-agnostic: uses a generic $ADAPTER_ROOT dir name (not ~/.claude)
+# and a generic MEMORY.md memory file (not CLAUDE.md). Exercises the
+# format version logic against any adapter that follows the contract.
 
 REPO_ROOT="$BATS_TEST_DIRNAME/../.."
 SYNC="$REPO_ROOT/core/sync.sh"
@@ -8,6 +12,9 @@ SYNC="$REPO_ROOT/core/sync.sh"
 setup() {
   HOME="$(mktemp -d)"
   export HOME
+
+  ADAPTER_ROOT="$HOME/adapter-root"
+  MEMORY_FILE="$ADAPTER_ROOT/MEMORY.md"
 
   # Seed a working remote with an initial commit.
   git -c init.defaultBranch=main init -q "$HOME/seed"
@@ -18,16 +25,16 @@ setup() {
   git -C "$HOME/seed" commit -q -m seed
   git clone -q --bare "$HOME/seed" "$HOME/remote.git"
 
-  git clone -q "$HOME/remote.git" "$HOME/.claude"
-  git -C "$HOME/.claude" config user.email t@t.t
-  git -C "$HOME/.claude" config user.name t
+  git clone -q "$HOME/remote.git" "$ADAPTER_ROOT"
+  git -C "$ADAPTER_ROOT" config user.email t@t.t
+  git -C "$ADAPTER_ROOT" config user.name t
 
-  cat > "$HOME/.claude/.gitignore" <<'EOF'
+  cat > "$ADAPTER_ROOT/.gitignore" <<'EOF'
 /*
 !/.gitignore
 !/.gitattributes
 !/.hive-mind-format
-!/CLAUDE.md
+!/MEMORY.md
 !/projects/
 /projects/*
 !/projects/*/
@@ -37,9 +44,9 @@ setup() {
 !/skills/
 !/skills/**
 EOF
-  git -C "$HOME/.claude" add .gitignore
-  git -C "$HOME/.claude" commit -q -m "add gitignore"
-  git -C "$HOME/.claude" push -q
+  git -C "$ADAPTER_ROOT" add .gitignore
+  git -C "$ADAPTER_ROOT" commit -q -m "add gitignore"
+  git -C "$ADAPTER_ROOT" push -q
 }
 
 teardown() {
@@ -47,20 +54,20 @@ teardown() {
 }
 
 run_sync() {
-  ADAPTER_DIR="$HOME/.claude" bash "$SYNC"
+  ADAPTER_DIR="$ADAPTER_ROOT" bash "$SYNC"
 }
 
 @test "fresh_empty_repo: first sync writes .hive-mind-format with format-version=1" {
-  printf 'hello\n' > "$HOME/.claude/CLAUDE.md"
+  printf 'hello\n' > "$MEMORY_FILE"
 
   run run_sync
   [ "$status" -eq 0 ]
 
-  [ -f "$HOME/.claude/.hive-mind-format" ]
-  grep -q 'format-version=1' "$HOME/.claude/.hive-mind-format"
+  [ -f "$ADAPTER_ROOT/.hive-mind-format" ]
+  grep -q 'format-version=1' "$ADAPTER_ROOT/.hive-mind-format"
 
   # Verify it was committed.
-  git -C "$HOME/.claude" log --oneline --all -- .hive-mind-format | grep -q .
+  git -C "$ADAPTER_ROOT" log --oneline --all -- .hive-mind-format | grep -q .
 }
 
 @test "remote_newer: remote has format 2, local on 1 → sync aborts, no writes to remote" {
@@ -76,10 +83,10 @@ run_sync() {
   rm -rf "$other"
 
   # Pull so local sees remote's format.
-  git -C "$HOME/.claude" pull --rebase --quiet 2>/dev/null || true
+  git -C "$ADAPTER_ROOT" pull --rebase --quiet 2>/dev/null || true
 
   # Now try to sync — should abort.
-  printf 'new content\n' > "$HOME/.claude/CLAUDE.md"
+  printf 'new content\n' > "$MEMORY_FILE"
   remote_head="$(git -C "$HOME/remote.git" rev-parse HEAD)"
 
   run run_sync
@@ -89,8 +96,8 @@ run_sync() {
   [ "$(git -C "$HOME/remote.git" rev-parse HEAD)" = "$remote_head" ]
 
   # Error logged.
-  [ -f "$HOME/.claude/.sync-error.log" ]
-  grep -q 'format.*2.*upgrade' "$HOME/.claude/.sync-error.log"
+  [ -f "$ADAPTER_ROOT/.sync-error.log" ]
+  grep -q 'format.*2.*upgrade' "$ADAPTER_ROOT/.sync-error.log"
 }
 
 @test "remote_equal: both on format 1 → sync proceeds normally" {
@@ -105,27 +112,27 @@ run_sync() {
   git -C "$other/w" push -q
   rm -rf "$other"
 
-  git -C "$HOME/.claude" pull --rebase --quiet
+  git -C "$ADAPTER_ROOT" pull --rebase --quiet
 
-  printf 'content\n' > "$HOME/.claude/CLAUDE.md"
+  printf 'content\n' > "$MEMORY_FILE"
   run run_sync
   [ "$status" -eq 0 ]
 
   # Commit landed on remote.
   msg="$(git -C "$HOME/remote.git" log -1 --format=%s)"
-  [ "$msg" = "update CLAUDE.md" ]
+  [ "$msg" = "update MEMORY.md" ]
 }
 
 @test "migration_idempotency: running sync twice doesn't duplicate format file" {
-  printf 'first\n' > "$HOME/.claude/CLAUDE.md"
+  printf 'first\n' > "$MEMORY_FILE"
   run run_sync
   [ "$status" -eq 0 ]
 
-  printf 'second\n' > "$HOME/.claude/CLAUDE.md"
+  printf 'second\n' > "$MEMORY_FILE"
   run run_sync
   [ "$status" -eq 0 ]
 
   # Only one format file, content unchanged.
-  [ "$(wc -l < "$HOME/.claude/.hive-mind-format" | tr -d ' ')" = "1" ]
-  grep -q 'format-version=1' "$HOME/.claude/.hive-mind-format"
+  [ "$(wc -l < "$ADAPTER_ROOT/.hive-mind-format" | tr -d ' ')" = "1" ]
+  grep -q 'format-version=1' "$ADAPTER_ROOT/.hive-mind-format"
 }
