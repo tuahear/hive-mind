@@ -1,5 +1,5 @@
 ---
-applyTo: "core/*.sh,adapters/**/*.sh,setup.sh,scripts/*.sh"
+applyTo: "core/*.sh,adapters/*/*.sh,setup.sh,scripts/*.sh"
 ---
 
 # Review guidance for hive-mind shell scripts
@@ -63,4 +63,4 @@ If you see a `git`/`curl`/external-tool invocation in a hook-reached script with
 
 - Kebab-case for directory/adapter names, snake_case for shell functions, UPPER_SNAKE_CASE for exported vars.
 - All adapter contract symbols start with `ADAPTER_` (vars) or `adapter_` (functions).
-- Commit marker convention: `<!-- commit: <imperative, ≥5 words, ≤80 chars, no period> -->` — markers on their own line are extracted by `core/marker-extract.sh`; markers inside ``` code fences are preserved.
+- Commit marker convention: `<!-- commit: <imperative, ≥5 words, ≤80 chars, no period> -->` — markers on their own line are extracted by `core/marker-extract.sh`; markers inside fenced code blocks are preserved.

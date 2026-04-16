@@ -1,5 +1,5 @@
 ---
-applyTo: ".github/workflows/**/*.yml"
+applyTo: ".github/workflows/**/*.yml,.github/workflows/**/*.yaml"
 ---
 
 # Review guidance for hive-mind GitHub Actions workflows

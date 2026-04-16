@@ -4,7 +4,7 @@ applyTo: "docs/**,README.md,CHANGELOG.md"
 
 # Review guidance for hive-mind docs
 
-Documentation lives at two layers:
+Documentation spans three surfaces:
 
 - **README.md** — short marketing + install snippet. Don't suggest expanding it; it intentionally links out to the docs site.
 - **docs/** — VitePress site. Routes strip `.md` automatically.
