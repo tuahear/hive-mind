@@ -48,17 +48,33 @@ trap 'rm -f "$tmp" "$tmp.ours" "$tmp.theirs" "$tmp.merged"' EXIT
 # Exit non-zero if any non-blank, non-comment, non-section, non-key line
 # appears (inline tables, array-of-tables, multi-line strings, etc.) so
 # git can fall back to its default merge instead of silently dropping.
+#
+# Comment-loss safety: this driver reconstructs the output TOML from the
+# flat key list, which drops comments and blank lines. Users frequently
+# document config in TOML comments, so losing them on merge is a real
+# data-loss hazard. If either input contains comments or non-trailing
+# blank lines, exit non-zero so git falls back to its default 3-way
+# merge (which preserves comments via conflict markers for manual
+# resolution). Only activate the union-merge code path on "simple"
+# comment-free, blank-line-free TOML.
 toml_flatten() {
   awk '
-    BEGIN { section = ""; unrecognized = 0 }
-    /^[[:space:]]*#/  { next }
-    /^[[:space:]]*$/  { next }
+    BEGIN { section = ""; unrecognized = 0; saw_content = 0 }
+    /^[[:space:]]*#/  { unrecognized = 1; exit }
+    /^[[:space:]]*$/  {
+      # Blank lines are allowed before any content (file-leading whitespace)
+      # but reject them once key/value content has started — they carry
+      # visual grouping intent that would be lost in the reconstruction.
+      if (saw_content) { unrecognized = 1; exit }
+      next
+    }
     /^\[\[/ { unrecognized = 1; exit }   # array-of-tables
     /^\[([^\]]+)\][[:space:]]*$/ {
       s = $0
       gsub(/^[[:space:]]*\[/, "", s)
       gsub(/\][[:space:]]*$/, "", s)
       section = s
+      saw_content = 1
       next
     }
     /^[[:space:]]*[A-Za-z0-9_-]+[[:space:]]*=/ {
@@ -76,6 +92,7 @@ toml_flatten() {
       }
       fullkey = (section != "" ? section "." : "") key
       print fullkey "\t" val
+      saw_content = 1
       next
     }
     { unrecognized = 1; exit }
