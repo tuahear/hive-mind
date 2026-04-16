@@ -123,6 +123,44 @@ run_sync() {
   [ "$msg" = "update MEMORY.md" ]
 }
 
+@test "remote_newer with no upstream: fallback to origin/<branch> still fires the format gate" {
+  # Regression: the remote-format check only looked at `@{u}`. A fresh
+  # clone that hasn't had upstream tracking set yet (or `git push -u`)
+  # would skip the gate entirely — then the subsequent push could
+  # overwrite a newer-format remote that this install can't speak.
+  # Mirror the rest of sync.sh's @{u} fallback: when upstream is unset,
+  # consult origin/<current-branch> so the gate still catches a newer
+  # remote.
+  other="$(mktemp -d)"
+  git clone -q "$HOME/remote.git" "$other/w"
+  git -C "$other/w" config user.email t@t.t
+  git -C "$other/w" config user.name t
+  printf 'format-version=2\n' > "$other/w/.hive-mind-format"
+  git -C "$other/w" add .hive-mind-format
+  git -C "$other/w" commit -q -m "bump format to 2"
+  git -C "$other/w" push -q
+  rm -rf "$other"
+
+  # Refresh local ref for origin/main but DO NOT set upstream tracking.
+  git -C "$ADAPTER_ROOT" fetch -q origin
+  git -C "$ADAPTER_ROOT" branch --unset-upstream 2>/dev/null || true
+  # Sanity: @{u} must be unset so the fallback path is actually exercised.
+  run git -C "$ADAPTER_ROOT" rev-parse --abbrev-ref '@{u}'
+  [ "$status" -ne 0 ]
+  # But origin/main still resolves.
+  git -C "$ADAPTER_ROOT" rev-parse --verify origin/main >/dev/null
+
+  printf 'new content\n' > "$MEMORY_FILE"
+  remote_head="$(git -C "$HOME/remote.git" rev-parse HEAD)"
+
+  run run_sync
+  [ "$status" -eq 0 ]  # sync never blocks; exits 0 after logging
+
+  # Remote HEAD unchanged — the gate aborted despite @{u} being unset.
+  [ "$(git -C "$HOME/remote.git" rev-parse HEAD)" = "$remote_head" ]
+  grep -q 'format.*2.*upgrade' "$ADAPTER_ROOT/.sync-error.log"
+}
+
 @test "migration_idempotency: running sync twice doesn't duplicate format file" {
   printf 'first\n' > "$MEMORY_FILE"
   run run_sync

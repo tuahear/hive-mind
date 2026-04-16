@@ -152,7 +152,17 @@ FORMAT_FILE=".hive-mind-format"
 
 # Read remote format version from the branch's configured upstream (not
 # a hardcoded origin/main — users may track a different default branch).
+# Fall back to `origin/<current-branch>` when no upstream is configured,
+# matching the fallback the push block uses; without this a freshly-
+# cloned repo with no `@{u}` would skip the format gate entirely and
+# happily write to a remote whose format-version is newer than this
+# install knows how to speak.
+_fmt_current_branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)"
 upstream="$(git rev-parse --abbrev-ref @{u} 2>/dev/null)"
+if [ -z "$upstream" ] && [ -n "$_fmt_current_branch" ] \
+   && git rev-parse --verify "origin/$_fmt_current_branch" >/dev/null 2>&1; then
+  upstream="origin/$_fmt_current_branch"
+fi
 remote_fmt=""
 if [ -n "$upstream" ]; then
   remote_fmt="$(git show "$upstream:$FORMAT_FILE" 2>/dev/null | grep -oE '[0-9]+' | head -1)"

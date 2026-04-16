@@ -85,24 +85,18 @@ _adapter_var() {
   done
 }
 
-@test "HIVE_MIND_FORMAT_VERSION in sync.sh is a positive integer" {
-  # sync.sh sets HIVE_MIND_FORMAT_VERSION in a block guarded by side-
-  # effectful `cd "$ADAPTER_DIR"` and git calls. Source it in a
-  # subshell with a fake ADAPTER_DIR so those side effects are harmless.
-  fmt="$(
-    ADAPTER_DIR="$(mktemp -d)"
-    export ADAPTER_DIR
-    cd "$ADAPTER_DIR" || exit 1
-    git -c init.defaultBranch=main init -q 2>/dev/null
-    # shellcheck disable=SC1091
-    HIVE_MIND_FORMAT_VERSION=""
-    # sync.sh assigns the var then immediately does more work; we just
-    # need the assignment, so eval just that line via grep+source is
-    # overkill. Use awk to pull the literal line and eval it.
-    eval "$(awk '/^HIVE_MIND_FORMAT_VERSION=/{print; exit}' "$REPO_ROOT/core/sync.sh")"
-    printf '%s' "$HIVE_MIND_FORMAT_VERSION"
-  )"
-  [[ "$fmt" =~ ^[1-9][0-9]*$ ]]
+@test "HIVE_MIND_FORMAT_VERSION in sync.sh is a simple positive-integer assignment" {
+  # Pulled with awk, NOT eval. Eval-ing a line from the source file
+  # would execute anything on the RHS — a future refactor that makes
+  # the value a command substitution (e.g. `HIVE_MIND_FORMAT_VERSION=$(something)`)
+  # would silently run that subshell inside this test. Parse the raw
+  # line instead and insist the value is a bare positive integer; if a
+  # refactor breaks that shape, this test fires with a clear signal.
+  line="$(awk '/^HIVE_MIND_FORMAT_VERSION=/{print; exit}' "$REPO_ROOT/core/sync.sh")"
+  [ -n "$line" ]
+  # Exact-form assertion — left side is the name, right side is digits
+  # only with no spaces, quotes, or expansions.
+  [[ "$line" =~ ^HIVE_MIND_FORMAT_VERSION=[1-9][0-9]*$ ]]
 }
 
 @test "HIVE_MIND_FORMAT_VERSION is >= 1" {
