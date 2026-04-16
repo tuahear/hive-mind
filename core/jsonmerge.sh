@@ -2,7 +2,10 @@
 # Git merge driver for JSON config files (primarily ~/.claude/settings.json).
 #
 # Registered locally via (setup.sh does this — adapter-agnostic path):
-#   git config merge.jsonmerge.driver '$ADAPTER_DIR/hive-mind/core/jsonmerge.sh %A %O %B'
+#   git config merge.jsonmerge.driver "'$ADAPTER_DIR/hive-mind/core/jsonmerge.sh' '%A' '%O' '%B'"
+# The %A/%O/%B placeholders must be single-quoted: git substitutes
+# absolute temp-file paths before invoking via `sh -c`, and a path
+# with spaces would otherwise word-split.
 # On Claude Code, $ADAPTER_DIR resolves to ~/.claude; on Codex, ~/.codex; etc.
 # Referenced per-file in .gitattributes:
 #   settings.json merge=jsonmerge

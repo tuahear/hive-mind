@@ -322,8 +322,9 @@ case "$STATE" in
         else
             # Legacy fallback: register the known jsonmerge driver directly
             # so pre-adapter-contract installs keep working on upgrade.
-            # Quoted script path — space-safe for $HIVE_MIND_DIR with spaces.
-            git -C "$MEMORY_DIR" config merge.jsonmerge.driver "'$HIVE_MIND_DIR/core/jsonmerge.sh' %A %O %B" 2>/dev/null || true
+            # Quoted script path AND %A/%O/%B placeholders — same
+            # space-safety rationale as register_merge_drivers above.
+            git -C "$MEMORY_DIR" config merge.jsonmerge.driver "'$HIVE_MIND_DIR/core/jsonmerge.sh' '%A' '%O' '%B'" 2>/dev/null || true
             git -C "$MEMORY_DIR" config merge.jsonmerge.name "Deep-merge JSON with array union (hive-mind)" 2>/dev/null || true
         fi
         manage_claude_skills

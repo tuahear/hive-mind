@@ -355,7 +355,12 @@ if [ "$need_push" -eq 1 ]; then
         push_ok=1
         break
       fi
-      echo "$TS WARN sync: push failed, backing off ${backoff}s" >>"$LOG"
+      # Timestamp each retry log line at its actual emission time. The
+      # outer $TS was captured once near the top of the script; with
+      # backoff sleeps of up to 30s per iteration, retries can land
+      # tens of seconds after $TS and produce misleading entries when
+      # correlating with git-server-side logs.
+      echo "$(date -u +%FT%TZ) WARN sync: push failed, backing off ${backoff}s" >>"$LOG"
       sleep "$backoff"
       backoff=$((backoff * 2))
       [ "$backoff" -gt 30 ] && backoff=30
@@ -368,7 +373,7 @@ if [ "$need_push" -eq 1 ]; then
       mkdir -p "$HIVE_MIND_STATE_DIR" 2>>"$LOG" || true
       date +%s > "$LAST_PUSH_FILE" 2>>"$LOG" || true
     else
-      echo "$TS ERROR sync: push failed after $max_retries retries" >>"$LOG"
+      echo "$(date -u +%FT%TZ) ERROR sync: push failed after $max_retries retries" >>"$LOG"
     fi
   fi
 fi
