@@ -435,3 +435,35 @@ EOF
   # Upstream tracking got configured by the `-u` flag.
   git -C "$fresh" rev-parse --abbrev-ref '@{u}' >/dev/null 2>&1
 }
+
+@test "fresh install sets upstream for a branch name with unusual-but-valid characters" {
+  # Pins the push invocation's handling of arbitrary branch names.
+  # If push_args ever regresses to unquoted word-splitting, a branch
+  # name like `feat/with.dots+plus-dash` still pushes fine here, but
+  # the test guarantees the upstream-set path stays exercised for
+  # non-trivial refspecs so a future refactor that e.g. sanitizes the
+  # branch name through a regex gets caught.
+  empty_remote="$HOME/unusual-remote.git"
+  git -c init.defaultBranch=main init --bare -q "$empty_remote"
+
+  fresh="$HOME/fresh-unusual"
+  mkdir -p "$fresh"
+  git -c init.defaultBranch=main init -q "$fresh"
+  git -C "$fresh" config user.email test@example.com
+  git -C "$fresh" config user.name test
+  git -C "$fresh" remote add origin "$empty_remote"
+  git -C "$fresh" checkout -q -b 'feat/with.dots+plus-dash'
+
+  cat > "$fresh/.gitignore" <<'EOF'
+/*
+!/.gitignore
+!/CLAUDE.md
+EOF
+  printf 'unusual branch\n' > "$fresh/CLAUDE.md"
+
+  run bash -c "ADAPTER_DIR='$fresh' bash '$SCRIPT'"
+  [ "$status" -eq 0 ]
+
+  git -C "$empty_remote" log --oneline --all | grep -q .
+  [ "$(git -C "$fresh" rev-parse --abbrev-ref '@{u}')" = "origin/feat/with.dots+plus-dash" ]
+}

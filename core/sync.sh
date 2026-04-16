@@ -292,10 +292,12 @@ if [ "$need_push" -eq 1 ]; then
 
   if [ "$should_push" -eq 1 ]; then
     # If there's no upstream, set it on this push so subsequent syncs
-    # can use `@{u}` for the unpushed-commits check.
-    push_args=""
+    # can use `@{u}` for the unpushed-commits check. Build as an array
+    # so branch names with unusual characters can't be reinterpreted
+    # as flags via word-splitting; `--` separates refspec from flags.
+    push_args=()
     if ! git rev-parse --abbrev-ref @{u} >/dev/null 2>&1; then
-      push_args="-u origin $current_branch"
+      push_args=(-u origin -- "$current_branch")
     fi
 
     # Exponential backoff on push failure (1s, 2s, 4s, 8s, cap at 30s).
@@ -303,7 +305,7 @@ if [ "$need_push" -eq 1 ]; then
     backoff=1
     push_ok=0
     for (( _attempt=1; _attempt<=max_retries; _attempt++ )); do
-      if git push -q $push_args 2>>"$LOG"; then
+      if git push -q "${push_args[@]}" 2>>"$LOG"; then
         push_ok=1
         break
       fi
