@@ -58,6 +58,13 @@ MEMORY_REPO="${MEMORY_REPO:-${1:-}}"
 
 die() { echo "error: $*" >&2; exit 1; }
 log() { echo "--> $*"; }
+# Mask any embedded credentials (https://token:x-oauth@host/...) from a
+# git remote URL before printing it -- token leaks to terminal/CI logs
+# are otherwise silent and permanent. Used for both MEMORY_REPO (user-
+# supplied) and the `origin` URL read back from git config.
+sanitize_remote_url() {
+    printf '%s' "$1" | sed 's|://[^@]*@|://***@|'
+}
 confirm() {
     local prompt="${1:-continue?}"
     read -r -p "$prompt [y/N] " ans
@@ -170,7 +177,7 @@ if [ -z "$MEMORY_REPO" ]; then
     read -r -p "MEMORY_REPO: " MEMORY_REPO
 fi
 [ -n "$MEMORY_REPO" ] || die "MEMORY_REPO is required"
-log "memory repo: $MEMORY_REPO"
+log "memory repo: $(sanitize_remote_url "$MEMORY_REPO")"
 
 # ---------- detect state ----------
 if [ ! -d "$MEMORY_DIR" ]; then
@@ -234,14 +241,6 @@ register_merge_drivers() {
     fi
 }
 register_jsonmerge_driver() { register_merge_drivers "$@"; }
-
-# Mask any embedded credentials (https://token:x-oauth@host/...) from a
-# git remote URL before printing it — token leaks to terminal/CI logs
-# are otherwise silent and permanent.
-sanitize_remote_url() {
-    # POSIX basic sed; pattern matches the userinfo between :// and @.
-    printf '%s' "$1" | sed 's|://[^@]*@|://***@|'
-}
 
 case "$STATE" in
     already_synced)

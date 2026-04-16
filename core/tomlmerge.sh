@@ -118,12 +118,17 @@ parse_array() {
   # falls back to a normal 3-way merge.
   local tab=$'\t'
   local stripped="${val// /}"     # ignore spaces for the validation
-  stripped="${stripped//${tab}/}"  # ignore tabs — $'\t' is explicit vs literal char
-  if [ -n "$stripped" ] && [[ ! "$stripped" =~ ^\"[^\"]*\"(,\"[^\"]*\")*$ ]]; then
+  stripped="${stripped//${tab}/}"  # ignore tabs -- $'\t' is explicit vs literal char
+  # Element class [^\",] forbids quotes AND commas inside the element --
+  # the downstream split is just `tr ',' '\n'` (not quote-aware), so an
+  # array like ["a,b"] would split into ["a", "b"] and silently corrupt
+  # the config on write-back. Rejecting such arrays forces git to fall
+  # back to its normal 3-way merge with conflict markers instead.
+  if [ -n "$stripped" ] && [[ ! "$stripped" =~ ^\"[^\",]*\"(,\"[^\",]*\")*$ ]]; then
     return 1
   fi
   # Split on comma, strip quotes and whitespace. Preserves empty-string
-  # elements (`["", "x"]`) — they're valid TOML and the earlier regex
+  # elements (`["", "x"]`) -- they're valid TOML and the earlier regex
   # validation already rejected malformed arrays, so a blank line here
   # means a deliberate empty string, not stray whitespace.
   printf '%s' "$val" | tr ',' '\n' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e 's/^"//' -e 's/"$//'
