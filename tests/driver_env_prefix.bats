@@ -112,12 +112,14 @@ _load_helper() {
   target="$(mktemp -d)"
   git -c init.defaultBranch=main init -q "$target"
 
-  # Fake HIVE_MIND_DIR that only needs a core/jsonmerge.sh marker
-  # file; register_merge_drivers skips drivers whose core script is
-  # absent.
-  HIVE_MIND_DIR="$(mktemp -d)"
-  mkdir -p "$HIVE_MIND_DIR/core"
-  : > "$HIVE_MIND_DIR/core/jsonmerge.sh"
+  # Fake HIVE_MIND_SRC that only needs a core/jsonmerge.sh marker file;
+  # register_merge_drivers skips drivers whose core script is absent.
+  # (Under the v0.3.0 hub topology, the hive-mind source clone lives at
+  # $HIVE_MIND_HUB_DIR/hive-mind/ — the variable is HIVE_MIND_SRC, not
+  # the old HIVE_MIND_DIR the per-adapter-repo setup used.)
+  HIVE_MIND_SRC="$(mktemp -d)"
+  mkdir -p "$HIVE_MIND_SRC/core"
+  : > "$HIVE_MIND_SRC/core/jsonmerge.sh"
 
   ADAPTER_SETTINGS_MERGE_BINDINGS=$'settings.json jsonmerge'
   ADAPTER_MERGE_DRIVER_ENV=""
@@ -129,7 +131,7 @@ _load_helper() {
   driver="$(git -C "$target" config --get merge.jsonmerge.driver)"
   # Exact placeholder quoting; also asserts the script path is
   # single-quoted so the full command remains word-safe.
-  [[ "$driver" == *"'$HIVE_MIND_DIR/core/jsonmerge.sh' '%A' '%O' '%B'"* ]]
+  [[ "$driver" == *"'$HIVE_MIND_SRC/core/jsonmerge.sh' '%A' '%O' '%B'"* ]]
 
   # Defense-in-depth: no un-quoted placeholder survived, and no
   # placeholder appears without its wrapping single quotes.

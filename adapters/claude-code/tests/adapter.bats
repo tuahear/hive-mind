@@ -21,12 +21,11 @@ teardown() {
 
 @test "ADAPTER_DIR pre-set by the caller is preserved on adapter load" {
   # Default path must be ~/.claude, but a caller (tests, alternative
-  # installs, the deprecated scripts/sync.sh shim that exports
-  # ADAPTER_DIR before sourcing the adapter) should be able to
-  # override it. Hardcoding `ADAPTER_DIR=$HOME/.claude` without a
-  # fallback would overwrite the override; this test pins the ${:-}
-  # fallback so a regression fails here instead of silently routing
-  # sync to the wrong directory.
+  # installs, or setup.sh running against a non-default tool dir)
+  # should be able to override it. Hardcoding `ADAPTER_DIR=$HOME/.claude`
+  # without a fallback would overwrite the override; this test pins
+  # the ${:-} fallback so a regression fails here instead of silently
+  # routing sync to the wrong directory.
   custom="$HOME/alt-claude-dir"
   mkdir -p "$custom"
   (
@@ -60,11 +59,21 @@ teardown() {
   [ "$matcher" = "Edit|Write|NotebookEdit" ]
 }
 
-@test "settings.json hook commands reference core/ not scripts/" {
+@test "settings.json hook commands reference the hub bin/sync and hive-mind/core/ helpers" {
+  # v0.3.0 hub topology: Stop hook fires the single hub entry
+  # ($HIVE_MIND_HUB_DIR/bin/sync); SessionStart and PostToolUse still
+  # run per-adapter helpers that now live under the hub at
+  # $HIVE_MIND_HUB_DIR/hive-mind/core/. The pre-0.3 `hive-mind/scripts/`
+  # form and the 0.2 `~/.claude/hive-mind/core/sync.sh` form are both
+  # dead in templates — adapter_migrate rewrites any such hook on
+  # upgrade, so the template itself must never carry them.
   local template="${ADAPTER_ROOT}/settings.json"
   run grep -c 'hive-mind/scripts/' "$template"
   [ "$output" = "0" ]
-  grep -q 'hive-mind/core/' "$template"
+  run grep -c '\.claude/hive-mind/core/' "$template"
+  [ "$output" = "0" ]
+  grep -q '\.hive-mind/bin/sync' "$template"
+  grep -q '\.hive-mind/hive-mind/core/' "$template"
 }
 
 # === Claude-specific event names ===========================================
@@ -105,7 +114,7 @@ teardown() {
 
 # === Migration =============================================================
 
-@test "adapter_migrate rewrites old scripts/ paths in settings.json" {
+@test "adapter_migrate rewrites old scripts/ and core/ paths to the hub topology" {
   mkdir -p "$ADAPTER_DIR"
   cat > "$ADAPTER_DIR/settings.json" <<'SETTINGS'
 {
@@ -118,18 +127,23 @@ SETTINGS
 
   adapter_migrate "0.1.0"
 
+  # Neither the old scripts/ nor the 0.2 per-adapter core/ form may survive.
   run grep 'hive-mind/scripts/' "$ADAPTER_DIR/settings.json"
   [ "$status" -ne 0 ]
-  grep -q 'hive-mind/core/sync.sh' "$ADAPTER_DIR/settings.json"
-  grep -q 'hive-mind/core/check-dupes.sh' "$ADAPTER_DIR/settings.json"
+  run grep '\.claude/hive-mind/core/sync\.sh' "$ADAPTER_DIR/settings.json"
+  [ "$status" -ne 0 ]
+  # Stop promoted to the hub entry point.
+  grep -q '\.hive-mind/bin/sync' "$ADAPTER_DIR/settings.json"
+  # Helper-script hooks (SessionStart's check-dupes) relocated under the hub.
+  grep -q '\.hive-mind/hive-mind/core/check-dupes\.sh' "$ADAPTER_DIR/settings.json"
 }
 
-@test "adapter_migrate is idempotent" {
+@test "adapter_migrate is idempotent on the hub-topology form" {
   mkdir -p "$ADAPTER_DIR"
   cat > "$ADAPTER_DIR/settings.json" <<'SETTINGS'
 {
   "hooks": {
-    "Stop": [{"hooks": [{"command": "~/.claude/hive-mind/core/sync.sh"}]}]
+    "Stop": [{"hooks": [{"command": "\"$HOME/.hive-mind/bin/sync\""}]}]
   }
 }
 SETTINGS
@@ -137,7 +151,7 @@ SETTINGS
   local before
   before="$(cat "$ADAPTER_DIR/settings.json")"
 
-  adapter_migrate "0.1.0"
+  adapter_migrate "0.3.0"
 
   [ "$(cat "$ADAPTER_DIR/settings.json")" = "$before" ]
 }
@@ -192,27 +206,28 @@ SETTINGS
 
 @test "settings.json template uses quoted \$HOME form (survives spaces in home dir)" {
   # A home directory containing spaces (e.g. /c/Users/Jane Doe on Windows
-  # Git Bash) would word-split an unquoted ~/.claude path at shell parse
-  # time and break hook execution. Every command string in the template
-  # must use "\$HOME/.claude/..." with quotes.
+  # Git Bash) would word-split an unquoted ~/.hive-mind path at shell
+  # parse time and break hook execution. Every command string in the
+  # template must use "\$HOME/.hive-mind/..." with quotes.
   local template="${ADAPTER_ROOT}/settings.json"
   while IFS= read -r cmd; do
-    [[ "$cmd" = *'"$HOME/.claude'* ]] || {
-      echo "command missing quoted \$HOME: $cmd" >&2
+    [[ "$cmd" = *'"$HOME/.hive-mind'* ]] || {
+      echo "command missing quoted \$HOME/.hive-mind: $cmd" >&2
       return 1
     }
   done < <(jq -r '.hooks | .[] | .[].hooks[] | .command' "$template")
 
   # And NO unquoted tilde form anywhere in the template.
-  run grep -E 'cd ~/\.claude[^"]|~/\.claude/hive-mind' "$template"
+  run grep -E '~/\.hive-mind' "$template"
   [ "$status" -ne 0 ]
 }
 
-@test "adapter_migrate upgrades unquoted tilde form in existing settings.json" {
+@test "adapter_migrate upgrades unquoted tilde form to hub-topology paths" {
   # An existing install may carry the earlier unquoted-tilde form in
   # settings.json. Migration must rewrite both the Stop hook command
-  # AND the SessionStart cd+chain to the quoted-\$HOME form so users
-  # on spaces-in-home-dir machines get fixed on the next setup.sh run,
+  # (now the hub's bin/sync) AND the SessionStart cd+chain (helpers
+  # now live under the hub) to the quoted-\$HOME form so users on
+  # spaces-in-home-dir machines get fixed on the next setup.sh run,
   # not just new installs.
   mkdir -p "$ADAPTER_DIR"
   cat > "$ADAPTER_DIR/settings.json" <<'EOF'
@@ -227,11 +242,11 @@ EOF
   adapter_migrate "0.1.0"
 
   stop_cmd="$(jq -r '.hooks.Stop[0].hooks[0].command' "$ADAPTER_DIR/settings.json")"
-  [ "$stop_cmd" = '"$HOME/.claude/hive-mind/core/sync.sh"' ]
+  [ "$stop_cmd" = '"$HOME/.hive-mind/bin/sync"' ]
 
   sess_cmd="$(jq -r '.hooks.SessionStart[0].hooks[0].command' "$ADAPTER_DIR/settings.json")"
   [[ "$sess_cmd" = *'cd "$HOME/.claude"'* ]]
-  [[ "$sess_cmd" = *'"$HOME/.claude/hive-mind/core/check-dupes.sh"'* ]]
+  [[ "$sess_cmd" = *'"$HOME/.hive-mind/hive-mind/core/check-dupes.sh"'* ]]
 }
 
 # === install_hooks preserves user settings ==================================

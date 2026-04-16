@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Tests for scripts/mirror-projects.sh.
+# Tests for core/mirror-projects.sh.
 #
 # The script reads ~/.claude (via `cd ~/.claude`), so each test sandboxes
 # HOME into a temp dir and lays out the projects/ tree before invoking.

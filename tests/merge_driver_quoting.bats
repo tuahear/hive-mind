@@ -48,71 +48,65 @@ REPO_ROOT="$BATS_TEST_DIRNAME/.."
   done
 }
 
-@test "core/sync.sh: push-retry log lines compute timestamp at emission, not reuse \$TS" {
-  # The outer $TS in core/sync.sh is captured once near the top of
+@test "core/hub/sync.sh: push-retry log lines compute timestamp at emission, not reuse \$TS" {
+  # The outer $TS in core/hub/sync.sh is captured once near the top of
   # the script. Retry-log lines inside the push backoff loop can fire
   # tens of seconds later (backoff caps at 30s per iteration, 5
   # iterations = up to ~62s of skew), so reusing $TS produces
   # misleading correlations with server-side push logs. Assert the
   # retry/error lines compute the time inline with `date`.
-  sync="$REPO_ROOT/core/sync.sh"
+  sync="$REPO_ROOT/core/hub/sync.sh"
   [ -f "$sync" ]
   # Extract the push-retry loop region (from `for (( _attempt=` up to
   # the closing `done`) and assert no `echo "$TS` remains inside it.
   loop="$(awk '/for[[:space:]]*\(\([[:space:]]*_attempt=/,/^[[:space:]]*done$/' "$sync")"
   [ -n "$loop" ]
   if printf '%s\n' "$loop" | grep -qE 'echo[[:space:]]+"\$TS'; then
-    echo "core/sync.sh retry loop still reuses \$TS for log lines:" >&2
+    echo "core/hub/sync.sh retry loop still reuses \$TS for log lines:" >&2
     printf '%s\n' "$loop" >&2
     return 1
   fi
   # And assert the retry/error log lines call date(1) inline.
   if ! printf '%s\n' "$loop" | grep -qE 'date -u \+%FT%TZ.*push failed'; then
-    echo "core/sync.sh retry loop does not recompute timestamp at emission" >&2
+    echo "core/hub/sync.sh retry loop does not recompute timestamp at emission" >&2
     return 1
   fi
 }
 
-@test "setup.sh already_synced upgrade path runs sync.sh with HIVE_MIND_FORCE_PUSH=1 before exit" {
-  # Regression: without this the upgrade flow made local edits
-  # (refreshed .gitignore, migrated settings, re-installed hooks) and
-  # exited without pushing, so cross-machine propagation waited for the
-  # next hook-driven sync. That could be hours if the upgraded machine
-  # didn't start a new session — defeating hive-mind's core value.
-  # Scan the already_synced case block for a HIVE_MIND_FORCE_PUSH=1
-  # invocation of core/sync.sh appearing BEFORE the terminating
-  # exit 0. Implementation-level pin (regression smoke), not a full
-  # end-to-end integration test, which would require substantial
-  # setup.sh stubbing; combined with the existing setup-fresh-flow
-  # integration test, the surface is covered.
+@test "setup.sh runs the hub's bin/sync with HIVE_MIND_FORCE_PUSH=1 at the end" {
+  # v0.3.0 upgrade-path regression: when setup.sh finishes, it must run
+  # one sync cycle so whatever it staged (refreshed .gitignore, migrated
+  # settings.json, re-installed hooks, new bundled skills, harvested
+  # existing tool content) reaches the remote immediately. The old
+  # per-adapter `already_synced` branch is gone — the unified hub flow
+  # has a single `[6/6]` verify step that must force-push. Pin that so
+  # a refactor doesn't silently drop it.
   setup="$BATS_TEST_DIRNAME/../setup.sh"
   [ -f "$setup" ]
-  block="$(awk '/^    already_synced\)/,/^        ;;/' "$setup")"
-  [ -n "$block" ]
-  # Force-push invocation present.
-  printf '%s\n' "$block" | grep -Fq 'HIVE_MIND_FORCE_PUSH=1'
-  # And it references core/sync.sh so a future rename of the script
-  # does not silently defeat the propagation.
-  printf '%s\n' "$block" | grep -Fq 'core/sync.sh'
-  # The block still terminates with exit 0 — no regression of the
-  # non-blocking guarantee.
-  printf '%s\n' "$block" | grep -qE '^[[:space:]]*exit 0[[:space:]]*$'
+  # Anywhere in setup.sh, the hub's bin/sync is invoked with
+  # HIVE_MIND_FORCE_PUSH=1 set in the environment.
+  grep -qE 'HIVE_MIND_FORCE_PUSH=1' "$setup"
+  grep -qE 'bin/sync' "$setup"
 }
 
-@test "setup.sh already_synced tolerates missing origin remote under set -euo pipefail" {
+@test "setup.sh tolerates missing origin remote on the hub under set -euo pipefail" {
   # Regression: command substitution with `git remote get-url origin`
   # fails under `set -euo pipefail` if origin isn't configured, which
   # silently exits setup.sh (stderr is muted by 2>/dev/null). The
-  # already_synced case must include `|| true` on the get-url call so
-  # setup.sh degrades gracefully and logs a clear message instead.
+  # memory-repo resolution path must include `|| true` on the get-url
+  # call so setup.sh prompts the user instead of exiting blank.
   setup="$REPO_ROOT/setup.sh"
   [ -f "$setup" ]
-  block="$(awk '/^    already_synced\)/,/^        ;;/' "$setup")"
-  [ -n "$block" ]
-  # The get-url invocation inside the case block must tolerate failure.
-  line="$(printf '%s\n' "$block" | grep -E 'git[[:space:]]+-C.*remote[[:space:]]+get-url[[:space:]]+origin' | head -1)"
-  [ -n "$line" ]
-  printf '%s\n' "$line" | grep -q '|| true'
+  # At least one `git -C ... remote get-url origin` call must carry
+  # `|| true` (or an equivalent tolerant form). Find every such line
+  # and require each to be guarded.
+  violations="$(grep -nE 'git[[:space:]]+-C.*remote[[:space:]]+get-url[[:space:]]+origin' "$setup" \
+    | grep -v '|| true' || true)"
+  if [ -n "$violations" ]; then
+    echo "git remote get-url origin not guarded by || true in setup.sh:" >&2
+    echo "$violations" >&2
+    return 1
+  fi
 }
 
 @test "every git add / rm / checkout / restore of a shell variable uses the '--' separator" {
@@ -140,26 +134,28 @@ $bad
   fi
 }
 
-@test "setup.sh already_synced sync invocation provides ADAPTER_DIR fallback for set -u" {
-  # Regression: setup.sh runs under `set -euo pipefail`. If the adapter
-  # failed to load (adapter-loader.sh missing or load_adapter returned
-  # non-zero), ADAPTER_DIR is never set by the adapter. A bare
-  # `ADAPTER_DIR="$ADAPTER_DIR"` expansion would then crash the
-  # installer with "unbound variable" — right in the path that is
-  # supposed to degrade gracefully. Pin the ${ADAPTER_DIR:-...} default
-  # so a future refactor doesn't silently reintroduce the crash.
+@test "setup.sh hub sync invocation does not leak an empty ADAPTER_DIR under set -u" {
+  # Regression (rewritten for v0.3.0 hub topology): setup.sh runs under
+  # `set -euo pipefail`. The verify step at the end runs
+  # $HIVE_MIND_HUB_DIR/bin/sync, which sources each attached adapter
+  # itself — it does NOT need setup.sh to forward ADAPTER_DIR. If a
+  # future refactor re-introduces an ADAPTER_DIR forward on that line
+  # without a ${:-} fallback, a partial / failed adapter load earlier in
+  # the script would crash the installer. Assert either: no ADAPTER_DIR
+  # forward on the sync line, OR any ADAPTER_DIR forward uses a fallback.
   setup="$BATS_TEST_DIRNAME/../setup.sh"
   [ -f "$setup" ]
-  block="$(awk '/^    already_synced\)/,/^        ;;/' "$setup")"
+  # Isolate the verify-step block: everything from the `log "[6/6]`
+  # header through the matching `fi` close.
+  block="$(awk '/^log "\[6\/6\]/,/^fi$/' "$setup")"
   [ -n "$block" ]
-  # The sync invocation must use a fallback form, not bare $ADAPTER_DIR.
-  # Accept any `${ADAPTER_DIR:-...}` spelling; reject a bare
-  # `ADAPTER_DIR="$ADAPTER_DIR"` on the sync env line.
-  if printf '%s\n' "$block" | grep -qE 'ADAPTER_DIR="\$ADAPTER_DIR"[[:space:]]*\\?$'; then
-    echo "bare \$ADAPTER_DIR (no :- fallback) in already_synced sync invocation" >&2
+  # bin/sync is what the block invokes.
+  printf '%s\n' "$block" | grep -Fq 'bin/sync'
+  # No bare ADAPTER_DIR="$ADAPTER_DIR" backslash-line in this block.
+  if printf '%s\n' "$block" | grep -qE '^[[:space:]]*ADAPTER_DIR="\$ADAPTER_DIR"[[:space:]]*\\?$'; then
+    echo "bare \$ADAPTER_DIR (no :- fallback) in hub sync invocation" >&2
     return 1
   fi
-  printf '%s\n' "$block" | grep -qE 'ADAPTER_DIR="\$\{ADAPTER_DIR:-[^}]+\}"'
 }
 
 @test "docs/*.md: any git config merge.*.driver example uses quoted %A %O %B" {

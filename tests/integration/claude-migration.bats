@@ -17,7 +17,7 @@ teardown() {
   rm -rf "$HOME"
 }
 
-@test "migration: old hook commands are rewritten to new core/ paths" {
+@test "migration: old hook commands are rewritten to hub-topology paths" {
   mkdir -p "$ADAPTER_DIR"
 
   # Seed a pre-refactor settings.json with old scripts/ paths.
@@ -68,28 +68,22 @@ EOF
 
   adapter_migrate "0.1.0"
 
-  # Old paths should be gone.
+  # Old paths should be gone — neither the v0.1 scripts/ form nor the
+  # v0.2 per-adapter core/ form may remain on disk after migration.
   run grep 'hive-mind/scripts/' "$ADAPTER_DIR/settings.json"
   [ "$status" -ne 0 ]
+  run grep '\.claude/hive-mind/core/' "$ADAPTER_DIR/settings.json"
+  [ "$status" -ne 0 ]
 
-  # New paths should be present.
-  grep -q 'hive-mind/core/sync.sh' "$ADAPTER_DIR/settings.json"
-  grep -q 'hive-mind/core/check-dupes.sh' "$ADAPTER_DIR/settings.json"
-  grep -q 'hive-mind/core/marker-nudge.sh' "$ADAPTER_DIR/settings.json"
+  # Stop hook promoted to the hub entry point; SessionStart /
+  # PostToolUse helpers now sit under the hub's nested hive-mind src.
+  grep -q '\.hive-mind/bin/sync' "$ADAPTER_DIR/settings.json"
+  grep -q '\.hive-mind/hive-mind/core/check-dupes\.sh' "$ADAPTER_DIR/settings.json"
+  grep -q '\.hive-mind/hive-mind/core/marker-nudge\.sh' "$ADAPTER_DIR/settings.json"
 
   # User's existing permissions preserved.
   jq -e '.permissions.allow | index("Bash(npm test)")' "$ADAPTER_DIR/settings.json" >/dev/null
   jq -e '.permissions.allow | index("Read")' "$ADAPTER_DIR/settings.json" >/dev/null
-}
-
-@test "migration: forwarding shims exec to core/ scripts" {
-  # Verify each shim forwards correctly.
-  local shims_dir="$REPO_ROOT/scripts"
-
-  for shim in sync.sh check-dupes.sh jsonmerge.sh mirror-projects.sh marker-nudge.sh; do
-    [ -f "$shims_dir/$shim" ]
-    grep -q 'exec.*core/' "$shims_dir/$shim"
-  done
 }
 
 @test "migration: idempotent — re-running on already-migrated config is a no-op" {
@@ -97,7 +91,7 @@ EOF
   cat > "$ADAPTER_DIR/settings.json" <<'EOF'
 {
   "hooks": {
-    "Stop": [{"hooks": [{"command": "~/.claude/hive-mind/core/sync.sh"}]}]
+    "Stop": [{"hooks": [{"command": "\"$HOME/.hive-mind/bin/sync\""}]}]
   },
   "permissions": {"allow": ["Read"]}
 }
@@ -106,7 +100,7 @@ EOF
   local before
   before="$(cat "$ADAPTER_DIR/settings.json")"
 
-  adapter_migrate "0.1.0"
+  adapter_migrate "0.3.0"
 
   [ "$(cat "$ADAPTER_DIR/settings.json")" = "$before" ]
 }

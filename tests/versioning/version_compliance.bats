@@ -85,14 +85,14 @@ _adapter_var() {
   done
 }
 
-@test "HIVE_MIND_FORMAT_VERSION in sync.sh is a simple positive-integer assignment" {
+@test "HIVE_MIND_FORMAT_VERSION in hub sync.sh is a simple positive-integer assignment" {
   # Pulled with awk, NOT eval. Eval-ing a line from the source file
   # would execute anything on the RHS — a future refactor that makes
   # the value a command substitution (e.g. `HIVE_MIND_FORMAT_VERSION=$(something)`)
   # would silently run that subshell inside this test. Parse the raw
   # line instead and insist the value is a bare positive integer; if a
   # refactor breaks that shape, this test fires with a clear signal.
-  line="$(awk '/^HIVE_MIND_FORMAT_VERSION=/{print; exit}' "$REPO_ROOT/core/sync.sh")"
+  line="$(awk '/^HIVE_MIND_FORMAT_VERSION=/{print; exit}' "$REPO_ROOT/core/hub/sync.sh")"
   [ -n "$line" ]
   # Exact-form assertion — left side is the name, right side is digits
   # only with no spaces, quotes, or expansions.
@@ -100,7 +100,7 @@ _adapter_var() {
 }
 
 @test "HIVE_MIND_FORMAT_VERSION is >= 1" {
-  fmt="$(awk -F= '/^HIVE_MIND_FORMAT_VERSION=/{gsub(/[^0-9]/,"",$2); print $2; exit}' "$REPO_ROOT/core/sync.sh")"
+  fmt="$(awk -F= '/^HIVE_MIND_FORMAT_VERSION=/{gsub(/[^0-9]/,"",$2); print $2; exit}' "$REPO_ROOT/core/hub/sync.sh")"
   [ "$fmt" -ge 1 ]
 }
 

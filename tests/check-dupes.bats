@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Tests for scripts/check-dupes.sh — the SessionStart duplicate-line scanner.
+# Tests for core/check-dupes.sh — the SessionStart duplicate-line scanner.
 #
 # The script reads $HOME/.claude/CLAUDE.md and $HOME/.claude/projects/**/*.md,
 # so each test sandboxes HOME into a temp dir. jq must be on PATH (script
