@@ -10,7 +10,9 @@
 # Must write the merged result to <ours> and exit 0 on success.
 # Exit non-zero -> git falls back to its default merge (conflict markers).
 #
-# Merge semantics (pure POSIX awk, no external deps beyond awk/sort):
+# Merge semantics (bash + awk/sed/grep/tr/cut/sort/mktemp — no jq, no
+# python, no node; same standard-userland toolset as every other core
+# script):
 #   - Scalar keys: theirs wins on collision (remote is fleet truth).
 #   - Tables (sections): deep-merge by combining keys from both sides.
 #   - Array-of-strings values on known union keys: union + dedup + sort.

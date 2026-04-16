@@ -44,7 +44,8 @@ hm_log() {
 
 # Strip embedded credentials from a URL before logging.
 # https://x-access-token:ghp_xxx@github.com/… → https://***@github.com/…
+# POSIX basic regex — no -E flag (some minimal / busybox sed installs lack it).
 hm_sanitize_url() {
   local url="$1"
-  printf '%s' "$url" | sed -E 's|://[^@]+@|://***@|'
+  printf '%s' "$url" | sed 's|://[^@]*@|://***@|'
 }

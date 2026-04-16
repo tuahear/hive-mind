@@ -220,6 +220,16 @@ case "$STATE" in
             # shellcheck disable=SC1091
             source "$HIVE_MIND_DIR/core/adapter-loader.sh"
             load_adapter "$ADAPTER" || log "warning: adapter '$ADAPTER' failed to load — continuing with legacy paths"
+            # Refresh gitignore + gitattributes from the adapter templates.
+            # New template entries (e.g. .hive-mind-format whitelist) only
+            # take effect after this; without it, existing installs miss
+            # post-install additions until the user re-seeds manually.
+            if [ -n "${ADAPTER_GITIGNORE_TEMPLATE:-}" ] && [ -f "$ADAPTER_GITIGNORE_TEMPLATE" ]; then
+                cp "$ADAPTER_GITIGNORE_TEMPLATE" "$MEMORY_DIR/.gitignore"
+            fi
+            if [ -n "${ADAPTER_GITATTRIBUTES_TEMPLATE:-}" ] && [ -f "$ADAPTER_GITATTRIBUTES_TEMPLATE" ]; then
+                cp "$ADAPTER_GITATTRIBUTES_TEMPLATE" "$MEMORY_DIR/.gitattributes"
+            fi
             # Migrate existing install, passing the previous version so the
             # adapter can make version-conditional decisions.
             declare -f adapter_migrate >/dev/null 2>&1 && adapter_migrate "$prev_version"
