@@ -192,7 +192,14 @@ adapter_migrate() {
   local settings="$ADAPTER_DIR/settings.json"
   [ -f "$settings" ] || return 0
 
-  # Rewrite old hook command paths: scripts/sync.sh → core/sync.sh, etc.
+  # Rewrite old hook command paths:
+  # 1) scripts/<file>.sh -> core/<file>.sh        (refactor move)
+  # 2) ~/.claude/hive-mind/core/<file>.sh ->
+  #    \"\$HOME/.claude/hive-mind/core/<file>.sh\" (space-safe quoting)
+  # The literal \\\" in the sed replacement emits a backslash-escaped
+  # double quote into the JSON string, preserving JSON validity.
+  # Both regexes are idempotent: a settings.json already on the new
+  # form is unchanged (substitutions don't find their old patterns).
   local tmp
   tmp="$(mktemp)"
   if sed \
@@ -201,6 +208,11 @@ adapter_migrate() {
     -e 's|hive-mind/scripts/marker-nudge\.sh|hive-mind/core/marker-nudge.sh|g' \
     -e 's|hive-mind/scripts/jsonmerge\.sh|hive-mind/core/jsonmerge.sh|g' \
     -e 's|hive-mind/scripts/mirror-projects\.sh|hive-mind/core/mirror-projects.sh|g' \
+    -e 's|cd ~/\.claude |cd \\"$HOME/.claude\\" |g' \
+    -e 's|~/\.claude/hive-mind/core/sync\.sh|\\"$HOME/.claude/hive-mind/core/sync.sh\\"|g' \
+    -e 's|~/\.claude/hive-mind/core/check-dupes\.sh|\\"$HOME/.claude/hive-mind/core/check-dupes.sh\\"|g' \
+    -e 's|~/\.claude/hive-mind/core/marker-nudge\.sh|\\"$HOME/.claude/hive-mind/core/marker-nudge.sh\\"|g' \
+    -e 's|~/\.claude/hive-mind/core/mirror-projects\.sh|\\"$HOME/.claude/hive-mind/core/mirror-projects.sh\\"|g' \
     "$settings" > "$tmp"; then
     if ! cmp -s "$settings" "$tmp"; then
       mv "$tmp" "$settings"

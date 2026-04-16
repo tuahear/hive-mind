@@ -24,8 +24,12 @@ HIVE_MIND_CORE_API_VERSION="1.0.0"
 
 # --- semver helpers --------------------------------------------------------
 
-# Parse a semver string into three variables via nameref.
-# semver_parse "1.2.3" major minor patch  →  major=1 minor=2 patch=3
+# Parse a semver string into three variables. Args $2-$4 are the
+# variable NAMES to assign into (not bash namerefs / `declare -n` —
+# just `read`'s positional-variable form). Caller is responsible for
+# declaring those variables local in their own scope if they don't
+# want them leaked.
+# semver_parse "1.2.3" major minor patch  -> $major=1 $minor=2 $patch=3
 semver_parse() {
   local ver="$1"
   if [[ ! "$ver" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then

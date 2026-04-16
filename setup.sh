@@ -231,12 +231,16 @@ register_merge_drivers() {
         [ -f "$driver_script" ] || continue
         local env_prefix
         env_prefix="$(_driver_env_prefix "$drv")"
-        git -C "$target_git" config "merge.${drv}.driver" "${env_prefix}${driver_script} %A %O %B"
+        # Quote the driver script path so a $HIVE_MIND_DIR containing
+        # spaces (common on Windows Git Bash under "C:/Users/Jane Doe")
+        # is word-safe when git invokes the driver via `sh -c`.
+        git -C "$target_git" config "merge.${drv}.driver" "${env_prefix}'${driver_script}' %A %O %B"
         git -C "$target_git" config "merge.${drv}.name" "hive-mind ${drv} driver"
     done <<< "$drivers"
 
     if [ -z "$drivers" ] && [ -f "$HIVE_MIND_DIR/core/jsonmerge.sh" ]; then
-        git -C "$target_git" config merge.jsonmerge.driver "$HIVE_MIND_DIR/core/jsonmerge.sh %A %O %B"
+        # Quoted script path — see main loop above for the spaces-in-path rationale.
+        git -C "$target_git" config merge.jsonmerge.driver "'$HIVE_MIND_DIR/core/jsonmerge.sh' %A %O %B"
         git -C "$target_git" config merge.jsonmerge.name "Deep-merge JSON with array union (hive-mind)"
     fi
 }
@@ -302,7 +306,8 @@ case "$STATE" in
         else
             # Legacy fallback: register the known jsonmerge driver directly
             # so pre-adapter-contract installs keep working on upgrade.
-            git -C "$MEMORY_DIR" config merge.jsonmerge.driver "$HIVE_MIND_DIR/core/jsonmerge.sh %A %O %B" 2>/dev/null || true
+            # Quoted script path — space-safe for $HIVE_MIND_DIR with spaces.
+            git -C "$MEMORY_DIR" config merge.jsonmerge.driver "'$HIVE_MIND_DIR/core/jsonmerge.sh' %A %O %B" 2>/dev/null || true
             git -C "$MEMORY_DIR" config merge.jsonmerge.name "Deep-merge JSON with array union (hive-mind)" 2>/dev/null || true
         fi
         manage_claude_skills
