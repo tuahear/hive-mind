@@ -127,11 +127,20 @@ parse_array() {
   if [ -n "$stripped" ] && [[ ! "$stripped" =~ ^\"[^\",]*\"(,\"[^\",]*\")*$ ]]; then
     return 1
   fi
-  # Split on comma, strip quotes and whitespace. Preserves empty-string
-  # elements (`["", "x"]`) -- they're valid TOML and the earlier regex
-  # validation already rejected malformed arrays, so a blank line here
-  # means a deliberate empty string, not stray whitespace.
-  printf '%s' "$val" | tr ',' '\n' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e 's/^"//' -e 's/"$//'
+  # Split on comma; emit exactly one line per element (always
+  # terminated by \n via awk's print). Preserves empty-string
+  # elements (`["", "x"]`). After bracket-strip an empty input means
+  # "zero elements" -- don't emit a spurious blank line.
+  if [ -z "$val" ]; then
+    return 0
+  fi
+  printf '%s' "$val" | tr ',' '\n' | awk '{
+    sub(/^[[:space:]]+/, "");
+    sub(/[[:space:]]+$/, "");
+    sub(/^"/, "");
+    sub(/"$/, "");
+    print
+  }'
 }
 
 # --- Rebuild array from lines of elements ---------------------------------
@@ -185,12 +194,20 @@ lookup_val() {
   if [ -n "$theirs_val" ] && [ -n "$ours_val" ]; then
     # Both sides have this key
     if is_union_key "$key" && [[ "$ours_val" == \[* ]] && [[ "$theirs_val" == \[* ]]; then
-      # Union arrays — both sides must parse cleanly. A non-zero return
-      # from parse_array (e.g. inline comment after `]`) exits the whole
+      # Union arrays -- both sides must parse cleanly. A non-zero return
+      # from parse_array (e.g. inline comment after ]) exits the whole
       # script so git falls back to its default merge.
-      ours_elems="$(parse_array "$ours_val")" || exit 1
-      theirs_elems="$(parse_array "$theirs_val")" || exit 1
-      merged_val="$( printf '%s\n%s\n' "$ours_elems" "$theirs_elems" | rebuild_array )"
+      #
+      # Route parse_array output through temp files, NOT command
+      # substitution. `$(...)` strips trailing newlines, which makes
+      # "single empty element" indistinguishable from "zero elements"
+      # (both collapse to ""). Files preserve exact line counts so
+      # `[""]` survives the union round-trip.
+      _ours_tmp="$(mktemp)"; _theirs_tmp="$(mktemp)"
+      parse_array "$ours_val" > "$_ours_tmp" || { rm -f "$_ours_tmp" "$_theirs_tmp"; exit 1; }
+      parse_array "$theirs_val" > "$_theirs_tmp" || { rm -f "$_ours_tmp" "$_theirs_tmp"; exit 1; }
+      merged_val="$(cat "$_ours_tmp" "$_theirs_tmp" | rebuild_array)"
+      rm -f "$_ours_tmp" "$_theirs_tmp"
       printf '%s\t%s\n' "$key" "$merged_val"
     else
       # Theirs wins

@@ -11,7 +11,7 @@ hive-mind uses an **adapter pattern** to support multiple AI coding tools. Each 
 
 ## How it works
 
-Core hive-mind logic (sync engine, merge drivers, marker extraction, project mirroring) is tool-agnostic. It lives in `core/` and never references any specific tool.
+Core hive-mind logic (sync engine, merge drivers, marker extraction, project mirroring) is tool-agnostic. It lives in `core/` and takes all tool-specific paths from the loaded adapter at runtime (`$ADAPTER_DIR`, `$ADAPTER_LOG_PATH`, etc.). A few core scripts still carry a `~/.claude` fallback default so pre-refactor Claude installs keep working without re-running `setup.sh`; those fallbacks will be removed in the next major version once the migration window closes.
 
 Each adapter lives in `adapters/<name>/` and answers questions like:
 - Where is the config directory? (`~/.claude`, `~/.codex`, etc.)
