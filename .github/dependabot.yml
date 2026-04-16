@@ -1,0 +1,20 @@
+version: 2
+updates:
+  # Alert-only at v1 — open-pull-requests-limit: 0 prevents auto-PRs
+  # while Dependabot Alerts (enabled in repo settings) surface vulnerabilities.
+
+  # Root docs site (VitePress)
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+
+  # cli/ and desktop/ entries added by #13 and #14 when those directories land.
+
+  # GitHub Actions
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
