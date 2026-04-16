@@ -50,6 +50,25 @@ if ! git pull --rebase --autostash --quiet 2>>"$LOG"; then
   echo "$TS sync pull-rebase failed -- local edits preserved, resolve in $ADAPTER_DIR" >>"$LOG"
 fi
 
+# --- Memory repo format version check -------------------------------------
+HIVE_MIND_FORMAT_VERSION=1
+FORMAT_FILE=".hive-mind-format"
+
+# Read remote format version (works against bare remotes too).
+remote_fmt="$(git show origin/main:"$FORMAT_FILE" 2>/dev/null | grep -oE '[0-9]+' | head -1)"
+
+if [ -n "$remote_fmt" ]; then
+  if [ "$remote_fmt" -gt "$HIVE_MIND_FORMAT_VERSION" ] 2>/dev/null; then
+    echo "$TS ERROR sync: remote memory repo is format $remote_fmt but this install only knows format $HIVE_MIND_FORMAT_VERSION -- upgrade hive-mind" >>"$LOG"
+    exit 0
+  fi
+fi
+
+# Seed format file on first sync if absent from working tree.
+if [ ! -f "$FORMAT_FILE" ]; then
+  printf 'format-version=%d\n' "$HIVE_MIND_FORMAT_VERSION" > "$FORMAT_FILE"
+fi
+
 # Stage whatever changed in whitelisted paths (gitignore filters the rest).
 git add -A 2>/dev/null
 

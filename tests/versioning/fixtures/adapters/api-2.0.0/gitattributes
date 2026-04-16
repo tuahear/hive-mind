@@ -1,0 +1,6 @@
+# Fake adapter gitattributes — mirrors the merge-driver pattern for tests.
+MEMORY.md          merge=union
+projects/**/*.md   merge=union
+hooks.json         merge=jsonmerge
+.gitignore         merge=union
+.gitattributes     merge=union

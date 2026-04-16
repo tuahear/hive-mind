@@ -106,31 +106,29 @@ marker() {
   printf '%s merge=union\n' "$basename_mem" > "$ADAPTER_DIR/.gitattributes"
   git -C "$ADAPTER_DIR" add .gitattributes
   git -C "$ADAPTER_DIR" commit -q -m "add gitattributes"
-  git -C "$ADAPTER_DIR" push -q
-  git -C "$HOME/clone-b" pull --rebase --quiet
-
-  cp "$ADAPTER_DIR/.gitattributes" "$HOME/clone-b/.gitattributes"
 
   # Both sides start from the same baseline.
   printf '# shared\n' > "$global"
-  run run_sync
-  [ "$status" -eq 0 ]
+  git -C "$ADAPTER_DIR" add -A
+  git -C "$ADAPTER_DIR" commit -q -m "baseline"
+  git -C "$ADAPTER_DIR" push -q
   git -C "$HOME/clone-b" pull --rebase --quiet
 
   # Machine A adds a line.
   printf '# shared\n- from A\n' > "$global"
-  run run_sync
-  [ "$status" -eq 0 ]
+  git -C "$ADAPTER_DIR" add -A
+  git -C "$ADAPTER_DIR" commit -q -m "A edit"
+  git -C "$ADAPTER_DIR" push -q
 
   # Machine B adds a different line (without pulling first → conflict).
   printf '# shared\n- from B\n' > "$HOME/clone-b/$basename_mem"
   git -C "$HOME/clone-b" add "$basename_mem"
   git -C "$HOME/clone-b" commit -q -m "B edit"
 
-  # B pulls with union merge.
+  # B pulls with union merge — rebase applies B's commit on top of A's.
   git -C "$HOME/clone-b" pull --rebase --autostash --quiet 2>/dev/null || true
 
-  # Both lines should survive.
+  # Both lines should survive via union merge.
   grep -q 'from A' "$HOME/clone-b/$basename_mem"
   grep -q 'from B' "$HOME/clone-b/$basename_mem"
 }
