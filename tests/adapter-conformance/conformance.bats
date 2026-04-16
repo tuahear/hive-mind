@@ -118,10 +118,12 @@ teardown() {
   [[ "$ADAPTER_HAS_HOOK_SYSTEM" = "true" || "$ADAPTER_HAS_HOOK_SYSTEM" = "false" ]]
 }
 
-@test "lifecycle events: each supported event has a non-empty name" {
+@test "lifecycle events: session_start and turn_end are both wired when hooks are supported" {
   if [ "$ADAPTER_HAS_HOOK_SYSTEM" = "true" ]; then
-    # At minimum, session_start and turn_end should be wired.
-    [ -n "${ADAPTER_EVENT_SESSION_START:-}" ] || [ -n "${ADAPTER_EVENT_TURN_END:-}" ]
+    # Both events are required for a working hook-based adapter:
+    # session_start for pull+dedup, turn_end for commit+push.
+    [ -n "${ADAPTER_EVENT_SESSION_START:-}" ]
+    [ -n "${ADAPTER_EVENT_TURN_END:-}" ]
   fi
 }
 

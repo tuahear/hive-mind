@@ -66,8 +66,8 @@ _validate_adapter() {
   local name="$1"
   local ok=1
 
-  # Required variables.
-  local required_vars=(
+  # Required variables that must be defined AND non-empty.
+  local required_nonempty_vars=(
     ADAPTER_API_VERSION
     ADAPTER_VERSION
     ADAPTER_NAME
@@ -77,13 +77,41 @@ _validate_adapter() {
     ADAPTER_GITATTRIBUTES_TEMPLATE
     ADAPTER_MARKER_TARGETS
     ADAPTER_HAS_HOOK_SYSTEM
+    ADAPTER_LOG_PATH
   )
-  for var in "${required_vars[@]}"; do
+  for var in "${required_nonempty_vars[@]}"; do
     if [ -z "${!var+x}" ]; then
       _loader_log ERROR "adapter '$name' missing required variable: $var"
       ok=0
+    elif [ -z "${!var}" ]; then
+      _loader_log ERROR "adapter '$name' required variable is empty: $var"
+      ok=0
     fi
   done
+
+  # Required variables that must be defined (may be empty string).
+  local required_defined_vars=(
+    ADAPTER_SECRET_FILES
+    ADAPTER_SETTINGS_MERGE_BINDINGS
+    ADAPTER_FALLBACK_STRATEGY
+  )
+  for var in "${required_defined_vars[@]}"; do
+    if [ -z "${!var+x}" ]; then
+      _loader_log ERROR "adapter '$name' missing required variable: $var (may be empty but must be declared)"
+      ok=0
+    fi
+  done
+
+  # Enum check: ADAPTER_HAS_HOOK_SYSTEM must be literal "true" or "false".
+  if [ -n "${ADAPTER_HAS_HOOK_SYSTEM+x}" ]; then
+    case "$ADAPTER_HAS_HOOK_SYSTEM" in
+      true|false) ;;
+      *)
+        _loader_log ERROR "adapter '$name' ADAPTER_HAS_HOOK_SYSTEM must be 'true' or 'false', got '$ADAPTER_HAS_HOOK_SYSTEM'"
+        ok=0
+        ;;
+    esac
+  fi
 
   # Bail early if fundamentals are missing.
   [ "$ok" -eq 1 ] || return 1
@@ -134,6 +162,7 @@ _validate_adapter() {
     adapter_healthcheck
     adapter_activation_instructions
     adapter_disable_instructions
+    adapter_migrate
   )
   for func in "${required_funcs[@]}"; do
     if ! declare -f "$func" >/dev/null 2>&1; then

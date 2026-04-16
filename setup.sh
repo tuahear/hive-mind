@@ -191,6 +191,15 @@ log "detected state: $STATE"
 case "$STATE" in
     already_synced)
         log "~/.claude is already a git repo with remote $(git -C "$MEMORY_DIR" remote get-url origin)"
+
+        # Read the previously-installed hive-mind version BEFORE pulling the
+        # latest (so adapter_migrate can make version-conditional decisions).
+        # Missing VERSION file = pre-refactor install; treat as 0.1.0.
+        prev_version="0.1.0"
+        if [ -f "$HIVE_MIND_DIR/VERSION" ]; then
+            prev_version="$(tr -d '[:space:]' < "$HIVE_MIND_DIR/VERSION")"
+        fi
+
         # Ensure sync/ exists even if the memory repo was set up pre-split.
         if [ ! -d "$HIVE_MIND_DIR/.git" ]; then
             log "installing sync/ scripts (not present yet)"
@@ -211,8 +220,9 @@ case "$STATE" in
             # shellcheck disable=SC1091
             source "$HIVE_MIND_DIR/core/adapter-loader.sh"
             load_adapter "$ADAPTER" || log "warning: adapter '$ADAPTER' failed to load — continuing with legacy paths"
-            # Migrate existing install (rewrites scripts/ → core/ paths if needed).
-            declare -f adapter_migrate >/dev/null 2>&1 && adapter_migrate "0.1.0"
+            # Migrate existing install, passing the previous version so the
+            # adapter can make version-conditional decisions.
+            declare -f adapter_migrate >/dev/null 2>&1 && adapter_migrate "$prev_version"
         fi
         manage_claude_skills
         exit 0

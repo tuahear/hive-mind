@@ -16,7 +16,13 @@ CORE_DIR="$(cd "$(dirname "$0")" && pwd)"
 : "${ADAPTER_DIR:=$HOME/.claude}"
 cd "$ADAPTER_DIR" || exit 0
 
-LOG=.sync-error.log
+# Log path: prefer adapter-declared path (Appendix A.2), fall back to the
+# per-directory default so pre-refactor installs keep working.
+if [ -n "${ADAPTER_LOG_PATH:-}" ]; then
+  LOG="$ADAPTER_LOG_PATH"
+else
+  LOG=.sync-error.log
+fi
 TS="$(date -u +%FT%TZ)"
 
 # Mirror per-project memory across path-variant directories before the
@@ -54,8 +60,13 @@ fi
 HIVE_MIND_FORMAT_VERSION=1
 FORMAT_FILE=".hive-mind-format"
 
-# Read remote format version (works against bare remotes too).
-remote_fmt="$(git show origin/main:"$FORMAT_FILE" 2>/dev/null | grep -oE '[0-9]+' | head -1)"
+# Read remote format version from the branch's configured upstream (not
+# a hardcoded origin/main — users may track a different default branch).
+upstream="$(git rev-parse --abbrev-ref @{u} 2>/dev/null)"
+remote_fmt=""
+if [ -n "$upstream" ]; then
+  remote_fmt="$(git show "$upstream:$FORMAT_FILE" 2>/dev/null | grep -oE '[0-9]+' | head -1)"
+fi
 
 if [ -n "$remote_fmt" ]; then
   if [ "$remote_fmt" -gt "$HIVE_MIND_FORMAT_VERSION" ] 2>/dev/null; then
@@ -95,51 +106,23 @@ if ! git diff --cached --quiet; then
   }
 
   # Look for <!-- commit: ... --> markers inside staged memory files.
+  # Delegate the fence-aware extract-and-strip to core/marker-extract.sh
+  # so the parsing logic isn't duplicated. marker-extract mutates the
+  # file in-place (strips markers, trims trailing blanks) and echoes
+  # extracted messages to stdout, one per line.
+  extractor="$CORE_DIR/marker-extract.sh"
   while IFS= read -r -d '' f; do
     [ -f "$f" ] || continue
     file_is_marker_target "$f" || continue
-    grep -q '<!--[[:space:]]*commit:' "$f" || continue
 
-    # Fence-aware extract + strip in a single awk pass.
-    tmp="$(mktemp)"
-    msg_file="$(mktemp)"
-    awk -v msgfile="$msg_file" '
-      BEGIN { fence = 0 }
-      /^[[:space:]]*```/ { fence = 1 - fence; print; next }
-      fence == 1 { print; next }
-      {
-        line = $0
-        if (match(line, /^[[:space:]]*<!--[[:space:]]*commit:[[:space:]]*[^>]+-->[[:space:]]*$/)) {
-          msg = line
-          sub(/^[[:space:]]*<!--[[:space:]]*commit:[[:space:]]*/, "", msg)
-          sub(/[[:space:]]*-->[[:space:]]*$/, "", msg)
-          print msg >> msgfile
-          next
-        }
-        if (match(line, /<!--[[:space:]]*commit:[[:space:]]*[^>]+-->/)) {
-          m = substr(line, RSTART, RLENGTH)
-          msg = m
-          sub(/^<!--[[:space:]]*commit:[[:space:]]*/, "", msg)
-          sub(/[[:space:]]*-->$/, "", msg)
-          print msg >> msgfile
-          gsub(/[[:space:]]*<!--[[:space:]]*commit:[[:space:]]*[^>]+-->/, "", line)
-        }
-        print line
-      }
-      END { close(msgfile) }
-    ' "$f" > "$tmp"
-
-    # Trim trailing blank lines.
-    awk '{ lines[NR]=$0; last=NR }
-         END {
-           while (last > 0 && lines[last] ~ /^[[:space:]]*$/) last--
-           for (i=1; i<=last; i++) print lines[i]
-         }' "$tmp" > "$tmp.trim" && mv "$tmp.trim" "$tmp"
-
-    if [ -s "$msg_file" ]; then
+    pre_sha=""
+    if [ -x "$extractor" ]; then
+      pre_sha="$(cat "$f" | shasum -a 1 2>/dev/null | awk '{print $1}')"
       while IFS= read -r extracted; do
         extracted="$(printf %s "$extracted" | tr -d '\r')"
         [ -z "$extracted" ] && continue
+        # Dedup: mirror-projects.sh copies an edited file into path-variant
+        # peers, so the same marker appears in multiple staged files.
         case " + $MSG + " in
           *" + $extracted + "*) continue ;;
         esac
@@ -148,15 +131,11 @@ if ! git diff --cached --quiet; then
         else
           MSG="$MSG + $extracted"
         fi
-      done < "$msg_file"
-    fi
-    rm -f "$msg_file"
-
-    if ! cmp -s "$f" "$tmp"; then
-      mv "$tmp" "$f"
-      git add "$f"
-    else
-      rm -f "$tmp"
+      done < <("$extractor" "$f" 2>>"$LOG")
+      post_sha="$(cat "$f" | shasum -a 1 2>/dev/null | awk '{print $1}')"
+      if [ -n "$pre_sha" ] && [ "$pre_sha" != "$post_sha" ]; then
+        git add "$f"
+      fi
     fi
   done < <(git diff --cached --name-only -z)
 
@@ -213,7 +192,8 @@ if ! git diff --cached --quiet; then
     max_retries=5
     backoff=1
     push_ok=0
-    for _attempt in $(seq 1 $max_retries); do
+    # Bash arithmetic for-loop -- no dependency on `seq` (not on all systems).
+    for (( _attempt=1; _attempt<=max_retries; _attempt++ )); do
       if git push -q 2>>"$LOG"; then
         push_ok=1
         break
