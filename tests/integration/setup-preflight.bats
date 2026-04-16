@@ -182,6 +182,38 @@ EOF
   [ ! -f "$HOME/ssh-invoked.log" ]
 }
 
+@test "setup.sh captures the previously-installed hive-mind version BEFORE pulling the source, and passes it through to adapter_migrate" {
+  # Regression: setup.sh used to call `adapter_migrate "0.0.0"` with
+  # a dummy sentinel, preventing adapters from doing version-gated
+  # migrations. The contract says the arg is the pre-upgrade hive-mind
+  # version — captured before `git pull` rewrites VERSION. Pin the
+  # capture-before-pull ordering in the source.
+  #
+  # Source-level invariants (both must hold):
+  #   1. A PREV_HIVE_MIND_VERSION assignment exists and reads VERSION
+  #      from $HIVE_MIND_SRC BEFORE the `git pull` / `git clone` block.
+  #   2. adapter_migrate is invoked with "$PREV_HIVE_MIND_VERSION"
+  #      (not "0.0.0" or any other literal).
+  #
+  # Scanner-style test: parse setup.sh line numbers so a refactor that
+  # reorders the capture to AFTER the pull fails here.
+  prev_ln=$(grep -n '^PREV_HIVE_MIND_VERSION=' "$SETUP" | head -1 | cut -d: -f1)
+  [ -n "$prev_ln" ]
+  pull_ln=$(grep -n 'git -C "$HIVE_MIND_SRC" pull' "$SETUP" | head -1 | cut -d: -f1)
+  [ -n "$pull_ln" ]
+  # Capture must come before the pull — numeric line-number compare.
+  [ "$prev_ln" -lt "$pull_ln" ]
+
+  # Default value when VERSION is absent is the documented "0.1.0"
+  # sentinel (adapter_migrate contract uses this for pre-0.2 installs).
+  grep -qE 'PREV_HIVE_MIND_VERSION="0\.1\.0"' "$SETUP"
+
+  # adapter_migrate is called with the captured variable, not a literal.
+  grep -qE 'adapter_migrate "\$PREV_HIVE_MIND_VERSION"' "$SETUP"
+  run grep -E 'adapter_migrate "0\.0\.0"' "$SETUP"
+  [ "$status" -ne 0 ]
+}
+
 @test "setup.sh preflight invokes ssh exactly once per unique SSH host, even when HIVE_MIND_REPO and MEMORY_REPO share it" {
   # Dedup pin — a user pointing both at github.com should see one ssh
   # probe, not two. Regression would waste a round-trip per install on

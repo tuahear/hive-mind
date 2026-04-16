@@ -180,8 +180,19 @@ log "memory repo: $(sanitize_remote_url "$MEMORY_REPO")"
 # ---------- install/refresh hive-mind source ----------
 log "[1/6] installing hive-mind source at $HIVE_MIND_SRC"
 mkdir -p "$HIVE_MIND_HUB_DIR"
+# Capture the previously-installed hive-mind version BEFORE `git pull`
+# rewrites $HIVE_MIND_SRC/VERSION to the latest. adapter_migrate
+# expects the pre-upgrade version string so adapter authors can gate
+# migrations on specific transitions (v0.2.x → v0.3.x hook-path
+# rewrite, for example). A missing VERSION file means a pre-0.2
+# install without version tracking — use the documented "0.1.0"
+# sentinel that adapter-loader.sh's migrate contract recognizes.
+PREV_HIVE_MIND_VERSION="0.1.0"
+if [ -f "$HIVE_MIND_SRC/VERSION" ]; then
+    PREV_HIVE_MIND_VERSION="$(tr -d '[:space:]' < "$HIVE_MIND_SRC/VERSION" 2>/dev/null || echo "0.1.0")"
+fi
 if [ -d "$HIVE_MIND_SRC/.git" ]; then
-    log "  source already present; pulling latest"
+    log "  source already present; pulling latest (previous version: $PREV_HIVE_MIND_VERSION)"
     git -C "$HIVE_MIND_SRC" pull --rebase --autostash --quiet || true
 else
     rm -rf "$HIVE_MIND_SRC"
@@ -341,7 +352,7 @@ hub_fan_out "$HIVE_MIND_HUB_DIR" "$ADAPTER_DIR"
 # Run adapter migration against any pre-0.3.0 hook paths in
 # ADAPTER_DIR/settings.json so an upgrade install rewrites them to the
 # hub entry point before adapter_install_hooks checks for presence.
-declare -f adapter_migrate >/dev/null 2>&1 && adapter_migrate "0.0.0"
+declare -f adapter_migrate >/dev/null 2>&1 && adapter_migrate "$PREV_HIVE_MIND_VERSION"
 
 # Install the tool's hooks (they now point at the hub's bin/sync).
 adapter_install_hooks

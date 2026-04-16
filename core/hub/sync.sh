@@ -149,6 +149,17 @@ declare -a HUB_ADAPTER_NAMES=()
 declare -a HUB_SECRET_LISTS=()
 
 # --- phase: harvest --------------------------------------------------------
+# Bootstrap project-id sidecars BEFORE hub_harvest runs. mirror-projects
+# walks each flat-layout adapter's projects/<encoded-cwd>/ tree and
+# writes the <variant>/memory/.hive-mind sidecar that hub_harvest keys
+# on. Without this pre-pass, a fresh install with existing per-project
+# memory silently no-ops — hub_harvest's per-project loop skips
+# variants whose sidecar is absent, so the hub's projects/<id>/ stays
+# empty and cross-machine per-project sync never materializes.
+# Hierarchical-memory-model adapters (Codex/Kimi) don't use the flat
+# projects/<encoded-cwd>/ tree, so mirror-projects is a clean no-op
+# for them (it exits when projects/ is absent).
+MIRROR_PROJECTS="$CORE_DIR/mirror-projects.sh"
 for name in "${ATTACHED[@]}"; do
   if ! load_adapter "$name" 2>>"$LOG"; then
     echo "$TS WARN hub-sync: failed to load adapter '$name' -- skipping" >>"$LOG"
@@ -162,6 +173,11 @@ for name in "${ATTACHED[@]}"; do
   HUB_ADAPTER_NAMES+=("$name")
   HUB_TOOL_DIRS+=("$tool_dir")
   HUB_SECRET_LISTS+=("${ADAPTER_SECRET_FILES:-}")
+  # Sidecar bootstrap: only for flat-model adapters (the only kind
+  # that have a projects/<encoded-cwd>/ layout to mirror).
+  if [ "${ADAPTER_MEMORY_MODEL:-}" = "flat" ] && [ -x "$MIRROR_PROJECTS" ]; then
+    ADAPTER_DIR="$tool_dir" "$MIRROR_PROJECTS" 2>>"$LOG" || true
+  fi
   hub_harvest "$tool_dir" "$HIVE_MIND_HUB_DIR"
 done
 

@@ -52,9 +52,17 @@ adapter_install_hooks() {
   # gets repaired on re-run.
   local all_present=1
   local event
+  # The `select` uses `(.command // "")` rather than `.command` because
+  # a user's settings.json can legitimately contain non-command hook
+  # entries (prompt hooks, agent hooks, http hooks — none of which
+  # carry a `.command` field). With a bare `.command | test(...)` jq
+  # errors on the first such entry and the probe misreports "this
+  # event has no hive-mind hook" for an event that does — the merge
+  # branch below then runs on every invocation, wasting work on an
+  # already-installed hook set.
   for event in SessionStart Stop PostToolUse; do
     if ! jq -e --arg e "$event" '
-      (.hooks[$e] // []) | map(.hooks[]? | select(.command | test("(\\.hive-mind/(bin/sync|hive-mind/core/)|\\.claude/hive-mind/(core|scripts)/)"))) | length > 0
+      (.hooks[$e] // []) | map(.hooks[]? | select((.command // "") | test("(\\.hive-mind/(bin/sync|hive-mind/core/)|\\.claude/hive-mind/(core|scripts)/)"))) | length > 0
     ' "$settings" >/dev/null 2>&1; then
       all_present=0
       break

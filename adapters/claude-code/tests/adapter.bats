@@ -275,6 +275,52 @@ EOF
   jq -e '.permissions.allow | index("Bash(npm test)")' "$ADAPTER_DIR/settings.json" >/dev/null
 }
 
+@test "install_hooks idempotency probe tolerates non-command hook entries (prompt / agent / http)" {
+  # Regression: the presence check previously used `.command | test(...)`
+  # on every hook entry. A user's settings.json can legitimately carry
+  # non-command hooks — type=="prompt", type=="agent", type=="http" —
+  # none of which have a `.command` field. Under jq, `null | test(...)`
+  # errors out and the probe treats the event as missing, so
+  # install_hooks runs the merge branch every invocation instead of
+  # short-circuiting. Pin the `(.command // "")` guard.
+  mkdir -p "$ADAPTER_DIR"
+  # Pre-seed a settings.json that has the canonical hive-mind hooks
+  # AND a user-added prompt-type hook on one of the same events.
+  # After install_hooks runs, the prompt hook must survive AND the
+  # idempotency check must NOT have silently re-merged the template
+  # (detectable: re-running install_hooks on a prompt-hook-containing
+  # config that already has all hive-mind hooks should leave the file
+  # byte-identical).
+  cat > "$ADAPTER_DIR/settings.json" <<'SETTINGS'
+{
+  "hooks": {
+    "SessionStart": [
+      {"hooks": [{"type":"command","command":"\"$HOME/.hive-mind/hive-mind/core/check-dupes.sh\""}]},
+      {"hooks": [{"type":"prompt","prompt":"Is this a clean start? $ARGUMENTS"}]}
+    ],
+    "Stop": [{"hooks": [{"type":"command","command":"\"$HOME/.hive-mind/bin/sync\""}]}],
+    "PostToolUse": [
+      {"matcher": "Edit|Write|NotebookEdit",
+       "hooks": [{"type":"command","command":"\"$HOME/.hive-mind/hive-mind/core/marker-nudge.sh\""}]}
+    ]
+  }
+}
+SETTINGS
+
+  before="$(cat "$ADAPTER_DIR/settings.json")"
+
+  adapter_install_hooks
+
+  after="$(cat "$ADAPTER_DIR/settings.json")"
+  # Idempotent: all hive-mind hooks were already present, so the
+  # probe must have short-circuited and NOT rewritten the file. A
+  # bare `.command | test(...)` would jq-error on the prompt entry,
+  # return false for the event, and fall into the merge branch.
+  [ "$before" = "$after" ]
+  # Prompt-type hook survived.
+  jq -e '.hooks.SessionStart[] | select(.hooks[0].type == "prompt")' "$ADAPTER_DIR/settings.json" >/dev/null
+}
+
 @test "install_hooks self-heals when a required hook event was deleted" {
   # Upgrade path runs install_hooks on existing settings.json. If the
   # user or a buggy previous install removed one of the hook events
