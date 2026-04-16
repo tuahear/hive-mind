@@ -399,3 +399,39 @@ marker() {
   [ -f "$HOME/.claude/.hive-mind-state/last-push" ]
   [[ "$(cat "$HOME/.claude/.hive-mind-state/last-push")" =~ ^[0-9]+$ ]]
 }
+
+@test "fresh install with empty remote pushes the initial commit and sets upstream" {
+  # Scenario: `git init` + `git remote add` pointing at an EMPTY bare
+  # remote (no branches yet) and no upstream tracking configured.
+  # Naive use of `@{u}` as the "unpushed commits?" check fails here
+  # (undefined), leaving the initial commit stranded until another
+  # file change triggers another commit. The fix: detect no upstream
+  # and run `git push -u origin <branch>` so the first push
+  # publishes the branch AND sets tracking for subsequent syncs.
+  empty_remote="$HOME/empty-remote.git"
+  git -c init.defaultBranch=main init --bare -q "$empty_remote"
+
+  fresh="$HOME/fresh-claude"
+  mkdir -p "$fresh"
+  git -c init.defaultBranch=main init -q "$fresh"
+  git -C "$fresh" config user.email t@t.t
+  git -C "$fresh" config user.name t
+  git -C "$fresh" remote add origin "$empty_remote"
+  # No `git fetch`, no `git branch -u` — upstream is unset AND the
+  # remote has no branches yet. This is exactly the fresh-init case.
+
+  cat > "$fresh/.gitignore" <<'EOF'
+/*
+!/.gitignore
+!/CLAUDE.md
+EOF
+  printf 'first content\n' > "$fresh/CLAUDE.md"
+
+  run bash -c "ADAPTER_DIR='$fresh' bash '$SCRIPT'"
+  [ "$status" -eq 0 ]
+
+  # The initial commit reached the remote.
+  git -C "$empty_remote" log --oneline --all | grep -q .
+  # Upstream tracking got configured by the `-u` flag.
+  git -C "$fresh" rev-parse --abbrev-ref '@{u}' >/dev/null 2>&1
+}

@@ -162,3 +162,92 @@ SETTINGS
   [ -f "$ADAPTER_DIR/settings.json" ]
   [ "$(jq -r '.model' "$ADAPTER_DIR/settings.json")" = "opus" ]
 }
+
+# === hook command strings are space-safe ===================================
+
+@test "settings.json template uses quoted \$HOME form (survives spaces in home dir)" {
+  # A home directory containing spaces (e.g. /c/Users/Jane Doe on Windows
+  # Git Bash) would word-split an unquoted ~/.claude path at shell parse
+  # time and break hook execution. Every command string in the template
+  # must use "\$HOME/.claude/..." with quotes.
+  local template="${ADAPTER_ROOT}/settings.json"
+  while IFS= read -r cmd; do
+    [[ "$cmd" = *'"$HOME/.claude'* ]] || {
+      echo "command missing quoted \$HOME: $cmd" >&2
+      return 1
+    }
+  done < <(jq -r '.hooks | .[] | .[].hooks[] | .command' "$template")
+
+  # And NO unquoted tilde form anywhere in the template.
+  run grep -E 'cd ~/\.claude[^"]|~/\.claude/hive-mind' "$template"
+  [ "$status" -ne 0 ]
+}
+
+@test "adapter_migrate upgrades unquoted tilde form in existing settings.json" {
+  # An existing install may carry the earlier unquoted-tilde form in
+  # settings.json. Migration must rewrite both the Stop hook command
+  # AND the SessionStart cd+chain to the quoted-\$HOME form so users
+  # on spaces-in-home-dir machines get fixed on the next setup.sh run,
+  # not just new installs.
+  mkdir -p "$ADAPTER_DIR"
+  cat > "$ADAPTER_DIR/settings.json" <<'EOF'
+{
+  "hooks": {
+    "SessionStart": [{"hooks": [{"command": "cd ~/.claude && { ~/.claude/hive-mind/core/check-dupes.sh; }"}]}],
+    "Stop": [{"hooks": [{"command": "~/.claude/hive-mind/core/sync.sh"}]}]
+  }
+}
+EOF
+
+  adapter_migrate "0.1.0"
+
+  stop_cmd="$(jq -r '.hooks.Stop[0].hooks[0].command' "$ADAPTER_DIR/settings.json")"
+  [ "$stop_cmd" = '"$HOME/.claude/hive-mind/core/sync.sh"' ]
+
+  sess_cmd="$(jq -r '.hooks.SessionStart[0].hooks[0].command' "$ADAPTER_DIR/settings.json")"
+  [[ "$sess_cmd" = *'cd "$HOME/.claude"'* ]]
+  [[ "$sess_cmd" = *'"$HOME/.claude/hive-mind/core/check-dupes.sh"'* ]]
+}
+
+# === install_hooks preserves user settings ==================================
+
+@test "install_hooks does not add empty permissions.allow when neither side has one" {
+  # Writing permissions.allow=[] into a user's settings.json that had
+  # no permissions block at all is silent drift the user didn't ask
+  # for. The jq merge guards the union behind a check that at least
+  # one side has a non-null allow list.
+  mkdir -p "$ADAPTER_DIR"
+  echo '{"model":"opus"}' > "$ADAPTER_DIR/settings.json"
+
+  adapter_install_hooks
+
+  # The .permissions key should be ABSENT (neither user nor template had one).
+  run jq -e 'has("permissions")' "$ADAPTER_DIR/settings.json"
+  [ "$status" -ne 0 ]
+}
+
+@test "install_hooks preserves user's permissions.allow when present" {
+  mkdir -p "$ADAPTER_DIR"
+  echo '{"permissions":{"allow":["Bash(npm test)"]}}' > "$ADAPTER_DIR/settings.json"
+
+  adapter_install_hooks
+
+  jq -e '.permissions.allow | index("Bash(npm test)")' "$ADAPTER_DIR/settings.json" >/dev/null
+}
+
+@test "install_hooks self-heals when a required hook event was deleted" {
+  # Upgrade path runs install_hooks on existing settings.json. If the
+  # user or a buggy previous install removed one of the hook events
+  # (e.g. Stop), re-running install_hooks must put it back -- partial
+  # installs are worse than clean ones.
+  mkdir -p "$ADAPTER_DIR"
+  adapter_install_hooks
+  local tmp
+  tmp="$(mktemp)"
+  jq 'del(.hooks.Stop)' "$ADAPTER_DIR/settings.json" > "$tmp"
+  mv "$tmp" "$ADAPTER_DIR/settings.json"
+
+  adapter_install_hooks
+
+  [ "$(jq '.hooks.Stop | length' "$ADAPTER_DIR/settings.json")" -gt 0 ]
+}
