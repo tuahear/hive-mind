@@ -17,8 +17,13 @@ setup() {
 
   adapter="${ADAPTER_UNDER_TEST:-fake}"
   if [ "$adapter" = "fake" ]; then
-    mkdir -p "$REPO_ROOT/adapters/fake"
-    cp "$REPO_ROOT/tests/fixtures/adapters/fake/"* "$REPO_ROOT/adapters/fake/"
+    # Stage fake adapter into a temp dir; point the loader at it via
+    # HIVE_MIND_ADAPTERS_DIR so the real $REPO_ROOT/adapters/ never gets
+    # mutated (keeps concurrent bats runs safe, leaves no debris on abort).
+    TEST_ADAPTERS_DIR="$HOME/_test_adapters"
+    mkdir -p "$TEST_ADAPTERS_DIR/fake"
+    cp "$REPO_ROOT/tests/fixtures/adapters/fake/"* "$TEST_ADAPTERS_DIR/fake/"
+    export HIVE_MIND_ADAPTERS_DIR="$TEST_ADAPTERS_DIR"
     export FAKE_ADAPTER_HOME="$HOME"
   fi
 
@@ -47,7 +52,7 @@ setup() {
 }
 
 teardown() {
-  rm -rf "$REPO_ROOT/adapters/fake"
+  # TEST_ADAPTERS_DIR lives under $HOME, which this rm -rf handles.
   rm -rf "$HOME"
 }
 

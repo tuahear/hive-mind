@@ -85,7 +85,12 @@ manage_claude_skills() {
     # templates/skills for pre-refactor installs.
     local src="$HIVE_MIND_DIR/adapters/$ADAPTER/skills"
     [ -d "$src" ] || src="$HIVE_MIND_DIR/templates/skills"
-    local dst="$MEMORY_DIR/skills"
+    # Install target: route through the adapter contract
+    # (ADAPTER_SKILL_ROOT) when the adapter was loaded. Falls back to
+    # $MEMORY_DIR/skills for pre-adapter-contract invocations and for
+    # adapters that declare no skill root (ADAPTER_SKILL_ROOT="").
+    local dst="${ADAPTER_SKILL_ROOT:-$MEMORY_DIR/skills}"
+    [ -n "$dst" ] || return 0
     [ -d "$src" ] || return 0
     mkdir -p "$dst"
     if [ -d "$dst/memory-commit" ]; then

@@ -18,9 +18,14 @@ setup() {
 
   adapter="${ADAPTER_UNDER_TEST:-fake}"
   if [ "$adapter" = "fake" ]; then
-    # Link fake adapter into the adapters/ tree so load_adapter finds it.
-    mkdir -p "$REPO_ROOT/adapters/fake"
-    cp "$REPO_ROOT/tests/fixtures/adapters/fake/"* "$REPO_ROOT/adapters/fake/"
+    # Stage the fake adapter into a temp adapters dir and point the
+    # loader at it via HIVE_MIND_ADAPTERS_DIR. That way the test never
+    # mutates the real $REPO_ROOT/adapters/ (which would interfere with
+    # parallel bats runs and leave the tree dirty on interruption).
+    TEST_ADAPTERS_DIR="$HOME/_test_adapters"
+    mkdir -p "$TEST_ADAPTERS_DIR/fake"
+    cp "$REPO_ROOT/tests/fixtures/adapters/fake/"* "$TEST_ADAPTERS_DIR/fake/"
+    export HIVE_MIND_ADAPTERS_DIR="$TEST_ADAPTERS_DIR"
     export FAKE_ADAPTER_HOME="$HOME"
   fi
 
@@ -29,8 +34,8 @@ setup() {
 }
 
 teardown() {
-  # Clean up fake adapter symlink.
-  rm -rf "$REPO_ROOT/adapters/fake"
+  # No in-repo fixture to clean up -- TEST_ADAPTERS_DIR lives under $HOME,
+  # which gets rm -rf'd below.
   rm -rf "$HOME"
 }
 

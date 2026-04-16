@@ -51,9 +51,13 @@ _loader_log() {
 
 load_adapter() {
   local adapter_name="$1"
-  local loader_root
+  local loader_root adapters_dir
   loader_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-  local adapter_file="$loader_root/adapters/$adapter_name/adapter.sh"
+  # HIVE_MIND_ADAPTERS_DIR overrides the default adapters/ directory.
+  # Tests use this to point at a temp directory full of fixture
+  # adapters so they don't have to mutate the real repo checkout.
+  adapters_dir="${HIVE_MIND_ADAPTERS_DIR:-$loader_root/adapters}"
+  local adapter_file="$adapters_dir/$adapter_name/adapter.sh"
 
   if [ ! -f "$adapter_file" ]; then
     _loader_log ERROR "adapter '$adapter_name' not found at $adapter_file"
@@ -62,7 +66,7 @@ load_adapter() {
 
   # ADAPTER_ROOT is set before sourcing so the adapter can reference its
   # own bundled assets (gitignore template, skills, etc.) portably.
-  ADAPTER_ROOT="$loader_root/adapters/$adapter_name"
+  ADAPTER_ROOT="$adapters_dir/$adapter_name"
   export ADAPTER_ROOT
 
   # Save caller's shell options, source the adapter (which typically
@@ -242,9 +246,9 @@ _validate_adapter() {
 # Prints adapter names (one per line) for every adapter whose healthcheck
 # passes. Caller picks the one they want (e.g. first match, or user flag).
 detect_adapters() {
-  local loader_root
+  local loader_root adapters_dir
   loader_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-  local adapters_dir="$loader_root/adapters"
+  adapters_dir="${HIVE_MIND_ADAPTERS_DIR:-$loader_root/adapters}"
   [ -d "$adapters_dir" ] || return 0
 
   for d in "$adapters_dir"/*/; do

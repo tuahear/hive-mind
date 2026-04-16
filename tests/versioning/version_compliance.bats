@@ -1,17 +1,47 @@
 #!/usr/bin/env bats
 # Version compliance tests — verifies all version constants parse correctly
 # and that adapter API versions are compatible with core.
+#
+# Reads values by SOURCING the scripts in subshells, not by grep/sed
+# scraping the file text. That way harmless refactors (single vs double
+# quotes, whitespace, where the assignment lives) don't false-fail.
 
 REPO_ROOT="$BATS_TEST_DIRNAME/../.."
 
+# Helper: source core/adapter-loader.sh in a clean subshell and echo
+# the value of a named core variable. Stdout is the value; non-zero
+# exit if the variable was never set. Runs in a subshell so the load
+# doesn't pollute the test environment.
+_core_var() {
+  local var="$1"
+  (
+    # shellcheck disable=SC1091
+    source "$REPO_ROOT/core/adapter-loader.sh" >/dev/null 2>&1
+    printf '%s' "${!var-}"
+  )
+}
+
+# Helper: source an adapter.sh in a clean subshell (with ADAPTER_ROOT
+# set so the relative gitignore/gitattributes paths resolve) and echo
+# the named ADAPTER_* variable.
+_adapter_var() {
+  local adapter_dir="$1" var="$2"
+  (
+    ADAPTER_ROOT="$adapter_dir"
+    export ADAPTER_ROOT
+    # shellcheck disable=SC1091
+    source "$adapter_dir/adapter.sh" >/dev/null 2>&1
+    printf '%s' "${!var-}"
+  )
+}
+
 @test "core API version is valid semver" {
-  version="$(grep 'HIVE_MIND_CORE_API_VERSION=' "$REPO_ROOT/core/adapter-loader.sh" \
-    | head -1 | sed 's/.*="//' | sed 's/".*//')"
+  version="$(_core_var HIVE_MIND_CORE_API_VERSION)"
   [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
 }
 
 @test "VERSION file is valid semver" {
-  version="$(cat "$REPO_ROOT/VERSION" | tr -d '[:space:]')"
+  version="$(tr -d '[:space:]' < "$REPO_ROOT/VERSION")"
   [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
 }
 
@@ -19,8 +49,7 @@ REPO_ROOT="$BATS_TEST_DIRNAME/../.."
   for adapter_dir in "$REPO_ROOT/adapters"/*/; do
     [ -f "$adapter_dir/adapter.sh" ] || continue
     name="$(basename "$adapter_dir")"
-    version="$(grep 'ADAPTER_API_VERSION=' "$adapter_dir/adapter.sh" \
-      | head -1 | sed 's/.*="//' | sed 's/".*//')"
+    version="$(_adapter_var "$adapter_dir" ADAPTER_API_VERSION)"
     [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
       echo "adapter '$name' has invalid ADAPTER_API_VERSION='$version'" >&2
       return 1
@@ -29,15 +58,13 @@ REPO_ROOT="$BATS_TEST_DIRNAME/../.."
 }
 
 @test "each adapter API minor <= core API minor within same major" {
-  core_ver="$(grep 'HIVE_MIND_CORE_API_VERSION=' "$REPO_ROOT/core/adapter-loader.sh" \
-    | head -1 | sed 's/.*="//' | sed 's/".*//')"
+  core_ver="$(_core_var HIVE_MIND_CORE_API_VERSION)"
   IFS='.' read -r c_major c_minor c_patch <<< "$core_ver"
 
   for adapter_dir in "$REPO_ROOT/adapters"/*/; do
     [ -f "$adapter_dir/adapter.sh" ] || continue
     name="$(basename "$adapter_dir")"
-    ver="$(grep 'ADAPTER_API_VERSION=' "$adapter_dir/adapter.sh" \
-      | head -1 | sed 's/.*="//' | sed 's/".*//')"
+    ver="$(_adapter_var "$adapter_dir" ADAPTER_API_VERSION)"
     IFS='.' read -r a_major a_minor a_patch <<< "$ver"
 
     [ "$a_major" -eq "$c_major" ] || {
@@ -52,16 +79,26 @@ REPO_ROOT="$BATS_TEST_DIRNAME/../.."
 }
 
 @test "HIVE_MIND_FORMAT_VERSION in sync.sh is a positive integer" {
-  fmt="$(grep 'HIVE_MIND_FORMAT_VERSION=' "$REPO_ROOT/core/sync.sh" \
-    | head -1 | sed 's/.*=//')"
+  # sync.sh sets HIVE_MIND_FORMAT_VERSION in a block guarded by side-
+  # effectful `cd "$ADAPTER_DIR"` and git calls. Source it in a
+  # subshell with a fake ADAPTER_DIR so those side effects are harmless.
+  fmt="$(
+    ADAPTER_DIR="$(mktemp -d)"
+    export ADAPTER_DIR
+    cd "$ADAPTER_DIR" || exit 1
+    git -c init.defaultBranch=main init -q 2>/dev/null
+    # shellcheck disable=SC1091
+    HIVE_MIND_FORMAT_VERSION=""
+    # sync.sh assigns the var then immediately does more work; we just
+    # need the assignment, so eval just that line via grep+source is
+    # overkill. Use awk to pull the literal line and eval it.
+    eval "$(awk '/^HIVE_MIND_FORMAT_VERSION=/{print; exit}' "$REPO_ROOT/core/sync.sh")"
+    printf '%s' "$HIVE_MIND_FORMAT_VERSION"
+  )"
   [[ "$fmt" =~ ^[1-9][0-9]*$ ]]
 }
 
-@test "format-version in .hive-mind-format template is a positive integer" {
-  # The format file doesn't exist as a template — it's created at runtime.
-  # But we verify the value written by sync.sh parses as expected.
-  # Run a quick check that HIVE_MIND_FORMAT_VERSION matches.
-  fmt="$(grep 'HIVE_MIND_FORMAT_VERSION=' "$REPO_ROOT/core/sync.sh" \
-    | head -1 | sed 's/.*=//')"
+@test "HIVE_MIND_FORMAT_VERSION is >= 1" {
+  fmt="$(awk -F= '/^HIVE_MIND_FORMAT_VERSION=/{gsub(/[^0-9]/,"",$2); print $2; exit}' "$REPO_ROOT/core/sync.sh")"
   [ "$fmt" -ge 1 ]
 }
