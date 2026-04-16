@@ -1,6 +1,6 @@
 #!/bin/bash
 # DEPRECATED: forwarding shim. Use core/jsonmerge.sh directly.
-SENTINEL="${ADAPTER_DIR:-$HOME/.claude}/hive-mind/.shim-deprecated-jsonmerge"
+SENTINEL="${ADAPTER_DIR:-$HOME/.claude}/.hive-mind-state/shim-deprecated-jsonmerge"
 if [ ! -f "$SENTINEL" ]; then
   mkdir -p "$(dirname "$SENTINEL")" 2>/dev/null
   printf '%s WARN jsonmerge: scripts/jsonmerge.sh is deprecated, use core/jsonmerge.sh (logged once)\n' \

@@ -356,11 +356,12 @@ marker() {
   [ "$remote_head1" != "$remote_head2" ]
 }
 
-@test "rate limit: .last-push file is written after successful push" {
+@test "rate limit: last-push state file is written after successful push outside hive-mind git repo" {
   printf 'hello\n' > "$HOME/.claude/CLAUDE.md"
   run run_sync
   [ "$status" -eq 0 ]
-  [ -f "$HOME/.claude/hive-mind/.last-push" ]
-  # Contents should be a unix timestamp (all digits).
-  [[ "$(cat "$HOME/.claude/hive-mind/.last-push")" =~ ^[0-9]+$ ]]
+  # State lives under $ADAPTER_DIR/.hive-mind-state/ so it never lands
+  # inside the hive-mind checkout (which gets `git pull`ed on upgrade).
+  [ -f "$HOME/.claude/.hive-mind-state/last-push" ]
+  [[ "$(cat "$HOME/.claude/.hive-mind-state/last-push")" =~ ^[0-9]+$ ]]
 }

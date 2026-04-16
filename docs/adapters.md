@@ -24,7 +24,7 @@ When you run `setup.sh`, it reads the `ADAPTER` env var (defaulting to `claude-c
 
 ## For Claude Code users
 
-Nothing changes. After upgrading, `setup.sh` detects Claude Code and loads the `claude-code` adapter automatically. Your hooks, memory, and skills work exactly as before.
+Nothing changes. `setup.sh` defaults to the `claude-code` adapter (override with `ADAPTER=<name>` in the environment). Your hooks, memory, and skills work exactly as before.
 
 The only visible change: hook commands in `settings.json` now reference `core/sync.sh` instead of `scripts/sync.sh`. The migration handles this automatically. Legacy `scripts/` paths still work via forwarding shims during the transition.
 

@@ -170,8 +170,10 @@ if ! git diff --cached --quiet; then
   # locally but skip the push. The next turn-end fires it if enough time
   # has passed, catching any queued commits together.
   : "${HIVE_MIND_MIN_PUSH_INTERVAL_SEC:=10}"
-  HIVE_MIND_DIR="${ADAPTER_DIR}/hive-mind"
-  LAST_PUSH_FILE="${HIVE_MIND_DIR}/.last-push"
+  # Store rate-limit state OUTSIDE the hive-mind git checkout so upgrades
+  # (`git pull` in ~/.claude/hive-mind/) never see it as untracked noise.
+  HIVE_MIND_STATE_DIR="${ADAPTER_DIR}/.hive-mind-state"
+  LAST_PUSH_FILE="${HIVE_MIND_STATE_DIR}/last-push"
 
   should_push=1
   if [ -f "$LAST_PUSH_FILE" ]; then
@@ -205,7 +207,7 @@ if ! git diff --cached --quiet; then
     done
 
     if [ "$push_ok" -eq 1 ]; then
-      mkdir -p "$HIVE_MIND_DIR"
+      mkdir -p "$HIVE_MIND_STATE_DIR"
       date +%s > "$LAST_PUSH_FILE"
     else
       echo "$TS ERROR sync: push failed after $max_retries retries" >>"$LOG"

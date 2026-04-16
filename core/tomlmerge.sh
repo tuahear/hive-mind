@@ -39,7 +39,9 @@ tmp="$(mktemp)"
 trap 'rm -f "$tmp" "$tmp.ours" "$tmp.theirs" "$tmp.merged"' EXIT
 
 # --- Parse TOML into a flat key=value representation ----------------------
-# Output: section.key<TAB>value (one per line, arrays expanded per-element)
+# Output: section.key<TAB>value (one line per key; array literals are
+# emitted whole and split later by parse_array only when needed for union
+# merging).
 # Exit non-zero if any non-blank, non-comment, non-section, non-key line
 # appears (inline tables, array-of-tables, multi-line strings, etc.) so
 # git can fall back to its default merge instead of silently dropping.

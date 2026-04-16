@@ -137,7 +137,16 @@ ADAPTER_LOG_PATH="${ADAPTER_DIR}/.sync-error.log"
 
 # --- Healthcheck -----------------------------------------------------------
 adapter_healthcheck() {
-  command -v claude >/dev/null 2>&1 || [ -d "$ADAPTER_DIR" ] || mkdir -p "$ADAPTER_DIR" 2>/dev/null
+  # Require the `claude` binary on PATH OR a populated Claude install
+  # (settings.json or CLAUDE.md present — means Claude has been run
+  # here at least once, even if uninstalled since). A bare empty
+  # ~/.claude dir alone is not enough — that catches leftover state
+  # from an uninstalled tool, which detect_adapters would otherwise
+  # misreport as "claude-code is available".
+  if command -v claude >/dev/null 2>&1; then
+    return 0
+  fi
+  [ -f "$ADAPTER_DIR/settings.json" ] || [ -f "$ADAPTER_DIR/CLAUDE.md" ]
 }
 
 # --- Migration (optional) --------------------------------------------------
