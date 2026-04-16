@@ -106,6 +106,13 @@ toml_flatten() {
       # files) is collateral — falling back to git default merge is a
       # safer outcome than silent value corruption.
       if (val !~ /^\[/ && val ~ /#/) { unrecognized = 1; exit }
+      # Reject values containing a literal tab character. The flatten
+      # format uses tab as the field separator between key and value;
+      # a tab inside val (e.g. `key = "a\tb"` with a real tab in the
+      # quoted string) would produce extra fields and downstream
+      # `awk -F "\t"` lookups would truncate the value silently. Fall
+      # back to git default merge rather than corrupt the content.
+      if (index(val, "\t") > 0) { unrecognized = 1; exit }
       fullkey = (section != "" ? section "." : "") key
       print fullkey "\t" val
       saw_content = 1

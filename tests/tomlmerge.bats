@@ -247,6 +247,19 @@ run_merge() {
   [ "$status" -ne 0 ]
 }
 
+@test "rejects scalar value containing a literal tab character" {
+  # The internal flatten format is tab-delimited (key<TAB>val). A tab
+  # inside a quoted string value would produce extra fields, and the
+  # downstream merge / reconstruction pass reads with awk -F "\t" and
+  # would silently truncate the value. Fall back to git default merger
+  # rather than corrupt the content.
+  printf '[section]\nkey = "a\tb"\n' > "$OURS"
+  printf '[section]\nkey = "c"\n' > "$THEIRS"
+
+  run run_merge
+  [ "$status" -ne 0 ]
+}
+
 @test "rejects inline comment on bare-value scalar (key = 42 # note)" {
   # Same failure mode for non-string scalars. A user annotating a
   # numeric config value with a trailing comment must not corrupt

@@ -48,7 +48,7 @@ These pass validation with an empty string but the assignment itself must be pre
 |---|---|---|
 | `ADAPTER_GLOBAL_MEMORY` | `ADAPTER_MEMORY_MODEL=flat` | Absolute path to the global memory file (e.g. `CLAUDE.md`) |
 | `ADAPTER_PROJECT_MEMORY_DIR` | `ADAPTER_MEMORY_MODEL=flat` | Absolute path template to per-project memory dirs |
-| `adapter_list_memory_files` (function) | `ADAPTER_MEMORY_MODEL=hierarchical` | Emits newline-separated absolute paths of memory files for mirror-projects to walk |
+| `adapter_list_memory_files` (function) | `ADAPTER_MEMORY_MODEL=hierarchical` | Emits newline-separated absolute paths of memory files this adapter recognizes for a given project. No core script currently invokes this — `core/mirror-projects.sh` and `core/check-dupes.sh` scope to the flat `projects/<encoded-cwd>/` layout only. Declare it as a contract-surface slot for the adapter's own install / diagnostic tooling and as forward-compat for future hierarchical sync. A no-op stub is an acceptable implementation today. |
 
 ### Required functions
 
