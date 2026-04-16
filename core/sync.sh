@@ -25,16 +25,35 @@ HIVE_MIND_STATE_DIR="${ADAPTER_DIR}/.hive-mind-state"
 LOCK_DIR="${HIVE_MIND_STATE_DIR}/sync.lock"
 mkdir -p "$HIVE_MIND_STATE_DIR" 2>/dev/null
 if ! mkdir "$LOCK_DIR" 2>/dev/null; then
-  # Stale lock detection: if the directory is older than 5 minutes,
-  # assume the previous run died and reclaim it. Otherwise silently skip.
-  if [ -n "$(find "$LOCK_DIR" -maxdepth 0 -mmin +5 2>/dev/null)" ]; then
-    rmdir "$LOCK_DIR" 2>/dev/null
-    mkdir "$LOCK_DIR" 2>/dev/null || exit 0
+  # Stale lock detection: write a timestamp inside the lock dir on
+  # creation, then compare against now on contention. This avoids
+  # `find -maxdepth -mmin` (GNU-specific flags BSD find doesn't support)
+  # and `stat -c` / `stat -f` (also non-portable across macOS / Linux).
+  STALE_AGE_SEC=300  # 5 minutes
+  lock_ts_file="$LOCK_DIR/created-at"
+  if [ -f "$lock_ts_file" ]; then
+    lock_ts="$(cat "$lock_ts_file" 2>/dev/null)"
+    case "$lock_ts" in
+      ''|*[!0-9]*) lock_ts=0 ;;
+    esac
+    now_ts="$(date +%s)"
+    if [ "$((now_ts - lock_ts))" -gt "$STALE_AGE_SEC" ]; then
+      rm -rf "$LOCK_DIR" 2>/dev/null
+      mkdir "$LOCK_DIR" 2>/dev/null || exit 0
+    else
+      exit 0
+    fi
   else
-    exit 0
+    # Lock dir exists but no timestamp — created by an older sync.sh
+    # before this scheme. Reclaim it (the absent ts means we can't
+    # tell if it's stale, but a sync that crashed before writing the
+    # timestamp is exactly the case we want to recover from).
+    rm -rf "$LOCK_DIR" 2>/dev/null
+    mkdir "$LOCK_DIR" 2>/dev/null || exit 0
   fi
 fi
-trap 'rmdir "$LOCK_DIR" 2>/dev/null' EXIT
+date +%s > "$LOCK_DIR/created-at" 2>/dev/null
+trap 'rm -rf "$LOCK_DIR" 2>/dev/null' EXIT
 
 # Log path: prefer adapter-declared path (Appendix A.2), fall back to the
 # per-directory default so pre-refactor installs keep working.
@@ -190,6 +209,11 @@ if ! git diff --cached --quiet; then
   # locally but skip the push. The next turn-end fires it if enough time
   # has passed, catching any queued commits together.
   : "${HIVE_MIND_MIN_PUSH_INTERVAL_SEC:=10}"
+  # Validate numeric inputs — a corrupted state file or user env var
+  # would otherwise trip `integer expression expected` noise in arithmetic.
+  case "$HIVE_MIND_MIN_PUSH_INTERVAL_SEC" in
+    ''|*[!0-9]*) HIVE_MIND_MIN_PUSH_INTERVAL_SEC=10 ;;
+  esac
   # Rate-limit state lives in $HIVE_MIND_STATE_DIR (already created
   # above for the sync lock). Outside the hive-mind git checkout so
   # `git pull` upgrades don't see it as untracked noise.
@@ -199,9 +223,14 @@ if ! git diff --cached --quiet; then
   if [ -f "$LAST_PUSH_FILE" ]; then
     last_push="$(cat "$LAST_PUSH_FILE" 2>/dev/null)"
     now="$(date +%s)"
-    if [ -n "$last_push" ] && [ "$((now - last_push))" -lt "$HIVE_MIND_MIN_PUSH_INTERVAL_SEC" ]; then
-      should_push=0
-    fi
+    case "$last_push" in
+      ''|*[!0-9]*) ;;  # non-numeric or empty → treat as "no recorded push"
+      *)
+        if [ "$((now - last_push))" -lt "$HIVE_MIND_MIN_PUSH_INTERVAL_SEC" ]; then
+          should_push=0
+        fi
+        ;;
+    esac
   fi
 
   # HIVE_MIND_FORCE_PUSH overrides debounce (used by `hivemind sync`).

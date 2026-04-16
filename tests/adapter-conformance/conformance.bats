@@ -132,11 +132,14 @@ teardown() {
   mkdir -p "$ADAPTER_DIR"
 
   # find doesn't guarantee stable ordering; sort so identical file sets
-  # always produce identical snapshots.
+  # always produce identical snapshots. Adapter paths never contain
+  # newlines (contract), so newline-delimited find | sort is portable
+  # across macOS / Linux / Git Bash — no GNU `sort -z` dependency.
   snap() {
     if [ -d "$ADAPTER_DIR" ]; then
-      find "$ADAPTER_DIR" -type f -print0 2>/dev/null | sort -z | xargs -0 \
-        sh -c 'md5sum "$@" 2>/dev/null || md5 "$@"' _
+      find "$ADAPTER_DIR" -type f 2>/dev/null | sort | while IFS= read -r f; do
+        md5sum "$f" 2>/dev/null || md5 "$f"
+      done
     fi
   }
 

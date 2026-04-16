@@ -66,7 +66,7 @@ teardown() {
 }
 EOF
 
-  adapter_migrate "0.0.0"
+  adapter_migrate "0.1.0"
 
   # Old paths should be gone.
   run grep 'hive-mind/scripts/' "$ADAPTER_DIR/settings.json"
@@ -106,7 +106,7 @@ EOF
   local before
   before="$(cat "$ADAPTER_DIR/settings.json")"
 
-  adapter_migrate "0.0.0"
+  adapter_migrate "0.1.0"
 
   [ "$(cat "$ADAPTER_DIR/settings.json")" = "$before" ]
 }
@@ -115,6 +115,6 @@ EOF
   mkdir -p "$ADAPTER_DIR"
   [ ! -f "$ADAPTER_DIR/settings.json" ]
 
-  run adapter_migrate "0.0.0"
+  run adapter_migrate "0.1.0"
   [ "$status" -eq 0 ]
 }

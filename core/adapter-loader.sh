@@ -157,6 +157,16 @@ _validate_adapter() {
     fi
   fi
 
+  if [ "$ADAPTER_MEMORY_MODEL" = "hierarchical" ]; then
+    # Hierarchical adapters MUST implement adapter_list_memory_files —
+    # core mirror-projects walks it to discover memory files when the
+    # model isn't flat. A no-op stub silently breaks mirroring.
+    if ! declare -f adapter_list_memory_files >/dev/null 2>&1; then
+      _loader_log ERROR "adapter '$name' declares hierarchical memory model but does not define adapter_list_memory_files"
+      return 1
+    fi
+  fi
+
   # --- required functions ---
   local required_funcs=(
     adapter_install_hooks

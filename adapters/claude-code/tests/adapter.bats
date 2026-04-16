@@ -91,7 +91,7 @@ teardown() {
 }
 SETTINGS
 
-  adapter_migrate "0.0.0"
+  adapter_migrate "0.1.0"
 
   run grep 'hive-mind/scripts/' "$ADAPTER_DIR/settings.json"
   [ "$status" -ne 0 ]
@@ -112,7 +112,7 @@ SETTINGS
   local before
   before="$(cat "$ADAPTER_DIR/settings.json")"
 
-  adapter_migrate "0.0.0"
+  adapter_migrate "0.1.0"
 
   [ "$(cat "$ADAPTER_DIR/settings.json")" = "$before" ]
 }
