@@ -117,12 +117,14 @@ _validate_adapter() {
   [ "$ok" -eq 1 ] || return 1
 
   # --- API version compatibility ---
+  # Declare semver_parse's out-vars local so they don't leak into the
+  # caller's environment when adapter-loader.sh is sourced.
+  local a_major a_minor a_patch c_major c_minor c_patch
   if ! semver_parse "$ADAPTER_API_VERSION" a_major a_minor a_patch; then
     _loader_log ERROR "adapter '$name' declares malformed ADAPTER_API_VERSION='$ADAPTER_API_VERSION' (must be semver)"
     return 1
   fi
 
-  local c_major c_minor c_patch
   semver_parse "$HIVE_MIND_CORE_API_VERSION" c_major c_minor c_patch
 
   if [ "$a_major" -ne "$c_major" ]; then

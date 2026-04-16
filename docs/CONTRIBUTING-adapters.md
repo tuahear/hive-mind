@@ -36,7 +36,7 @@ Every adapter implements the shell contract defined in `core/adapter-loader.sh`.
 - `adapter_healthcheck` — Exit 0 if the tool is installed and addressable.
 - `adapter_activation_instructions` — Stdout: what to do after install.
 - `adapter_disable_instructions` — Stdout: how to temporarily disable.
-- `adapter_migrate` — Called during upgrades with the old API version as `$1`.
+- `adapter_migrate` — Called during upgrades with the previously-installed hive-mind version as `$1` (the value in `$HIVE_MIND_DIR/VERSION`, or `0.1.0` for pre-refactor installs without a VERSION file).
 
 ## Running the conformance test suite
 

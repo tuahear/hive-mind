@@ -97,9 +97,10 @@ parse_array() {
   if [[ ! "$val" =~ ^\[.*\][[:space:]]*$ ]]; then
     return 1
   fi
-  # Strip outer brackets.
+  # Strip outer brackets and any trailing whitespace between `]` and EOL.
   val="${val#\[}"
-  val="${val%%[[:space:]]}"
+  # Trim ALL trailing whitespace first so the `]` is the final char.
+  val="${val%"${val##*[![:space:]]}"}"
   val="${val%\]}"
   # Split on comma, strip quotes and whitespace.
   printf '%s' "$val" | tr ',' '\n' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e 's/^"//' -e 's/"$//' | grep -v '^$'

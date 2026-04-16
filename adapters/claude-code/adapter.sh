@@ -39,8 +39,21 @@ adapter_install_hooks() {
     return 0
   fi
 
-  # Idempotent: if hooks already contain hive-mind entries, skip merge.
-  if grep -q 'hive-mind/core/' "$settings" 2>/dev/null; then
+  # Idempotent: check whether every required hook event is already
+  # present with a hive-mind/core/ command. If any are missing, merge
+  # the template so partial installs (e.g. user manually deleted the
+  # Stop hook) get repaired on re-run.
+  local all_present=1
+  local event
+  for event in SessionStart Stop PostToolUse; do
+    if ! jq -e --arg e "$event" '
+      (.hooks[$e] // []) | map(.hooks[]? | select(.command | test("hive-mind/core/"))) | length > 0
+    ' "$settings" >/dev/null 2>&1; then
+      all_present=0
+      break
+    fi
+  done
+  if [ "$all_present" -eq 1 ]; then
     return 0
   fi
 
