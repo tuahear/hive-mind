@@ -2,7 +2,7 @@
 # Git merge driver for TOML config files.
 #
 # Registered locally via:
-#   git config merge.tomlmerge.driver 'core/tomlmerge.sh %A %O %B'
+#   git config merge.tomlmerge.driver '~/.claude/hive-mind/core/tomlmerge.sh %A %O %B'
 # Referenced per-file in .gitattributes:
 #   config.toml merge=tomlmerge
 #
@@ -111,8 +111,9 @@ parse_array() {
   # booleans would survive the strip-quotes sed otherwise and get
   # corrupted by rebuild_array. On rejection, caller exits 1 so git
   # falls back to a normal 3-way merge.
-  local stripped="${val// /}"  # ignore whitespace for the validation
-  stripped="${stripped//\	/}" # ignore tabs
+  local tab=$'\t'
+  local stripped="${val// /}"     # ignore spaces for the validation
+  stripped="${stripped//${tab}/}"  # ignore tabs — $'\t' is explicit vs literal char
   if [ -n "$stripped" ] && [[ ! "$stripped" =~ ^\"[^\"]*\"(,\"[^\"]*\")*$ ]]; then
     return 1
   fi
