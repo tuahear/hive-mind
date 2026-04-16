@@ -1,0 +1,52 @@
+#!/bin/sh
+# Run the bats test suite in parallel.
+#
+# Requires `bats` + GNU `parallel` on PATH. On macOS: `brew install bats-core
+# parallel`. On Debian/Ubuntu: `apt-get install bats parallel`.
+#
+# Usage:
+#   ./test                          # run all tests, auto-detect job count
+#   ./test tests/sync.bats          # run one file (still parallel within it)
+#   JOBS=4 ./test                   # override job count
+#   ./test -r tests/integration/    # pass extra bats flags
+#
+# Performance: bats --jobs defaults to 1 (sequential). I/O-bound tests
+# (this suite spins up dozens of temp git repos) benefit from more jobs
+# than CPU cores; empirical sweet spot is roughly equal to logical cores.
+# Over ~16 jobs the scheduling overhead starts to dominate.
+
+set -eu
+
+REPO_ROOT="$(cd "$(dirname "$0")" && pwd)"
+
+# Logical-core detection. getconf is POSIX on most systems; nproc is a
+# GNU coreutils extension (Linux). Fall back to 8 if neither works.
+if [ -z "${JOBS:-}" ]; then
+  if JOBS="$(getconf _NPROCESSORS_ONLN 2>/dev/null)" && [ -n "$JOBS" ]; then
+    :
+  elif JOBS="$(nproc 2>/dev/null)" && [ -n "$JOBS" ]; then
+    :
+  else
+    JOBS=8
+  fi
+fi
+
+if ! command -v parallel >/dev/null 2>&1; then
+  printf '%s\n' "error: GNU parallel is required for 'bats --jobs'." >&2
+  printf '%s\n' "install: brew install parallel  (macOS)  |  apt-get install parallel  (Debian/Ubuntu)" >&2
+  exit 1
+fi
+
+if ! command -v bats >/dev/null 2>&1; then
+  printf '%s\n' "error: bats is not on PATH." >&2
+  printf '%s\n' "install: brew install bats-core  (macOS)  |  apt-get install bats  (Debian/Ubuntu)" >&2
+  exit 1
+fi
+
+# Default target is the whole tests/ tree, recursively. Any argv override
+# (file path, flag, or both) is passed through untouched.
+if [ "$#" -eq 0 ]; then
+  set -- -r "$REPO_ROOT/tests"
+fi
+
+exec bats --jobs "$JOBS" "$@"
