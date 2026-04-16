@@ -15,6 +15,8 @@ Every adapter implements the shell contract defined in `core/adapter-loader.sh`.
 
 ### Required exports
 
+**Must be declared AND non-empty:**
+
 | Variable | Purpose |
 |---|---|
 | `ADAPTER_API_VERSION` | Semver — the contract version this adapter targets |
@@ -24,10 +26,29 @@ Every adapter implements the shell contract defined in `core/adapter-loader.sh`.
 | `ADAPTER_MEMORY_MODEL` | `flat` or `hierarchical` |
 | `ADAPTER_GITIGNORE_TEMPLATE` | Path to the adapter's `.gitignore` template |
 | `ADAPTER_GITATTRIBUTES_TEMPLATE` | Path to the adapter's `.gitattributes` template |
-| `ADAPTER_SECRET_FILES` | Space-separated filenames that must never be synced |
 | `ADAPTER_MARKER_TARGETS` | Newline-separated globs of files that can host commit markers |
 | `ADAPTER_HAS_HOOK_SYSTEM` | `true` or `false` |
 | `ADAPTER_LOG_PATH` | Absolute path to the sync-error log |
+
+**Must be declared (may be empty):**
+
+These pass validation with an empty string but the assignment itself must be present; an undeclared variable fails loader validation and conformance.
+
+| Variable | Purpose |
+|---|---|
+| `ADAPTER_SECRET_FILES` | Space-separated filenames that must never be synced (empty = no opt-out list) |
+| `ADAPTER_SETTINGS_MERGE_BINDINGS` | Newline-separated `pattern=driver-script` entries registered as git merge drivers (empty = none) |
+| `ADAPTER_FALLBACK_STRATEGY` | How the adapter behaves when the tool's config is missing (empty = adapter's default) |
+| `ADAPTER_SKILL_ROOT` | Absolute path to the tool's skills dir (empty = fall back to `$MEMORY_DIR/skills`) |
+| `ADAPTER_SKILL_FORMAT` | Skill file layout identifier (empty = the tool has no distinct skill system) |
+
+**Conditional — required only under certain memory models:**
+
+| Variable / function | Required when | Purpose |
+|---|---|---|
+| `ADAPTER_GLOBAL_MEMORY` | `ADAPTER_MEMORY_MODEL=flat` | Absolute path to the global memory file (e.g. `CLAUDE.md`) |
+| `ADAPTER_PROJECT_MEMORY_DIR` | `ADAPTER_MEMORY_MODEL=flat` | Absolute path template to per-project memory dirs |
+| `adapter_list_memory_files` (function) | `ADAPTER_MEMORY_MODEL=hierarchical` | Emits newline-separated absolute paths of memory files for mirror-projects to walk |
 
 ### Required functions
 

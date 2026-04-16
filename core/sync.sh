@@ -26,13 +26,27 @@ LOCK_DIR="${HIVE_MIND_STATE_DIR}/sync.lock"
 mkdir -p "$HIVE_MIND_STATE_DIR" 2>/dev/null
 acquire_lock() {
   # Atomic acquisition: mkdir fails if the dir exists. On success, write
-  # the timestamp IMMEDIATELY so a contending process can check staleness
-  # without a race. Returns 0 on acquire, 1 on contended-and-not-stale.
+  # the timestamp and owner PID IMMEDIATELY so a contending process can
+  # check staleness without a race and so we can verify ownership on
+  # release. Returns 0 on acquire, 1 on contended-and-not-stale.
   if mkdir "$LOCK_DIR" 2>/dev/null; then
     date +%s > "$LOCK_DIR/created-at" 2>/dev/null
+    echo "$$" > "$LOCK_DIR/owner-pid" 2>/dev/null
     return 0
   fi
   return 1
+}
+
+release_lock() {
+  # Only remove the lock dir if we still own it. If a slow-running sync
+  # exceeded STALE_AGE_SEC, a newer process may have reclaimed the lock
+  # and started its own work — removing that process's lock would allow
+  # another sync to start concurrently, defeating mutual exclusion.
+  lock_owner=""
+  [ -f "$LOCK_DIR/owner-pid" ] && lock_owner="$(cat "$LOCK_DIR/owner-pid" 2>/dev/null)"
+  if [ "$lock_owner" = "$$" ]; then
+    rm -rf "$LOCK_DIR" 2>/dev/null
+  fi
 }
 
 STALE_AGE_SEC=300  # 5 minutes
@@ -53,6 +67,20 @@ if ! acquire_lock; then
     ''|*[!0-9]*) lock_ts=0 ;;
   esac
   now_ts="$(date +%s)"
+  # Consider the lock live if the owner PID is still running, even past
+  # the staleness age. This stops a legitimately slow sync from having
+  # its lock reclaimed under its feet. Only check the age as a fallback
+  # for dead / missing / unknown owners.
+  owner_pid=""
+  [ -f "$LOCK_DIR/owner-pid" ] && owner_pid="$(cat "$LOCK_DIR/owner-pid" 2>/dev/null)"
+  owner_alive=0
+  case "$owner_pid" in
+    ''|*[!0-9]*) owner_alive=0 ;;
+    *) kill -0 "$owner_pid" 2>/dev/null && owner_alive=1 ;;
+  esac
+  if [ "$owner_alive" -eq 1 ]; then
+    exit 0
+  fi
   if [ "$lock_ts" -eq 0 ] || [ "$((now_ts - lock_ts))" -gt "$STALE_AGE_SEC" ]; then
     # Genuinely stale. Reclaim — but use acquire_lock again so we
     # handle the unlikely case of another process reclaiming first.
@@ -62,7 +90,7 @@ if ! acquire_lock; then
     exit 0
   fi
 fi
-trap 'rm -rf "$LOCK_DIR" 2>/dev/null' EXIT
+trap 'release_lock' EXIT
 
 # Log path: prefer adapter-declared path (Appendix A.2), fall back to the
 # per-directory default so pre-refactor installs keep working.

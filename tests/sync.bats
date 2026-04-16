@@ -436,6 +436,59 @@ EOF
   git -C "$fresh" rev-parse --abbrev-ref '@{u}' >/dev/null 2>&1
 }
 
+@test "release_lock does not remove the lock dir after another process reclaimed it" {
+  # Race guarded: legitimate sync A runs long (>STALE_AGE_SEC); sync B
+  # deems A's lock stale, removes it, and acquires a fresh lock. A's
+  # EXIT trap must NOT delete B's lock — doing so would let a third
+  # process C acquire a concurrent lock while B is still running.
+  # Exercises the owner-PID check in release_lock().
+  tmp="$(mktemp -d)"
+  lock_dir="$tmp/sync.lock"
+
+  # Extract acquire_lock + release_lock from core/sync.sh and run them
+  # against a local LOCK_DIR. The functions are self-contained (they
+  # only depend on LOCK_DIR and the local shell's PID), so this is a
+  # clean unit test.
+  LOCK_DIR="$lock_dir"
+  # shellcheck disable=SC2030
+  eval "$(awk '/^acquire_lock\(\)/,/^}/' "$BATS_TEST_DIRNAME/../core/sync.sh")"
+  # shellcheck disable=SC2030
+  eval "$(awk '/^release_lock\(\)/,/^}/' "$BATS_TEST_DIRNAME/../core/sync.sh")"
+
+  # Simulate: process A acquires.
+  acquire_lock
+  [ -d "$lock_dir" ]
+  [ "$(cat "$lock_dir/owner-pid")" = "$$" ]
+
+  # Simulate: process B reclaims after deeming A stale. It wipes the
+  # dir and writes its own PID (a sentinel different from $$).
+  rm -rf "$lock_dir"
+  mkdir "$lock_dir"
+  printf 'not-our-pid\n' > "$lock_dir/owner-pid"
+
+  # Process A's EXIT trap fires release_lock now. With the owner check,
+  # the lock must remain intact because the PID no longer matches.
+  release_lock
+  [ -d "$lock_dir" ]
+  [ "$(cat "$lock_dir/owner-pid")" = "not-our-pid" ]
+}
+
+@test "acquire_lock's own process can release the lock it acquired" {
+  # Pairing test: the owner-PID check must not over-correct and leave
+  # the lock dir around after a legitimate release. Otherwise the next
+  # sync invocation finds a stale-looking lock forever.
+  tmp="$(mktemp -d)"
+  lock_dir="$tmp/sync.lock"
+  LOCK_DIR="$lock_dir"
+  eval "$(awk '/^acquire_lock\(\)/,/^}/' "$BATS_TEST_DIRNAME/../core/sync.sh")"
+  eval "$(awk '/^release_lock\(\)/,/^}/' "$BATS_TEST_DIRNAME/../core/sync.sh")"
+
+  acquire_lock
+  [ -d "$lock_dir" ]
+  release_lock
+  [ ! -d "$lock_dir" ]
+}
+
 @test "fresh install sets upstream for a branch name with unusual-but-valid characters" {
   # Pins the push invocation's handling of arbitrary branch names.
   # If push_args ever regresses to unquoted word-splitting, a branch
