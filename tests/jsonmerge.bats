@@ -5,7 +5,7 @@
 # Writes merged JSON to <ours>; exits non-zero on failure so git falls back
 # to its default merge driver.
 
-SCRIPT="$BATS_TEST_DIRNAME/../scripts/jsonmerge.sh"
+SCRIPT="$BATS_TEST_DIRNAME/../core/jsonmerge.sh"
 
 setup() {
   command -v jq >/dev/null || skip "jq not on PATH"

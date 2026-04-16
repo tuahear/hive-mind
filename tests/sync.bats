@@ -8,7 +8,7 @@
 # The sandbox also skips the mirror-projects.sh invocation (no such file
 # exists under $HOME/.claude/hive-mind in the sandbox).
 
-SCRIPT="$BATS_TEST_DIRNAME/../scripts/sync.sh"
+SCRIPT="$BATS_TEST_DIRNAME/../core/sync.sh"
 
 setup() {
   HOME="$(mktemp -d)"
@@ -98,11 +98,9 @@ marker() {
   # not the content-gate behavior, which is exercised in mirror-projects.bats.
   printf '# notes\n' > "$variant/MEMORY.md"
 
-  # Install the real mirror-projects.sh into the location sync.sh checks.
-  mkdir -p "$HOME/.claude/hive-mind/scripts"
-  cp "$BATS_TEST_DIRNAME/../scripts/mirror-projects.sh" \
-     "$HOME/.claude/hive-mind/scripts/mirror-projects.sh"
-  chmod +x "$HOME/.claude/hive-mind/scripts/mirror-projects.sh"
+  # core/sync.sh discovers mirror-projects.sh via CORE_DIR (same directory
+  # as the script itself), so no separate install step is needed when
+  # running from the repo checkout.
 
   run run_sync
   [ "$status" -eq 0 ]

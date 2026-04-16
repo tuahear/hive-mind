@@ -4,7 +4,7 @@
 # file. Reads hook JSON from stdin, emits JSON to stdout when the edit
 # targets $HOME/.claude/ but NOT $HOME/.claude/hive-mind/.
 
-SCRIPT="$BATS_TEST_DIRNAME/../scripts/marker-nudge.sh"
+SCRIPT="$BATS_TEST_DIRNAME/../core/marker-nudge.sh"
 
 setup() {
   command -v jq >/dev/null || skip "jq not on PATH"

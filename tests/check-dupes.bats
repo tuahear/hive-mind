@@ -5,7 +5,7 @@
 # so each test sandboxes HOME into a temp dir. jq must be on PATH (script
 # emits the nudge via jq; missing jq means silent no-op).
 
-SCRIPT="$BATS_TEST_DIRNAME/../scripts/check-dupes.sh"
+SCRIPT="$BATS_TEST_DIRNAME/../core/check-dupes.sh"
 
 setup() {
   command -v jq >/dev/null || skip "jq not on PATH"

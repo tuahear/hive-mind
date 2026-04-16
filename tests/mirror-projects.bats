@@ -6,7 +6,7 @@
 # Identity is established per-variant via .hive-mind sidecars (or by
 # deriving from a local jsonl + git remote, exercised separately).
 
-SCRIPT="$BATS_TEST_DIRNAME/../scripts/mirror-projects.sh"
+SCRIPT="$BATS_TEST_DIRNAME/../core/mirror-projects.sh"
 MARKER=".hive-mind"
 
 setup() {
