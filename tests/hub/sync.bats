@@ -134,6 +134,40 @@ run_sync() {
   [ "$status" -ne 0 ]
 }
 
+@test "marker extraction: multi-level project-ids are scanned (projects/*/... glob is slash-tolerant)" {
+  # Regression guard: project-ids are normalized git remotes and
+  # routinely contain multiple slashes (e.g. `github.com/owner/repo`).
+  # The HUB_MARKER_TARGETS glob `projects/*/memory.md` / `projects/
+  # */memory/**` must reach into multi-level project-ids so commit
+  # markers on per-project memory edits get extracted. Bash's `case`
+  # pattern matching already handles `*` across slashes (unlike
+  # pathname expansion), so this works today — the test pins that
+  # behavior against a refactor that might switch to pathname-
+  # expansion-based matching.
+  hub_proj="$HUB/projects/github.com/alice/proj"
+  mkdir -p "$hub_proj/memory"
+  printf 'baseline\n%s\nafter\n' "$(marker 'project-memory marker survived')" \
+    > "$hub_proj/memory.md"
+  printf 'nested content\n%s\n' "$(marker 'nested memory marker')" \
+    > "$hub_proj/memory/note.md"
+
+  run run_sync
+  [ "$status" -eq 0 ]
+
+  # Both markers must have been extracted — commit subject is either
+  # marker or a ` + `-joined combination (order-independent).
+  subject="$(git -C "$HUB" log -1 --format=%s)"
+  [[ "$subject" == *"project-memory marker survived"* ]]
+  [[ "$subject" == *"nested memory marker"* ]]
+  # And stripped from the committed content. Probe a layer deeper
+  # than the top-level memory.md so the `projects/*/memory/**` glob
+  # is exercised too.
+  run grep -F 'commit:' "$hub_proj/memory.md"
+  [ "$status" -ne 0 ]
+  run grep -F 'commit:' "$hub_proj/memory/note.md"
+  [ "$status" -ne 0 ]
+}
+
 # === machine-local hook filtering =========================================
 
 @test "harvest skips machine-local hook entries while preserving tool-side local entries across sync" {

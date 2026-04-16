@@ -39,7 +39,7 @@ These pass validation with an empty string but the assignment itself must be pre
 | `ADAPTER_SECRET_FILES` | Space-separated filenames that must never be synced (empty = no opt-out list) |
 | `ADAPTER_SETTINGS_MERGE_BINDINGS` | Newline-separated whitespace-delimited `<path-pattern> <driver-name>` pairs — e.g. `settings.json jsonmerge` — registered as git merge drivers. `<driver-name>` must match a script at `core/<driver-name>.sh`. Empty = no drivers. |
 | `ADAPTER_FALLBACK_STRATEGY` | How the adapter behaves when the tool's config is missing (empty = adapter's default) |
-| `ADAPTER_SKILL_ROOT` | Absolute path to the tool's skills dir (empty = fall back to `$MEMORY_DIR/skills`) |
+| `ADAPTER_SKILL_ROOT` | Absolute path to the tool's skills dir — the destination fan-out writes adapter-side skill files to. Empty means the adapter has no distinct skill dir (unusual). Under the hub topology (v0.3.0+) bundled skills are seeded into `$HIVE_MIND_HUB_DIR/skills/` and fan-out routes them to this path; there is no `$MEMORY_DIR/skills` fallback — that variable existed only in the pre-hub per-adapter-repo model. |
 | `ADAPTER_SKILL_FORMAT` | Skill file layout identifier (empty = the tool has no distinct skill system) |
 | `ADAPTER_HUB_MAP` | (v0.3.0 hub topology) Newline-separated TAB-delimited pairs `<hub-path>\t<tool-rel-path>` mapping hub-canonical items to the tool's native layout. The hub sync engine reads this bidirectionally (harvest and fan-out). Empty = adapter doesn't participate in hub sync yet. See the full spec below. |
 | `ADAPTER_PROJECT_CONTENT_RULES` | (v0.3.0 hub topology) Newline-separated TAB-delimited pairs `<hub-rel>\t<tool-rel>` for files under `projects/<project-id>/**`. Lets the adapter whitelist what's safe to harvest/fan-out in per-project subtrees. Empty = adapter has no per-project concept. |
@@ -59,7 +59,7 @@ These pass validation with an empty string but the assignment itself must be pre
 - `adapter_healthcheck` — Exit 0 if the tool is installed and addressable.
 - `adapter_activation_instructions` — Stdout: what to do after install.
 - `adapter_disable_instructions` — Stdout: how to temporarily disable.
-- `adapter_migrate` — Called during upgrades with the previously-installed hive-mind version as `$1` (the value in `$HIVE_MIND_DIR/VERSION`, or `0.1.0` for pre-refactor installs without a VERSION file).
+- `adapter_migrate` — Called during upgrades with the previously-installed hive-mind version as `$1`. `setup.sh` reads this value from `$HIVE_MIND_SRC/VERSION` (the hive-mind source clone under the hub — default `~/.hive-mind/hive-mind/VERSION`) BEFORE `git pull` rewrites it, so adapters can gate migrations on a specific transition. Pre-0.2 installs have no VERSION file; `setup.sh` falls back to `0.1.0` in that case.
 
 ## Running the conformance test suite
 
