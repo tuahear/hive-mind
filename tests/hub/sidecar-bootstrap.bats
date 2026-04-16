@@ -91,6 +91,16 @@ run_sync() {
   hub_proj="$HUB/projects/github.com/owner/myrepo"
   [ -f "$hub_proj/memory.md" ]
   grep -q '# project notes' "$hub_proj/memory.md"
+
+  # Actually reach the remote — the hub gitignore's project-whitelist
+  # must allow multi-level project-ids (normalized git remotes
+  # routinely contain slashes). A regression to a single-level-only
+  # whitelist would leave the file in the hub working tree but skip
+  # it on `git add -A`, silently failing to propagate to other
+  # machines. This assertion catches that class of bug.
+  run git -C "$HOME/remote.git" show "HEAD:projects/github.com/owner/myrepo/memory.md"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"# project notes"* ]]
 }
 
 @test "hierarchical-memory-model adapters are not touched by the mirror-projects pre-pass" {

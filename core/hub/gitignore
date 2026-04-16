@@ -11,15 +11,20 @@
 # Global canonical memory.
 !/memory.md
 
-# Per-project canonical memory tree.
+# Per-project canonical memory tree. The whitelist is a catch-all
+# because project-ids are normalized git remotes and ROUTINELY contain
+# slashes (`github.com/owner/repo` = 3 levels; self-hosted forges may
+# go deeper). The earlier single-level patterns (`/projects/*/memory.md`,
+# `/projects/*/memory/**`) silently blocked every multi-level id from
+# reaching the remote — harvest copied the file into the hub working
+# tree but `git add -A` skipped it, and the canonical per-project
+# memory never synced across machines. Trust harvest to have already
+# filtered what lands here (tool-side session transcripts, auth
+# files, etc. never get mapped in ADAPTER_PROJECT_CONTENT_RULES); the
+# secret-file gate in core/hub/sync.sh catches any misconfigured
+# harvest that sneaks a declared-secret basename into projects/**.
 !/projects/
-/projects/*
-!/projects/*/
-/projects/*/*
-!/projects/*/memory.md
-!/projects/*/memory/
-/projects/*/memory/*
-!/projects/*/memory/**
+!/projects/**
 
 # User-level skills, provider-agnostic.
 !/skills/

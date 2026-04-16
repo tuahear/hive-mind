@@ -281,12 +281,62 @@ fi
 # Union of every attached adapter's secret list. Same defense-in-depth
 # gate as the per-adapter pre-hub sync engine: unstage any file the
 # adapter declared as must-never-sync.
+#
+# The contract declares ADAPTER_SECRET_FILES as a list of BASENAMES
+# (docs/CONTRIBUTING-adapters.md: "Space-separated filenames that must
+# never be synced"). A misconfigured adapter or an off-by-one hub map
+# could harvest a secret to a path that isn't the literal basename at
+# the hub root (e.g. `config/auth.json`, `backup/2024/auth.json`).
+# Matching by basename catches every such path — the cost is unstaging
+# a legitimate `notes/auth.json` the user intentionally named to match
+# a known-secret basename, which is an acceptable trade for preventing
+# a credential leak. If an adapter ever needs path-specific semantics,
+# extend the contract with a second declared list that uses path
+# globs; the current list stays basename-only to keep the invariant
+# simple to reason about.
+_staged_files_with_basename() {
+  local want_base="$1"
+  # Read NUL-delimited staged paths one at a time (preserves every
+  # character including embedded newlines) and emit only those whose
+  # basename matches. Plain bash parameter expansion instead of awk —
+  # macOS's default awk treats `RS="\0"` as the POSIX-default
+  # single-character record separator and drops every record after
+  # the first NUL, so a sync with >1 staged path would silently match
+  # only one of them. The bash loop works identically on BSD/macOS
+  # and GNU/Linux.
+  local path base
+  while IFS= read -r -d '' path; do
+    base="${path##*/}"
+    [ "$base" = "$want_base" ] && printf '%s\0' "$path"
+  done < <(git diff --cached --name-only -z 2>/dev/null)
+}
 for secret_list in "${HUB_SECRET_LISTS[@]}"; do
   [ -z "$secret_list" ] && continue
   for secret in $secret_list; do
-    if git diff --cached --name-only -- "$secret" 2>/dev/null | grep -q .; then
-      git rm --cached --quiet -- "$secret" 2>/dev/null || true
-      echo "$TS WARN hub-sync: refused to sync secret file '$secret' (declared by adapter)" >>"$LOG"
+    # Strip any accidental path component from the declared value so a
+    # contract violation (e.g. `auth.json` mistakenly declared as
+    # `config/auth.json`) still gets treated as a basename check.
+    secret_base="${secret##*/}"
+    [ -z "$secret_base" ] && continue
+    # Walk every staged path whose basename matches.
+    found=0
+    while IFS= read -r -d '' matched_path; do
+      [ -z "$matched_path" ] && continue
+      git rm --cached --quiet -- "$matched_path" 2>/dev/null || true
+      echo "$TS WARN hub-sync: refused to sync secret '$secret_base' (matched staged path '$matched_path', declared by adapter)" >>"$LOG"
+      found=1
+    done < <(_staged_files_with_basename "$secret_base")
+    # Preserve backward compat: if the declared value was a path-like
+    # form and matches verbatim too, unstage it. Covers a misconfigured
+    # adapter that declared `config/auth.json` AND also happens to
+    # stage exactly that path — the basename pass already handled it,
+    # but being explicit avoids any future surprise where the two
+    # forms diverge.
+    if [ "$found" -eq 0 ] && [ "$secret" != "$secret_base" ]; then
+      if git diff --cached --name-only -- "$secret" 2>/dev/null | grep -q .; then
+        git rm --cached --quiet -- "$secret" 2>/dev/null || true
+        echo "$TS WARN hub-sync: refused to sync secret '$secret' (declared by adapter, path-literal match)" >>"$LOG"
+      fi
     fi
   done
 done
