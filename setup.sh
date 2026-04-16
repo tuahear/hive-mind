@@ -273,8 +273,16 @@ register_jsonmerge_driver() { register_merge_drivers "$@"; }
 
 case "$STATE" in
     already_synced)
-        _origin_raw="$(git -C "$MEMORY_DIR" remote get-url origin 2>/dev/null)"
-        log "$MEMORY_DIR is already a git repo with remote $(sanitize_remote_url "$_origin_raw")"
+        # Tolerate missing `origin` (unusual but possible on hand-
+        # configured memory repos). Without `|| true` the command
+        # substitution fails under `set -euo pipefail` and setup.sh
+        # exits abruptly with stderr muted — no useful diagnostic.
+        _origin_raw="$(git -C "$MEMORY_DIR" remote get-url origin 2>/dev/null || true)"
+        if [ -n "$_origin_raw" ]; then
+            log "$MEMORY_DIR is already a git repo with remote $(sanitize_remote_url "$_origin_raw")"
+        else
+            log "$MEMORY_DIR is a git repo but has no 'origin' remote configured"
+        fi
 
         # Read the previously-installed hive-mind version BEFORE pulling the
         # latest (so adapter_migrate can make version-conditional decisions).

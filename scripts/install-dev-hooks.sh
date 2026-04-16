@@ -56,7 +56,7 @@ while IFS= read -r f; do
 
     if ! cmp -s "$f" "$tmp"; then
         mv "$tmp" "$f"
-        git add "$f"
+        git add -- "$f"
         echo "pre-commit: stripped commit marker(s) from $f" >&2
         touched=1
     else

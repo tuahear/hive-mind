@@ -99,6 +99,47 @@ REPO_ROOT="$BATS_TEST_DIRNAME/.."
   printf '%s\n' "$block" | grep -qE '^[[:space:]]*exit 0[[:space:]]*$'
 }
 
+@test "setup.sh already_synced tolerates missing origin remote under set -euo pipefail" {
+  # Regression: command substitution with `git remote get-url origin`
+  # fails under `set -euo pipefail` if origin isn't configured, which
+  # silently exits setup.sh (stderr is muted by 2>/dev/null). The
+  # already_synced case must include `|| true` on the get-url call so
+  # setup.sh degrades gracefully and logs a clear message instead.
+  setup="$REPO_ROOT/setup.sh"
+  [ -f "$setup" ]
+  block="$(awk '/^    already_synced\)/,/^        ;;/' "$setup")"
+  [ -n "$block" ]
+  # The get-url invocation inside the case block must tolerate failure.
+  line="$(printf '%s\n' "$block" | grep -E 'git[[:space:]]+-C.*remote[[:space:]]+get-url[[:space:]]+origin' | head -1)"
+  [ -n "$line" ]
+  printf '%s\n' "$line" | grep -q '|| true'
+}
+
+@test "every git add / rm / checkout / restore of a shell variable uses the '--' separator" {
+  # Defense against dash-prefixed paths being mis-parsed as options.
+  # Any invocation like `git add "$f"` must be `git add -- "$f"` so a
+  # filename starting with `-` cannot be interpreted as a flag. Scan
+  # all shell files in the repo (core/, setup.sh, scripts/, adapters/)
+  # and fail if any violation is found.
+  violations=""
+  while IFS= read -r file; do
+    # shellcheck disable=SC2016
+    bad="$(grep -nE 'git[[:space:]]+(add|rm|checkout|restore)[^|]*"\$[A-Za-z_]' "$file" | grep -v -- ' -- "' || true)"
+    if [ -n "$bad" ]; then
+      violations="$violations$file:
+$bad
+"
+    fi
+  done < <(find "$REPO_ROOT" -type f -name '*.sh' \
+             -not -path '*/tests/*' \
+             -not -path '*/.git/*')
+  if [ -n "$violations" ]; then
+    echo "git add/rm/checkout/restore of a shell variable without '--':" >&2
+    printf '%s\n' "$violations" >&2
+    return 1
+  fi
+}
+
 @test "setup.sh already_synced sync invocation provides ADAPTER_DIR fallback for set -u" {
   # Regression: setup.sh runs under `set -euo pipefail`. If the adapter
   # failed to load (adapter-loader.sh missing or load_adapter returned

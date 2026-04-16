@@ -270,9 +270,11 @@ if ! git diff --cached --quiet; then
       done < <("$extractor" "$f" 2>>"$LOG")
       # Re-stage if marker-extract mutated the working-tree copy. Compare
       # index vs worktree via `git diff` -- portable and doesn't depend on
-      # shasum/sha1sum availability.
+      # shasum/sha1sum availability. The `--` separator defends against
+      # paths that happen to start with a dash; git would otherwise try
+      # to parse them as options.
       if ! git diff --quiet -- "$f" 2>/dev/null; then
-        git add "$f"
+        git add -- "$f"
       fi
     fi
   done < <(git diff --cached --name-only -z)
