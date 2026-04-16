@@ -348,7 +348,16 @@ adapter_install_hooks
 # ---------- push + verify ----------
 log "[5/5] running a sync cycle to verify and push"
 if [ -x "$HIVE_MIND_DIR/core/sync.sh" ]; then
-    ADAPTER_DIR="$ADAPTER_DIR" "$HIVE_MIND_DIR/core/sync.sh"
+    # Pass every ADAPTER_* variable into the subprocess so sync.sh logs
+    # to ADAPTER_LOG_PATH (not the fallback .sync-error.log) and sees
+    # ADAPTER_MARKER_TARGETS / ADAPTER_EVENT_* from the loaded adapter.
+    ADAPTER_DIR="$ADAPTER_DIR" \
+    ADAPTER_LOG_PATH="${ADAPTER_LOG_PATH:-}" \
+    ADAPTER_MARKER_TARGETS="${ADAPTER_MARKER_TARGETS:-}" \
+    ADAPTER_EVENT_SESSION_START="${ADAPTER_EVENT_SESSION_START:-}" \
+    ADAPTER_EVENT_TURN_END="${ADAPTER_EVENT_TURN_END:-}" \
+    ADAPTER_EVENT_POST_EDIT="${ADAPTER_EVENT_POST_EDIT:-}" \
+        "$HIVE_MIND_DIR/core/sync.sh"
     if [ -s "$ADAPTER_LOG_PATH" ]; then
         echo
         echo "WARNING: sync produced errors:"

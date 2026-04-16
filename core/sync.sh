@@ -122,6 +122,19 @@ fi
 # Stage whatever changed in whitelisted paths (gitignore filters the rest).
 git add -A 2>/dev/null
 
+# Secret-file safety gate. ADAPTER_SECRET_FILES is a space-separated list
+# of relative paths that MUST NOT be synced, even if a misconfigured
+# .gitignore would otherwise allow them (e.g. Codex's auth.json). Unstage
+# any that slipped in so `git diff --cached` below won't commit them.
+if [ -n "${ADAPTER_SECRET_FILES:-}" ]; then
+  for secret in $ADAPTER_SECRET_FILES; do
+    if git diff --cached --name-only -- "$secret" 2>/dev/null | grep -q .; then
+      git rm --cached --quiet -- "$secret" 2>/dev/null || true
+      echo "$TS WARN sync: refused to sync secret file '$secret' (declared by adapter)" >>"$LOG"
+    fi
+  done
+fi
+
 if ! git diff --cached --quiet; then
   MSG=""
 
@@ -253,8 +266,11 @@ if [ -n "$(git log @{u}.. --oneline 2>/dev/null)" ]; then
     done
 
     if [ "$push_ok" -eq 1 ]; then
-      mkdir -p "$HIVE_MIND_STATE_DIR"
-      date +%s > "$LAST_PUSH_FILE"
+      # Redirect both stderr and stdout — a read-only adapter dir or
+      # a full disk would otherwise leak "permission denied" /
+      # "no space left" into the hook transcript.
+      mkdir -p "$HIVE_MIND_STATE_DIR" 2>>"$LOG" || true
+      date +%s > "$LAST_PUSH_FILE" 2>>"$LOG" || true
     else
       echo "$TS ERROR sync: push failed after $max_retries retries" >>"$LOG"
     fi
