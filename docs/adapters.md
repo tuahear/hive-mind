@@ -1,33 +1,68 @@
 # Adapters
 
-hive-mind uses an **adapter pattern** to support multiple AI coding tools. Each adapter teaches hive-mind how to integrate with a specific tool — where its config lives, how its hooks work, what files to sync.
+hive-mind v0.3.0+ uses a **hub-and-adapter** topology.
+
+- One **hub** per machine: `~/.hive-mind/`. Single git repo, single remote, provider-agnostic schema.
+- One **adapter** per AI tool: a bidirectional mapper between the hub's canonical layout and the tool's native config dir. Adapters don't own a git repo — they attach to the hub.
+
+That split lets you run Claude Code and (as adapters ship) Codex, Qwen, Kimi on the same machine against the same memory without clobbering each other, and lets two machines share that memory through a single remote.
+
+## Hub layout
+
+```
+~/.hive-mind/
+├── .git/                              ← single git repo; remote = your memory repo
+├── memory.md                          ← canonical global memory
+├── projects/<project-id>/             ← project-id = normalized git remote
+│   ├── memory.md                      ← canonical per-project memory
+│   └── memory/**                      ← free-form per-project notes
+├── skills/<name>/skill.md
+├── config/
+│   ├── hooks/<event>/<id>.json        ← tool-agnostic hook entries
+│   ├── permissions/{allow,deny,ask}.txt
+│   └── env.sh                         (reserved for v0.3.1+)
+├── bin/sync                           ← hook entry point (symlink)
+├── hive-mind/                         ← cloned hive-mind source (gitignored)
+├── .install-state/attached-adapters   ← one adapter name per line (gitignored)
+└── .hive-mind-state/                  ← sync lock + last-push timestamp (gitignored)
+```
+
+Lowercase filenames signal "hive-mind canonical"; each adapter maps them to tool-native names (`CLAUDE.md`, `AGENTS.md`, `QWEN.md`, `KIMI.md`) during fan-out.
 
 ## Available adapters
 
 | Adapter | Tool | Status |
 |---|---|---|
 | `claude-code` | [Claude Code](https://claude.com/claude-code) | Shipped |
-| `codex` | [OpenAI Codex CLI](https://github.com/openai/codex) | Planned (#11) |
+| `codex` | [OpenAI Codex CLI](https://github.com/openai/codex) | Planned ([#11](https://github.com/tuahear/hive-mind/issues/11)) |
+| `qwen` | [Qwen CLI](https://github.com/QwenLM/qwen-code) | Planned ([#19](https://github.com/tuahear/hive-mind/issues/19)) |
+| `kimi` | [Kimi CLI](https://github.com/MoonshotAI/kimi-cli) | Planned ([#23](https://github.com/tuahear/hive-mind/issues/23)) |
 
-## How it works
+## How a sync cycle works
 
-Core hive-mind logic (sync engine, merge drivers, marker extraction, project mirroring) is tool-agnostic. It lives in `core/` and takes all tool-specific paths from the loaded adapter at runtime (`$ADAPTER_DIR`, `$ADAPTER_LOG_PATH`, etc.). A few core scripts still carry a `~/.claude` fallback default so pre-refactor Claude installs keep working without re-running `setup.sh`; those fallbacks will be removed in the next major version once the migration window closes.
+Each attached tool's Stop hook fires `~/.hive-mind/bin/sync`, which runs a single lock-guarded flow:
 
-Each adapter lives in `adapters/<name>/` and answers questions like:
-- Where is the config directory? (`~/.claude`, `~/.codex`, etc.)
-- What events does the tool fire? (SessionStart, Stop, PostToolUse, etc.)
-- How do hooks get installed? (JSON config, YAML, TOML, etc.)
-- What files hold memory? (CLAUDE.md, AGENTS.md, etc.)
-- What files must never be synced? (auth tokens, session data, etc.)
+1. **Harvest** — for every attached adapter, read its tool dir and apply `ADAPTER_HUB_MAP` + `ADAPTER_PROJECT_CONTENT_RULES` in the tool→hub direction.
+2. **Pull-rebase** — fetch and rebase on top of other machines' commits.
+3. **Push** — publish this machine's commits, rate-limited to 10 s by default.
+4. **Fan-out** — for every attached adapter, apply the same maps in the hub→tool direction; deep-merge into JSON configs so tool-specific fields the hub doesn't know about survive.
 
-When you run `setup.sh`, it reads the `ADAPTER` env var (defaulting to `claude-code`), sources the adapter's `adapter.sh` through `core/adapter-loader.sh` (which validates the API version), and dispatches hook install + template seeding through the adapter interface. Multi-adapter detection (picking the right adapter when several tools are installed) will land with the second shipped adapter.
+A **machine-local filter** skips harvesting any hook whose command references `/Applications/`, `/opt/homebrew/`, `/tmp/`, Windows drive letters, and similar machine-specific paths. These stay tool-local and are preserved through fan-out too.
 
 ## For Claude Code users
 
-Nothing changes. `setup.sh` defaults to the `claude-code` adapter (override with `ADAPTER=<name>` in the environment). Your hooks, memory, and skills work exactly as before.
+Nothing in the day-to-day changes: you still edit `~/.claude/CLAUDE.md`, still run the same tool, still get the same skills. Under the hood the Stop hook now points at `~/.hive-mind/bin/sync` instead of `~/.claude/hive-mind/core/sync.sh`, and the user-level git repo has moved from `~/.claude/.git` to `~/.hive-mind/.git`. Re-running `setup.sh` on an existing pre-0.3 install migrates the hook paths automatically (`adapter_migrate` in `adapters/claude-code/adapter.sh`).
 
-The only visible change: hook commands in `settings.json` now reference `core/sync.sh` instead of `scripts/sync.sh`. The migration handles this automatically. Legacy `scripts/` paths still work via forwarding shims during the transition.
+## Attaching a second adapter
+
+Once another adapter ships (e.g. `codex`), attach it to the same hub with:
+
+```bash
+ADAPTER=codex bash setup.sh
+```
+
+This does *not* touch Claude's install. Both adapters then harvest and fan-out through the same `~/.hive-mind/` — memory edits in one tool appear in the other on the next sync cycle.
 
 ## Writing a new adapter
 
-See the [Contributing adapters](./CONTRIBUTING-adapters.md) guide.
+See the [Contributing adapters](./CONTRIBUTING-adapters.md) guide. The short version: declare two mapping strings (`ADAPTER_HUB_MAP`, `ADAPTER_PROJECT_CONTENT_RULES`) plus six contract functions, drop an adapter dir under `adapters/<name>/`, and `ADAPTER=<name> bash setup.sh` does the rest.

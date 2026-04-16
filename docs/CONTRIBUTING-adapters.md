@@ -41,7 +41,7 @@ These pass validation with an empty string but the assignment itself must be pre
 | `ADAPTER_FALLBACK_STRATEGY` | How the adapter behaves when the tool's config is missing (empty = adapter's default) |
 | `ADAPTER_SKILL_ROOT` | Absolute path to the tool's skills dir (empty = fall back to `$MEMORY_DIR/skills`) |
 | `ADAPTER_SKILL_FORMAT` | Skill file layout identifier (empty = the tool has no distinct skill system) |
-| `ADAPTER_HUB_MAP` | (v0.3.0 hub topology) Newline-separated TAB-delimited pairs `<hub-path>\t<tool-rel-path>` mapping hub-canonical items to the tool's native layout. The hub sync engine reads this bidirectionally (harvest and fan-out). Empty = adapter doesn't participate in hub sync yet. |
+| `ADAPTER_HUB_MAP` | (v0.3.0 hub topology) Newline-separated TAB-delimited pairs `<hub-path>\t<tool-rel-path>` mapping hub-canonical items to the tool's native layout. The hub sync engine reads this bidirectionally (harvest and fan-out). Empty = adapter doesn't participate in hub sync yet. See the full spec below. |
 | `ADAPTER_PROJECT_CONTENT_RULES` | (v0.3.0 hub topology) Newline-separated TAB-delimited pairs `<hub-rel>\t<tool-rel>` for files under `projects/<project-id>/**`. Lets the adapter whitelist what's safe to harvest/fan-out in per-project subtrees. Empty = adapter has no per-project concept. |
 
 **Conditional — required only under certain memory models:**
@@ -76,6 +76,45 @@ All 29 conformance tests must pass before a PR will be reviewed.
 - Adapter minor > core minor = hard error (adapter expects features core doesn't have).
 - Adapter minor < core minor = fine (new capabilities are additive).
 - Patch differences are ignored.
+
+## The two mapping strings in detail
+
+Both `ADAPTER_HUB_MAP` and `ADAPTER_PROJECT_CONTENT_RULES` are newline-separated, TAB-delimited pairs: `<hub-path>\t<tool-rel-path>`. The harvest/fan-out engine (`core/hub/harvest-fanout.sh`) reads them bidirectionally.
+
+### Path-shape cases
+
+The engine dispatches on the shape of the two paths in each entry.
+
+| Hub path | Tool path | Meaning |
+|---|---|---|
+| `memory.md` | `CLAUDE.md` | File-to-file rename. `_hub_sync_file` copies on harvest; reverse on fan-out. |
+| `skills` | `skills` | Directory tree mirror. Files present in source overwrite destination; files in destination with no counterpart are removed. |
+| `config/permissions/allow.txt` | `settings.json#permissions.allow` | Tool-side JSON subkey ↔ hub-side text-lines. Harvest extracts the array and writes one entry per line; fan-out reads the lines and replaces the subkey. |
+| `config/hooks` | `settings.json#hooks` | Tool-side JSON subkey that's an event-keyed map of entry arrays ↔ hub-side per-event/per-entry JSON files. Harvest splits each entry into `config/hooks/<event>/<id>.json` where `<id>` is a deterministic content hash; fan-out reconstructs the map. Machine-local entries (commands containing `/Applications/`, `/opt/homebrew/`, Windows drive letters, …) are filtered from harvest and preserved through fan-out. |
+
+The convention: hub paths with a file extension (`.md`, `.txt`, `.json`) are file-like; paths without an extension are directory-like. The `<file>#<jsonpath>` form on the tool side means "read/write a subkey of that JSON file"; the hub-side shape (file vs. dir) picks between text-lines and per-entry split.
+
+### Example (the Claude Code adapter)
+
+```bash
+ADAPTER_HUB_MAP=$'memory.md\tCLAUDE.md
+skills\tskills
+config/hooks\tsettings.json#hooks
+config/permissions/allow.txt\tsettings.json#permissions.allow
+config/permissions/deny.txt\tsettings.json#permissions.deny
+config/permissions/ask.txt\tsettings.json#permissions.ask'
+
+ADAPTER_PROJECT_CONTENT_RULES=$'memory.md\tMEMORY.md
+memory\tmemory'
+```
+
+### Per-project mapping
+
+`ADAPTER_PROJECT_CONTENT_RULES` applies under `projects/<project-id>/**`. Variant discovery goes through the sidecar `<variant>/memory/.hive-mind` (written by `core/mirror-projects.sh`) which exposes `project-id=<normalized-remote>`. Variants without a sidecar are skipped by harvest; tools that don't have a per-project concept declare the field empty.
+
+### Non-JSON config formats
+
+If your tool stores hooks or permissions outside JSON (e.g. Codex's `config.toml` with `[[hooks]]` blocks), the `<file>#<jsonpath>` notation still applies to the hub side — the file extension (`.toml`) tells your adapter's own shell code which parser to invoke. The MVP engine in `core/hub/harvest-fanout.sh` only understands JSON; TOML-shaped adapters will need to extend the dispatch (see issue [#11](https://github.com/tuahear/hive-mind/issues/11) for the Codex implementation plan).
 
 ## PR checklist
 
