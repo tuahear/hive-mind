@@ -1,0 +1,46 @@
+# Whitelist-only pattern for the hive-mind hub (v0.3.0+). Default-ignore
+# everything, allow only the canonical hub schema. Written to
+# $HIVE_MIND_HUB_DIR/.gitignore by setup.sh at hub install time.
+
+/*
+
+!/.gitignore
+!/.gitattributes
+!/.hive-mind-format
+
+# Global canonical memory.
+!/memory.md
+
+# Per-project canonical memory tree.
+!/projects/
+/projects/*
+!/projects/*/
+/projects/*/*
+!/projects/*/memory.md
+!/projects/*/memory/
+/projects/*/memory/*
+!/projects/*/memory/**
+
+# User-level skills, provider-agnostic.
+!/skills/
+!/skills/**
+
+# Canonical config: hook entries, permission lists, env vars.
+!/config/
+!/config/hooks/
+!/config/hooks/**
+!/config/permissions/
+!/config/permissions/**
+!/config/env.sh
+
+# Mac clutter.
+**/.DS_Store
+
+# Everything below this line stays machine-local and must NEVER be
+# pushed: the hive-mind source clone, the symlinked sync entry point,
+# lock / rate-limit state, error logs.
+/hive-mind/
+/bin/
+/.install-state/
+/.hive-mind-state/
+/.sync-error.log
