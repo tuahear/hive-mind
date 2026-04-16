@@ -8,10 +8,10 @@ set -euo pipefail
 ADAPTER_API_VERSION="1.0.0"
 ADAPTER_VERSION="0.1.0"
 ADAPTER_NAME="claude-code"
-# Honor a caller-provided ADAPTER_DIR (tests, alternative installs,
-# the legacy scripts/sync.sh shim that exports ADAPTER_DIR before
-# loading the adapter). Hardcoding would overwrite it, routing sync
-# to the default location even when the caller meant another.
+# Honor a caller-provided ADAPTER_DIR (tests, alternative installs, or
+# setup.sh running with a non-default tool dir). Hardcoding would
+# overwrite it, routing sync to the default location even when the
+# caller meant another.
 ADAPTER_DIR="${ADAPTER_DIR:-$HOME/.claude}"
 ADAPTER_MEMORY_MODEL="flat"
 ADAPTER_GLOBAL_MEMORY="${ADAPTER_DIR}/CLAUDE.md"
@@ -44,14 +44,17 @@ adapter_install_hooks() {
   fi
 
   # Idempotent: check whether every required hook event is already
-  # present with a hive-mind/core/ command. If any are missing, merge
-  # the template so partial installs (e.g. user manually deleted the
-  # Stop hook) get repaired on re-run.
+  # present with a hive-mind command. The hub topology (v0.3.0+) routes
+  # Stop through `$HOME/.hive-mind/bin/sync` and the others through
+  # `$HOME/.hive-mind/hive-mind/core/...`; pre-0.3.0 installs used
+  # `$HOME/.claude/hive-mind/core/...`. Match either so a partial or
+  # pre-refactor install still triggers the merge-template path and
+  # gets repaired on re-run.
   local all_present=1
   local event
   for event in SessionStart Stop PostToolUse; do
     if ! jq -e --arg e "$event" '
-      (.hooks[$e] // []) | map(.hooks[]? | select(.command | test("hive-mind/core/"))) | length > 0
+      (.hooks[$e] // []) | map(.hooks[]? | select(.command | test("(\\.hive-mind/(bin/sync|hive-mind/core/)|\\.claude/hive-mind/(core|scripts)/)"))) | length > 0
     ' "$settings" >/dev/null 2>&1; then
       all_present=0
       break
@@ -117,7 +120,7 @@ adapter_uninstall_hooks() {
             # hooks, agent hooks, or any other non-command schema). Treat
             # missing/null command as a non-match -- we only want to
             # remove hive-mind command hooks, nothing else.
-            .hooks |= map(select((.command // "") | test("(~/\\.claude|\\$HOME/\\.claude)/hive-mind/(core|scripts)/") | not))
+            .hooks |= map(select((.command // "") | test("((~/\\.claude|\\$HOME/\\.claude)/hive-mind/(core|scripts)/|(~/\\.hive-mind|\\$HOME/\\.hive-mind)/(bin/sync|hive-mind/core/))") | not))
           else . end
           | select((.hooks // []) | length > 0)
         )
@@ -213,21 +216,22 @@ adapter_healthcheck() {
 }
 
 # --- Migration (optional) --------------------------------------------------
-# Migrate from pre-refactor layout. Rewrites hook command strings that
-# reference the old scripts/ paths to use the new core/ paths.
+# Migrate hook command strings across the v0.1.x → v0.2.x → v0.3.x
+# topology shifts. Idempotent: each sed substitution targets patterns
+# that don't exist on the new form, so a settings.json already on the
+# latest shape passes through unchanged.
+#
+#   v0.1 scripts/<file>.sh       -> core/<file>.sh                (refactor move)
+#   v0.2 ~/.claude/hive-mind/... -> "$HOME/.claude/hive-mind/..." (space-safe quoting)
+#   v0.3 ~/.claude/hive-mind/core/sync.sh -> "$HOME/.hive-mind/bin/sync"
+#        (Stop hook promoted to the hub's shared entry point)
+#   v0.3 ~/.claude/hive-mind/core/<other>.sh -> "$HOME/.hive-mind/hive-mind/core/<other>.sh"
+#        (hive-mind source relocated under the hub)
 adapter_migrate() {
   local from_version="${1:-}"
   local settings="$ADAPTER_DIR/settings.json"
   [ -f "$settings" ] || return 0
 
-  # Rewrite old hook command paths:
-  # 1) scripts/<file>.sh -> core/<file>.sh        (refactor move)
-  # 2) ~/.claude/hive-mind/core/<file>.sh ->
-  #    \"\$HOME/.claude/hive-mind/core/<file>.sh\" (space-safe quoting)
-  # The literal \\\" in the sed replacement emits a backslash-escaped
-  # double quote into the JSON string, preserving JSON validity.
-  # Both regexes are idempotent: a settings.json already on the new
-  # form is unchanged (substitutions don't find their old patterns).
   local tmp
   tmp="$(mktemp)"
   if sed \
@@ -237,10 +241,14 @@ adapter_migrate() {
     -e 's|hive-mind/scripts/jsonmerge\.sh|hive-mind/core/jsonmerge.sh|g' \
     -e 's|hive-mind/scripts/mirror-projects\.sh|hive-mind/core/mirror-projects.sh|g' \
     -e 's|cd ~/\.claude |cd \\"$HOME/.claude\\" |g' \
-    -e 's|~/\.claude/hive-mind/core/sync\.sh|\\"$HOME/.claude/hive-mind/core/sync.sh\\"|g' \
-    -e 's|~/\.claude/hive-mind/core/check-dupes\.sh|\\"$HOME/.claude/hive-mind/core/check-dupes.sh\\"|g' \
-    -e 's|~/\.claude/hive-mind/core/marker-nudge\.sh|\\"$HOME/.claude/hive-mind/core/marker-nudge.sh\\"|g' \
-    -e 's|~/\.claude/hive-mind/core/mirror-projects\.sh|\\"$HOME/.claude/hive-mind/core/mirror-projects.sh\\"|g' \
+    -e 's|~/\.claude/hive-mind/core/sync\.sh|\\"$HOME/.hive-mind/bin/sync\\"|g' \
+    -e 's|\\"\$HOME/\.claude/hive-mind/core/sync\.sh\\"|\\"$HOME/.hive-mind/bin/sync\\"|g' \
+    -e 's|~/\.claude/hive-mind/core/check-dupes\.sh|\\"$HOME/.hive-mind/hive-mind/core/check-dupes.sh\\"|g' \
+    -e 's|\\"\$HOME/\.claude/hive-mind/core/check-dupes\.sh\\"|\\"$HOME/.hive-mind/hive-mind/core/check-dupes.sh\\"|g' \
+    -e 's|~/\.claude/hive-mind/core/marker-nudge\.sh|\\"$HOME/.hive-mind/hive-mind/core/marker-nudge.sh\\"|g' \
+    -e 's|\\"\$HOME/\.claude/hive-mind/core/marker-nudge\.sh\\"|\\"$HOME/.hive-mind/hive-mind/core/marker-nudge.sh\\"|g' \
+    -e 's|~/\.claude/hive-mind/core/mirror-projects\.sh|\\"$HOME/.hive-mind/hive-mind/core/mirror-projects.sh\\"|g' \
+    -e 's|\\"\$HOME/\.claude/hive-mind/core/mirror-projects\.sh\\"|\\"$HOME/.hive-mind/hive-mind/core/mirror-projects.sh\\"|g' \
     "$settings" > "$tmp"; then
     if ! cmp -s "$settings" "$tmp"; then
       mv "$tmp" "$settings"
