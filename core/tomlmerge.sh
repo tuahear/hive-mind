@@ -84,11 +84,15 @@ toml_flatten() {
 }
 
 # --- Check if a key is in the union list ----------------------------------
+# Accepts TOMLMERGE_UNION_KEYS as either newline-separated or
+# comma-separated (the comma form is friendlier when the var is set
+# via the merge-driver env-prefix written to git config, since
+# newlines don't survive single-line config values cleanly).
 is_union_key() {
   local key="$1"
   local union_keys="${TOMLMERGE_UNION_KEYS:-}"
   [ -z "$union_keys" ] && return 1
-  printf '%s\n' "$union_keys" | grep -Fxq "$key"
+  printf '%s\n' "$union_keys" | tr ',' '\n' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' | grep -Fxq "$key"
 }
 
 # --- Parse array value into lines of elements -----------------------------

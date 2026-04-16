@@ -14,7 +14,10 @@
 # call `set -euo pipefail` at the top level — that would leak into the
 # caller's shell (setup.sh, tests, etc.) and can change error-handling
 # behavior the caller didn't opt into. Strict mode is applied locally
-# inside each function instead via a shopt save/restore pattern.
+# inside each function. Adapters typically run `set -euo pipefail` at
+# their top, so load_adapter snapshots the caller's `set -o` state via
+# `set +o` before sourcing and restores it via `eval` after — see the
+# implementation in load_adapter() below.
 
 # The adapter API version this core understands.
 HIVE_MIND_CORE_API_VERSION="1.0.0"

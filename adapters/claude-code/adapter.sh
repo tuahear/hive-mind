@@ -82,9 +82,15 @@ adapter_install_hooks() {
                   then empty else $newEntry end
               ))
           )}) | add)
-    | .permissions.allow = (
-        (($user.permissions.allow // []) + ($new.permissions.allow // [])) | unique
-      )
+    # Only union permissions.allow when at least one side actually has
+    # an allow list -- otherwise we would write an empty permissions.allow
+    # array into a user settings.json that previously had no permissions
+    # block at all (drift the user did not ask for).
+    | if ($user.permissions.allow // $new.permissions.allow) != null then
+        .permissions.allow = (
+          (($user.permissions.allow // []) + ($new.permissions.allow // [])) | unique
+        )
+      else . end
   ' "$settings" "$template" > "$tmp" 2>/dev/null && mv "$tmp" "$settings"
 }
 
@@ -136,6 +142,15 @@ ADAPTER_SKILL_FORMAT="markdown-frontmatter"
 
 # --- E. Settings merge -----------------------------------------------------
 ADAPTER_SETTINGS_MERGE_BINDINGS=$'settings.json jsonmerge'
+
+# Optional: per-driver env vars to inject when registering merge drivers
+# in the local .git/config. Newline-separated lines of the form
+# "<driver>:<KEY=val KEY2=val2>". setup.sh prepends the env-prefix to
+# the registered driver command. Example for a TOML adapter (Codex):
+#   ADAPTER_MERGE_DRIVER_ENV=$'tomlmerge:TOMLMERGE_UNION_KEYS=permissions.allow,permissions.deny'
+# Claude Code uses jsonmerge which has its union list baked into the
+# script, so no env is needed here.
+ADAPTER_MERGE_DRIVER_ENV=""
 
 # --- F. User education -----------------------------------------------------
 adapter_activation_instructions() {

@@ -199,11 +199,32 @@ register_merge_drivers() {
         drivers="$(printf '%s\n' "$ADAPTER_SETTINGS_MERGE_BINDINGS" | awk 'NF>=2 {print $2}' | sort -u)"
     fi
 
+    # Lookup helper: for a given driver name, return the adapter-declared
+    # env-prefix string (e.g. "TOMLMERGE_UNION_KEYS=permissions.allow,deny ").
+    # Adapter declares ADAPTER_MERGE_DRIVER_ENV as newline-separated lines
+    # of the form "<driver>:<KEY=val KEY2=val2>". Empty when not declared.
+    _driver_env_prefix() {
+        local want_drv="$1"
+        [ -n "${ADAPTER_MERGE_DRIVER_ENV:-}" ] || { printf ''; return; }
+        printf '%s\n' "$ADAPTER_MERGE_DRIVER_ENV" | while IFS= read -r line; do
+            [ -z "$line" ] && continue
+            local d="${line%%:*}"
+            local rest="${line#*:}"
+            [ "$d" = "$want_drv" ] || continue
+            # Trim whitespace and emit with trailing space so the
+            # caller can concatenate directly with the script path.
+            printf '%s ' "$rest"
+            return
+        done
+    }
+
     while IFS= read -r drv; do
         [ -z "$drv" ] && continue
         local driver_script="$HIVE_MIND_DIR/core/${drv}.sh"
         [ -f "$driver_script" ] || continue
-        git -C "$target_git" config "merge.${drv}.driver" "${driver_script} %A %O %B"
+        local env_prefix
+        env_prefix="$(_driver_env_prefix "$drv")"
+        git -C "$target_git" config "merge.${drv}.driver" "${env_prefix}${driver_script} %A %O %B"
         git -C "$target_git" config "merge.${drv}.name" "hive-mind ${drv} driver"
     done <<< "$drivers"
 
