@@ -266,4 +266,45 @@ adapter_migrate() {
   else
     rm -f "$tmp"
   fi
+
+  # SessionStart hook needs bin/sync prefix. Pre-0.3 installs that
+  # made it through the path rewrites above still carry the original
+  # check-dupes-only form — no pull, no fan-out, so new sessions on a
+  # second machine don't see cross-machine memory until the first Stop
+  # hook fires mid-session. README promises "pulled when your AI
+  # starts a session"; honor that promise on upgrade by prepending a
+  # bin/sync call to any SessionStart command that references the
+  # hub's check-dupes path but not bin/sync.
+  #
+  # Gated behind a detection pass (jq -e returns 0 only if at least
+  # one command matches) so the transformation pass is skipped when
+  # nothing needs promotion. jq's pretty-printing otherwise rewrites
+  # the file on every invocation, violating idempotency.
+  if jq -e '
+      (.hooks.SessionStart // []) | any(
+        .hooks[]? |
+          ((.command // "") | test("hive-mind/hive-mind/core/check-dupes\\.sh"))
+          and
+          ((.command // "") | test("hive-mind/bin/sync") | not)
+      )
+    ' "$settings" >/dev/null 2>&1; then
+    local jq_tmp
+    jq_tmp="$(mktemp)"
+    if jq '
+        .hooks.SessionStart |= map(
+          .hooks |= map(
+            ((.command // "") | test("hive-mind/hive-mind/core/check-dupes\\.sh")) as $has_checkdupes |
+            ((.command // "") | test("hive-mind/bin/sync") | not) as $missing_sync |
+            if $has_checkdupes and $missing_sync then
+              .command = "\"$HOME/.hive-mind/bin/sync\" 2>>\"$HOME/.hive-mind/.sync-error.log\" || true; \"$HOME/.hive-mind/hive-mind/core/check-dupes.sh\" 2>>\"$HOME/.claude/.sync-error.log\" || true"
+              | .timeout = 30
+            else . end
+          )
+        )
+      ' "$settings" > "$jq_tmp" 2>/dev/null; then
+      mv "$jq_tmp" "$settings"
+    else
+      rm -f "$jq_tmp"
+    fi
+  fi
 }

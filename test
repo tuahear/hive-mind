@@ -43,10 +43,15 @@ if ! command -v bats >/dev/null 2>&1; then
   exit 1
 fi
 
-# Default target is the whole tests/ tree, recursively. Any argv override
-# (file path, flag, or both) is passed through untouched.
+# Default target: every .bats file across the repo, recursively.
+# - `tests/` holds core + conformance + integration + hub + versioning tests.
+# - `adapters/<name>/tests/` holds adapter-specific tests (Claude today;
+#   future Codex/Qwen/Kimi adapters will add their own). Restricting the
+#   default runner to `tests/` silently skipped every adapter-specific
+#   test a new contributor would rely on.
+# Any argv override (file path, flag, or both) is passed through untouched.
 if [ "$#" -eq 0 ]; then
-  set -- -r "$REPO_ROOT/tests"
+  set -- -r "$REPO_ROOT/tests" "$REPO_ROOT/adapters"
 fi
 
 exec bats --jobs "$JOBS" "$@"

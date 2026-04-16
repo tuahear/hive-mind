@@ -48,6 +48,33 @@ teardown() {
   [ "$(jq '.hooks.SessionStart | length' "$template")" -gt 0 ]
 }
 
+@test "settings.json SessionStart hook invokes the hub sync before check-dupes (pulls fresh memory at session start)" {
+  # README.md promises "Quietly pulled when your AI starts a session."
+  # That's a deliberate UX guarantee: on a second machine, a new
+  # Claude session must see cross-machine memory from the hub remote
+  # immediately, not only after the first Stop hook fires mid-session.
+  # Pin that the SessionStart hook runs the hub entry point (which
+  # pulls + fans out) BEFORE check-dupes so the tool dir is fresh
+  # when check-dupes scans it, and before the user's first turn reads
+  # memory. If a future refactor drops bin/sync from SessionStart, the
+  # promise silently regresses.
+  local template="${ADAPTER_ROOT}/settings.json"
+  local cmd
+  cmd="$(jq -r '.hooks.SessionStart[0].hooks[0].command' "$template")"
+  [[ "$cmd" == *'.hive-mind/bin/sync'* ]]
+  [[ "$cmd" == *'hive-mind/core/check-dupes.sh'* ]]
+  # bin/sync runs FIRST (position in the command string — before
+  # check-dupes). A reversed order would run check-dupes against
+  # stale memory, then pull, then the user sees stale content in
+  # their first turn.
+  local sync_pos dupes_pos
+  sync_pos="$(awk -v s="$cmd" -v t='.hive-mind/bin/sync' 'BEGIN{print index(s,t)}')"
+  dupes_pos="$(awk -v s="$cmd" -v t='hive-mind/core/check-dupes.sh' 'BEGIN{print index(s,t)}')"
+  [ "$sync_pos" -gt 0 ]
+  [ "$dupes_pos" -gt 0 ]
+  [ "$sync_pos" -lt "$dupes_pos" ]
+}
+
 @test "settings.json template has Stop hook" {
   local template="${ADAPTER_ROOT}/settings.json"
   [ "$(jq '.hooks.Stop | length' "$template")" -gt 0 ]
@@ -136,6 +163,41 @@ SETTINGS
   grep -q '\.hive-mind/bin/sync' "$ADAPTER_DIR/settings.json"
   # Helper-script hooks (SessionStart's check-dupes) relocated under the hub.
   grep -q '\.hive-mind/hive-mind/core/check-dupes\.sh' "$ADAPTER_DIR/settings.json"
+}
+
+@test "adapter_migrate promotes existing hub-topology SessionStart commands to include bin/sync" {
+  # Regression: a v0.3.0-alpha install (say, an early adopter's
+  # machine from before this commit landed) already has hub-topology
+  # paths for SessionStart — migrate's sed rules no longer fire on
+  # them. But the command lacks the bin/sync prefix the README now
+  # promises, so a new session on that machine wouldn't pull fresh
+  # memory. The jq post-pass in adapter_migrate targets exactly
+  # this form: SessionStart command references hub check-dupes but
+  # not bin/sync, so it needs the bin/sync prefix added.
+  mkdir -p "$ADAPTER_DIR"
+  cat > "$ADAPTER_DIR/settings.json" <<'EOF'
+{
+  "hooks": {
+    "SessionStart": [{"hooks": [{"type":"command","command":"cd \"$HOME/.claude\" && \"$HOME/.hive-mind/hive-mind/core/check-dupes.sh\" || true","timeout":10}]}],
+    "Stop": [{"hooks": [{"type":"command","command":"\"$HOME/.hive-mind/bin/sync\""}]}]
+  }
+}
+EOF
+
+  adapter_migrate "0.3.0"
+
+  # After migrate, SessionStart command now runs bin/sync AND still runs check-dupes,
+  # with bin/sync first.
+  cmd="$(jq -r '.hooks.SessionStart[0].hooks[0].command' "$ADAPTER_DIR/settings.json")"
+  [[ "$cmd" == *'.hive-mind/bin/sync'* ]]
+  [[ "$cmd" == *'hive-mind/core/check-dupes.sh'* ]]
+  # Timeout bumped from 10 to 30 (sync + check-dupes needs more headroom).
+  timeout="$(jq -r '.hooks.SessionStart[0].hooks[0].timeout' "$ADAPTER_DIR/settings.json")"
+  [ "$timeout" = "30" ]
+
+  # Stop hook unchanged (no promotion needed, already has bin/sync).
+  stop_cmd="$(jq -r '.hooks.Stop[0].hooks[0].command' "$ADAPTER_DIR/settings.json")"
+  [ "$stop_cmd" = '"$HOME/.hive-mind/bin/sync"' ]
 }
 
 @test "adapter_migrate is idempotent on the hub-topology form" {
