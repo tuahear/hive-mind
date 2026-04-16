@@ -106,6 +106,16 @@ parse_array() {
   # Trim ALL trailing whitespace first so the `]` is the final char.
   val="${val%"${val##*[![:space:]]}"}"
   val="${val%\]}"
+  # Reject anything that isn't a (possibly empty) comma-separated list of
+  # double-quoted strings. Single quotes / bare identifiers / numbers /
+  # booleans would survive the strip-quotes sed otherwise and get
+  # corrupted by rebuild_array. On rejection, caller exits 1 so git
+  # falls back to a normal 3-way merge.
+  local stripped="${val// /}"  # ignore whitespace for the validation
+  stripped="${stripped//\	/}" # ignore tabs
+  if [ -n "$stripped" ] && [[ ! "$stripped" =~ ^\"[^\"]*\"(,\"[^\"]*\")*$ ]]; then
+    return 1
+  fi
   # Split on comma, strip quotes and whitespace.
   printf '%s' "$val" | tr ',' '\n' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e 's/^"//' -e 's/"$//' | grep -v '^$'
 }

@@ -223,7 +223,25 @@ fi
 # invocation made a new commit. Otherwise a debounced/failed push from a
 # prior turn would never get retried until the next file change. The
 # push-block lives outside the staged-diff branch so it always fires.
-if [ -n "$(git log @{u}.. --oneline 2>/dev/null)" ]; then
+#
+# Fresh installs may not have an upstream configured yet (`@{u}` is
+# undefined until the first `git push -u`). In that case, fall back to
+# comparing against the remote's same-named branch if it exists, and if
+# even that's missing, push unconditionally — otherwise first-install
+# initial commits would be silently stranded.
+need_push=0
+current_branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)"
+if git rev-parse --abbrev-ref @{u} >/dev/null 2>&1; then
+  [ -n "$(git log @{u}.. --oneline 2>/dev/null)" ] && need_push=1
+elif git rev-parse --verify "origin/$current_branch" >/dev/null 2>&1; then
+  [ -n "$(git log "origin/$current_branch..HEAD" --oneline 2>/dev/null)" ] && need_push=1
+else
+  # No upstream and no matching remote branch — this is the very first
+  # push on a fresh-initialized repo. Push unconditionally so the
+  # initial commit actually reaches the remote.
+  need_push=1
+fi
+if [ "$need_push" -eq 1 ]; then
   : "${HIVE_MIND_MIN_PUSH_INTERVAL_SEC:=10}"
   case "$HIVE_MIND_MIN_PUSH_INTERVAL_SEC" in
     ''|*[!0-9]*) HIVE_MIND_MIN_PUSH_INTERVAL_SEC=10 ;;
@@ -250,12 +268,19 @@ if [ -n "$(git log @{u}.. --oneline 2>/dev/null)" ]; then
   fi
 
   if [ "$should_push" -eq 1 ]; then
+    # If there's no upstream, set it on this push so subsequent syncs
+    # can use `@{u}` for the unpushed-commits check.
+    push_args=""
+    if ! git rev-parse --abbrev-ref @{u} >/dev/null 2>&1; then
+      push_args="-u origin $current_branch"
+    fi
+
     # Exponential backoff on push failure (1s, 2s, 4s, 8s, cap at 30s).
     max_retries=5
     backoff=1
     push_ok=0
     for (( _attempt=1; _attempt<=max_retries; _attempt++ )); do
-      if git push -q 2>>"$LOG"; then
+      if git push -q $push_args 2>>"$LOG"; then
         push_ok=1
         break
       fi

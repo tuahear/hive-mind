@@ -348,12 +348,15 @@ adapter_install_hooks
 # ---------- push + verify ----------
 log "[5/5] running a sync cycle to verify and push"
 if [ -x "$HIVE_MIND_DIR/core/sync.sh" ]; then
-    # Pass every ADAPTER_* variable into the subprocess so sync.sh logs
-    # to ADAPTER_LOG_PATH (not the fallback .sync-error.log) and sees
-    # ADAPTER_MARKER_TARGETS / ADAPTER_EVENT_* from the loaded adapter.
+    # Pass every ADAPTER_* variable sync.sh consumes into the subprocess:
+    # LOG_PATH (where to log), MARKER_TARGETS (which files host markers),
+    # EVENT_* (for any event-name-dependent logging), and SECRET_FILES
+    # (the pre-commit safety gate). Without SECRET_FILES, the verification
+    # sync could silently commit declared-secret files on first install.
     ADAPTER_DIR="$ADAPTER_DIR" \
     ADAPTER_LOG_PATH="${ADAPTER_LOG_PATH:-}" \
     ADAPTER_MARKER_TARGETS="${ADAPTER_MARKER_TARGETS:-}" \
+    ADAPTER_SECRET_FILES="${ADAPTER_SECRET_FILES:-}" \
     ADAPTER_EVENT_SESSION_START="${ADAPTER_EVENT_SESSION_START:-}" \
     ADAPTER_EVENT_TURN_END="${ADAPTER_EVENT_TURN_END:-}" \
     ADAPTER_EVENT_POST_EDIT="${ADAPTER_EVENT_POST_EDIT:-}" \
