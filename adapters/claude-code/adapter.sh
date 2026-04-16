@@ -59,9 +59,29 @@ adapter_install_hooks() {
 
   local tmp
   tmp="$(mktemp)"
+  # Concatenate hook event arrays instead of replacing them -- jq's `*`
+  # operator overwrites arrays, which would drop user-defined hooks on
+  # the same event (e.g. a user's custom Stop hook). For each event we
+  # know about, append the template's entries only if they aren't
+  # already present (match by command string so re-running is a no-op).
   jq -s '
     .[0] as $user | .[1] as $new
-    | ($user * $new)
+    # Scalar / object keys: deep-merge, new wins.
+    | ($user * $new) as $base
+    # Rebuild hooks by walking every template event and concatenating.
+    | . = $base
+    | .hooks = (($user.hooks // {}) as $uh | ($new.hooks // {}) as $nh |
+        ($uh | keys) + ($nh | keys) | unique
+        | map({(.): (
+            ($uh[.] // []) as $ue | ($nh[.] // []) as $ne
+            # For each new entry, only append if no existing matcher/command combo matches.
+            | $ue + ($ne | map(
+                . as $newEntry
+                | if any($ue[]; (.matcher // "") == ($newEntry.matcher // "") and
+                                ((.hooks // []) | map(.command // "") | any(. as $c | $newEntry.hooks[]? | .command == $c)))
+                  then empty else $newEntry end
+              ))
+          )}) | add)
     | .permissions.allow = (
         (($user.permissions.allow // []) + ($new.permissions.allow // [])) | unique
       )

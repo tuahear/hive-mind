@@ -16,6 +16,26 @@ CORE_DIR="$(cd "$(dirname "$0")" && pwd)"
 : "${ADAPTER_DIR:=$HOME/.claude}"
 cd "$ADAPTER_DIR" || exit 0
 
+# Cross-process lock. The Stop hook runs async and retries with backoff,
+# so rapid turns or a stuck upstream can spawn many concurrent sync
+# processes racing for git's index.lock. A simple mkdir-based lock
+# (atomic on every POSIX filesystem) lets at most one sync run at a
+# time; late arrivals exit cleanly and let the current one finish.
+HIVE_MIND_STATE_DIR="${ADAPTER_DIR}/.hive-mind-state"
+LOCK_DIR="${HIVE_MIND_STATE_DIR}/sync.lock"
+mkdir -p "$HIVE_MIND_STATE_DIR" 2>/dev/null
+if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+  # Stale lock detection: if the directory is older than 5 minutes,
+  # assume the previous run died and reclaim it. Otherwise silently skip.
+  if [ -n "$(find "$LOCK_DIR" -maxdepth 0 -mmin +5 2>/dev/null)" ]; then
+    rmdir "$LOCK_DIR" 2>/dev/null
+    mkdir "$LOCK_DIR" 2>/dev/null || exit 0
+  else
+    exit 0
+  fi
+fi
+trap 'rmdir "$LOCK_DIR" 2>/dev/null' EXIT
+
 # Log path: prefer adapter-declared path (Appendix A.2), fall back to the
 # per-directory default so pre-refactor installs keep working.
 if [ -n "${ADAPTER_LOG_PATH:-}" ]; then
@@ -170,9 +190,9 @@ if ! git diff --cached --quiet; then
   # locally but skip the push. The next turn-end fires it if enough time
   # has passed, catching any queued commits together.
   : "${HIVE_MIND_MIN_PUSH_INTERVAL_SEC:=10}"
-  # Store rate-limit state OUTSIDE the hive-mind git checkout so upgrades
-  # (`git pull` in ~/.claude/hive-mind/) never see it as untracked noise.
-  HIVE_MIND_STATE_DIR="${ADAPTER_DIR}/.hive-mind-state"
+  # Rate-limit state lives in $HIVE_MIND_STATE_DIR (already created
+  # above for the sync lock). Outside the hive-mind git checkout so
+  # `git pull` upgrades don't see it as untracked noise.
   LAST_PUSH_FILE="${HIVE_MIND_STATE_DIR}/last-push"
 
   should_push=1
