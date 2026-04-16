@@ -24,8 +24,10 @@ export default defineConfig({
         items: [
           { text: 'Home', link: '/' },
           { text: 'How it works', link: '/how-it-works' },
+          { text: 'Adapters', link: '/adapters' },
           { text: 'Reference', link: '/reference' },
           { text: 'Troubleshooting', link: '/troubleshooting' },
+          { text: 'Contributing adapters', link: '/CONTRIBUTING-adapters' },
         ],
       },
     ],
