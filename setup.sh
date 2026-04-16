@@ -214,9 +214,18 @@ register_merge_drivers() {
 }
 register_jsonmerge_driver() { register_merge_drivers "$@"; }
 
+# Mask any embedded credentials (https://token:x-oauth@host/...) from a
+# git remote URL before printing it — token leaks to terminal/CI logs
+# are otherwise silent and permanent.
+sanitize_remote_url() {
+    # POSIX basic sed; pattern matches the userinfo between :// and @.
+    printf '%s' "$1" | sed 's|://[^@]*@|://***@|'
+}
+
 case "$STATE" in
     already_synced)
-        log "$MEMORY_DIR is already a git repo with remote $(git -C "$MEMORY_DIR" remote get-url origin)"
+        _origin_raw="$(git -C "$MEMORY_DIR" remote get-url origin 2>/dev/null)"
+        log "$MEMORY_DIR is already a git repo with remote $(sanitize_remote_url "$_origin_raw")"
 
         # Read the previously-installed hive-mind version BEFORE pulling the
         # latest (so adapter_migrate can make version-conditional decisions).

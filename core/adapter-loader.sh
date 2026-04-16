@@ -9,8 +9,12 @@
 #
 # On success the caller inherits all ADAPTER_* variables and adapter_*
 # functions. On failure the loader prints a diagnostic and returns non-zero.
-
-set -euo pipefail
+#
+# NOTE: this file is meant to be sourced, so it intentionally does NOT
+# call `set -euo pipefail` at the top level — that would leak into the
+# caller's shell (setup.sh, tests, etc.) and can change error-handling
+# behavior the caller didn't opt into. Strict mode is applied locally
+# inside each function instead via a shopt save/restore pattern.
 
 # The adapter API version this core understands.
 HIVE_MIND_CORE_API_VERSION="1.0.0"
@@ -111,6 +115,25 @@ _validate_adapter() {
         ok=0
         ;;
     esac
+  fi
+
+  # Absolute-path checks: core scripts (sync.sh, mirror-projects.sh) run
+  # `cd "$ADAPTER_DIR"` and open `$ADAPTER_LOG_PATH` directly. Relative
+  # paths work accidentally in some cases and break confusingly in others.
+  # Enforce absolute here so the failure surfaces at load time with a
+  # clear message, not later inside sync.sh.
+  if [ -n "${ADAPTER_DIR:-}" ] && [ "${ADAPTER_DIR:0:1}" != "/" ]; then
+    _loader_log ERROR "adapter '$name' ADAPTER_DIR must be an absolute path, got '$ADAPTER_DIR'"
+    ok=0
+  fi
+  if [ -n "${ADAPTER_LOG_PATH:-}" ] && [ "${ADAPTER_LOG_PATH:0:1}" != "/" ]; then
+    _loader_log ERROR "adapter '$name' ADAPTER_LOG_PATH must be an absolute path, got '$ADAPTER_LOG_PATH'"
+    ok=0
+  fi
+  if [ "${ADAPTER_MEMORY_MODEL:-}" = "flat" ] && [ -n "${ADAPTER_GLOBAL_MEMORY:-}" ] \
+     && [ "${ADAPTER_GLOBAL_MEMORY:0:1}" != "/" ]; then
+    _loader_log ERROR "adapter '$name' ADAPTER_GLOBAL_MEMORY must be an absolute path, got '$ADAPTER_GLOBAL_MEMORY'"
+    ok=0
   fi
 
   # Bail early if fundamentals are missing.

@@ -24,35 +24,44 @@ cd "$ADAPTER_DIR" || exit 0
 HIVE_MIND_STATE_DIR="${ADAPTER_DIR}/.hive-mind-state"
 LOCK_DIR="${HIVE_MIND_STATE_DIR}/sync.lock"
 mkdir -p "$HIVE_MIND_STATE_DIR" 2>/dev/null
-if ! mkdir "$LOCK_DIR" 2>/dev/null; then
-  # Stale lock detection: write a timestamp inside the lock dir on
-  # creation, then compare against now on contention. This avoids
-  # `find -maxdepth -mmin` (GNU-specific flags BSD find doesn't support)
-  # and `stat -c` / `stat -f` (also non-portable across macOS / Linux).
-  STALE_AGE_SEC=300  # 5 minutes
+acquire_lock() {
+  # Atomic acquisition: mkdir fails if the dir exists. On success, write
+  # the timestamp IMMEDIATELY so a contending process can check staleness
+  # without a race. Returns 0 on acquire, 1 on contended-and-not-stale.
+  if mkdir "$LOCK_DIR" 2>/dev/null; then
+    date +%s > "$LOCK_DIR/created-at" 2>/dev/null
+    return 0
+  fi
+  return 1
+}
+
+STALE_AGE_SEC=300  # 5 minutes
+
+if ! acquire_lock; then
+  # Stale-lock detection. The timestamp file is written by the lock
+  # holder IMMEDIATELY after mkdir (no window without it). If the
+  # file is missing, the holder crashed between mkdir and the write —
+  # give it a short grace period (2s, << any real sync) before
+  # treating the lock as stale, so we never race a just-acquired lock.
   lock_ts_file="$LOCK_DIR/created-at"
-  if [ -f "$lock_ts_file" ]; then
-    lock_ts="$(cat "$lock_ts_file" 2>/dev/null)"
-    case "$lock_ts" in
-      ''|*[!0-9]*) lock_ts=0 ;;
-    esac
-    now_ts="$(date +%s)"
-    if [ "$((now_ts - lock_ts))" -gt "$STALE_AGE_SEC" ]; then
-      rm -rf "$LOCK_DIR" 2>/dev/null
-      mkdir "$LOCK_DIR" 2>/dev/null || exit 0
-    else
-      exit 0
-    fi
-  else
-    # Lock dir exists but no timestamp — created by an older sync.sh
-    # before this scheme. Reclaim it (the absent ts means we can't
-    # tell if it's stale, but a sync that crashed before writing the
-    # timestamp is exactly the case we want to recover from).
+  if [ ! -f "$lock_ts_file" ]; then
+    sleep 2
+  fi
+  lock_ts=""
+  [ -f "$lock_ts_file" ] && lock_ts="$(cat "$lock_ts_file" 2>/dev/null)"
+  case "$lock_ts" in
+    ''|*[!0-9]*) lock_ts=0 ;;
+  esac
+  now_ts="$(date +%s)"
+  if [ "$lock_ts" -eq 0 ] || [ "$((now_ts - lock_ts))" -gt "$STALE_AGE_SEC" ]; then
+    # Genuinely stale. Reclaim — but use acquire_lock again so we
+    # handle the unlikely case of another process reclaiming first.
     rm -rf "$LOCK_DIR" 2>/dev/null
-    mkdir "$LOCK_DIR" 2>/dev/null || exit 0
+    acquire_lock || exit 0
+  else
+    exit 0
   fi
 fi
-date +%s > "$LOCK_DIR/created-at" 2>/dev/null
 trap 'rm -rf "$LOCK_DIR" 2>/dev/null' EXIT
 
 # Log path: prefer adapter-declared path (Appendix A.2), fall back to the

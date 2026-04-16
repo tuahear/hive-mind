@@ -118,8 +118,11 @@ parse_array() {
   if [ -n "$stripped" ] && [[ ! "$stripped" =~ ^\"[^\"]*\"(,\"[^\"]*\")*$ ]]; then
     return 1
   fi
-  # Split on comma, strip quotes and whitespace.
-  printf '%s' "$val" | tr ',' '\n' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e 's/^"//' -e 's/"$//' | grep -v '^$'
+  # Split on comma, strip quotes and whitespace. Preserves empty-string
+  # elements (`["", "x"]`) — they're valid TOML and the earlier regex
+  # validation already rejected malformed arrays, so a blank line here
+  # means a deliberate empty string, not stray whitespace.
+  printf '%s' "$val" | tr ',' '\n' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e 's/^"//' -e 's/"$//'
 }
 
 # --- Rebuild array from lines of elements ---------------------------------
