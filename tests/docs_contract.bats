@@ -58,6 +58,33 @@ CONFORMANCE="$REPO_ROOT/tests/adapter-conformance/conformance.bats"
   done
 }
 
+@test "docs/adapters.md hub-tree skill path matches the on-disk canonical name used by core + tests" {
+  # Regression: docs/adapters.md's hub-layout tree once showed
+  # `skills/<name>/skill.md` (lowercase) while core/hub/sync.sh's
+  # marker targets and every tests/hub/*.bats assertion used SKILL.md
+  # (upper — the Agent Skills spec). An adapter author copy-pasting
+  # from docs would create a file core's marker scan ignores and the
+  # tests would silently stop exercising. Pin the docs-vs-code
+  # consistency here so a future lower-case regression fails fast.
+  local tree_doc="$REPO_ROOT/docs/adapters.md"
+  [ -f "$tree_doc" ]
+  # The hub-layout tree line for skills must read SKILL.md uppercase.
+  run grep -E '^[[:space:]]*[├└]──[[:space:]]+skills/<name>/SKILL\.md[[:space:]]*$' "$tree_doc"
+  [ "$status" -eq 0 ]
+  # And MUST NOT contain a lowercase skill.md counterpart in the same doc.
+  run grep -E 'skills/<name>/skill\.md' "$tree_doc"
+  [ "$status" -ne 0 ]
+
+  # Guard the code side too — core/hub/sync.sh's HUB_MARKER_TARGETS
+  # globs for skills must include the SKILL.md form so the marker-
+  # extract scan sees skill edits. If a future refactor drops it,
+  # marker-style commit subjects on skill edits silently regress to
+  # the "update <basename>" fallback.
+  local hub_sync="$REPO_ROOT/core/hub/sync.sh"
+  [ -f "$hub_sync" ]
+  grep -q 'skills/\*\*/SKILL\.md' "$hub_sync"
+}
+
 @test "loader's required_defined_vars matches every ADAPTER_* declared-required by conformance" {
   # Closes the triangle: conformance <-> loader <-> docs. If conformance
   # tests treat a variable as required-declared, the loader must enforce

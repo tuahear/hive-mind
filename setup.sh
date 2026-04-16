@@ -32,7 +32,12 @@
 
 set -euo pipefail
 
-HIVE_MIND_REPO="git@github.com:tuahear/hive-mind.git"
+# Where setup.sh clones the hive-mind source from. Env-overridable
+# because hard-coding an SSH URL forces GitHub SSH auth even for users
+# who only have HTTPS (corporate SSH restrictions, non-GitHub memory
+# remotes, HTTPS token auth) — set `HIVE_MIND_REPO=https://github.com/
+# tuahear/hive-mind.git` to skip the SSH preflight below.
+: "${HIVE_MIND_REPO:=git@github.com:tuahear/hive-mind.git}"
 : "${HIVE_MIND_HUB_DIR:=$HOME/.hive-mind}"
 HIVE_MIND_SRC="$HIVE_MIND_HUB_DIR/hive-mind"
 
@@ -59,8 +64,18 @@ install_hint() {
         curl) echo "  install: apt install curl / brew install curl / winget install curl" ;;
     esac
 }
+# Auto-install jq is opt-in via HIVE_MIND_AUTO_INSTALL_JQ=1. Running
+# `sudo apt-get install` (and the Linux / MSYS equivalents) implicitly
+# during install is surprising in CI and locked-down environments, and
+# can hang on interactive password prompts. Default behavior: fail with
+# the install_hint output so the user picks their own package manager.
+# Brew / winget / scoop don't need sudo, but for one predictable code
+# path we gate every branch behind the same env flag.
 auto_install_jq() {
-    log "jq not found; attempting auto-install"
+    if [ "${HIVE_MIND_AUTO_INSTALL_JQ:-0}" != "1" ]; then
+        return 1
+    fi
+    log "jq not found; HIVE_MIND_AUTO_INSTALL_JQ=1 set — attempting auto-install"
     case "$(uname -s)" in
         Darwin)
             command -v brew >/dev/null 2>&1 && brew install jq
@@ -87,17 +102,66 @@ for tool in git curl jq; do
         if [ "$tool" = jq ] && auto_install_jq; then log "jq installed"; continue; fi
         echo "error: missing required tool: $tool" >&2
         install_hint "$tool" >&2
+        [ "$tool" = jq ] && echo "  opt in to auto-install: HIVE_MIND_AUTO_INSTALL_JQ=1 bash setup.sh" >&2
         exit 1
     fi
 done
 
-log "preflight: checking SSH auth to github.com"
-set +o pipefail
-ssh_out="$(ssh -T -o BatchMode=yes -o StrictHostKeyChecking=accept-new \
-    git@github.com 2>&1 || true)"
-set -o pipefail
-grep -q "successfully authenticated" <<<"$ssh_out" \
-    || die "github SSH auth failed. Add an SSH key: https://github.com/settings/keys"
+# SSH preflight — only run when we actually need to clone via SSH.
+# HIVE_MIND_REPO is the repo we clone for the installer itself; if the
+# user has overridden it to an https:// URL they don't need a GitHub
+# SSH key. MEMORY_REPO is the user's memory remote — if it's https://
+# too, no SSH anywhere is required. Checking the actual host matters
+# for non-GitHub remotes: a user with `git@gitlab.com:...` shouldn't
+# be gated on GitHub SSH access.
+_is_ssh_url() {
+    case "$1" in
+        git@*|ssh://*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+_extract_ssh_host() {
+    # Accept `git@host:path` and `ssh://[user@]host[:port]/path` forms.
+    local url="$1" host=""
+    case "$url" in
+        git@*)   host="${url#git@}"; host="${host%%:*}" ;;
+        ssh://*) host="${url#ssh://}"; host="${host#*@}"; host="${host%%/*}"; host="${host%%:*}" ;;
+    esac
+    printf '%s' "$host"
+}
+_ssh_preflight() {
+    local host="$1"
+    [ -n "$host" ] || return 0
+    log "preflight: checking SSH auth to $host"
+    set +o pipefail
+    local ssh_out
+    ssh_out="$(ssh -T -o BatchMode=yes -o StrictHostKeyChecking=accept-new \
+        "git@$host" 2>&1 || true)"
+    set -o pipefail
+    # GitHub says "successfully authenticated". Other hosts vary
+    # (GitLab: "Welcome to GitLab"; self-hosted: anything). Treat any
+    # exit-code path that reached a banner as ok — only abort when we
+    # clearly couldn't authenticate (permission denied) so this works
+    # on non-GitHub remotes without adding per-host rules.
+    case "$ssh_out" in
+        *"Permission denied"*|*"Could not resolve hostname"*|*"Host key verification failed"*)
+            die "SSH auth to $host failed. Add an SSH key for $host or set HIVE_MIND_REPO / MEMORY_REPO to an https:// URL. First line of ssh output: $(printf '%s' "$ssh_out" | head -1)"
+            ;;
+    esac
+}
+# Dedup hosts so a single GitHub-for-both setup doesn't probe twice.
+_seen_hosts=""
+for _ssh_repo in "$HIVE_MIND_REPO" "${MEMORY_REPO:-}"; do
+    _is_ssh_url "$_ssh_repo" || continue
+    _host="$(_extract_ssh_host "$_ssh_repo")"
+    [ -z "$_host" ] && continue
+    case "$_seen_hosts" in
+        *",$_host,"*) continue ;;
+    esac
+    _seen_hosts="$_seen_hosts,$_host,"
+    _ssh_preflight "$_host"
+done
+unset _seen_hosts _ssh_repo _host
 
 # ---------- memory repo URL ----------
 if [ -z "$MEMORY_REPO" ] && [ -d "$HIVE_MIND_HUB_DIR/.git" ]; then

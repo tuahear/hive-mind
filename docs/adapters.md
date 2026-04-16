@@ -16,7 +16,7 @@ That split lets you run Claude Code and (as adapters ship) Codex, Qwen, Kimi on 
 ├── projects/<project-id>/             ← project-id = normalized git remote
 │   ├── memory.md                      ← canonical per-project memory
 │   └── memory/**                      ← free-form per-project notes
-├── skills/<name>/skill.md
+├── skills/<name>/SKILL.md
 ├── config/
 │   ├── hooks/<event>/<id>.json        ← tool-agnostic hook entries
 │   ├── permissions/{allow,deny,ask}.txt

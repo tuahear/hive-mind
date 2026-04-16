@@ -237,9 +237,12 @@ fi
 # --- phase: marker extraction ---------------------------------------------
 # Walk every file in the working tree that looks like memory (memory.md,
 # projects/*/memory.md, projects/*/memory/**, skills/**). The hub's
-# canonical filenames are lowercase and adapter-agnostic, so the
-# marker-target list is shorter than a per-adapter one.
-HUB_MARKER_TARGETS=$'memory.md\nprojects/*/memory.md\nprojects/*/memory/**\nskills/*\nskills/**/*.md\nskills/**/skill.md'
+# canonical file names for memory are lowercase and adapter-agnostic;
+# skills follow the Agent Skills spec and keep the upper-case SKILL.md
+# name on disk (no skill.md fallback — that form doesn't exist in any
+# shipped adapter's tool dir, so including it in the marker-target
+# globs just adds dead patterns).
+HUB_MARKER_TARGETS=$'memory.md\nprojects/*/memory.md\nprojects/*/memory/**\nskills/*\nskills/**/*.md\nskills/**/SKILL.md'
 
 file_is_marker_target() {
   local f="$1" glob
