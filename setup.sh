@@ -329,15 +329,23 @@ if [ "$STATE" = fresh ]; then
     # and sync/ we just set up.
     TMP="$(mktemp -d)"
     if git clone --quiet "$MEMORY_REPO" "$TMP/memory" 2>/dev/null; then
-        # Merge cloned files on top of our seeded dir.
+        # Merge cloned files on top of our seeded dir. SKIP .gitignore /
+        # .gitattributes — those came from the adapter template and
+        # MUST win over the remote copy on a fresh install, otherwise
+        # template additions (e.g. .hive-mind-format whitelist, new
+        # merge bindings) wouldn't take effect on machine #2 onward.
         mv "$TMP/memory/.git" "$MEMORY_DIR/.git"
         shopt -s dotglob
         for f in "$TMP/memory"/*; do
-            [ -e "$f" ] && cp -a "$f" "$MEMORY_DIR/" 2>/dev/null || true
+            [ -e "$f" ] || continue
+            case "$(basename "$f")" in
+                .gitignore|.gitattributes) continue ;;
+            esac
+            cp -a "$f" "$MEMORY_DIR/" 2>/dev/null || true
         done
         shopt -u dotglob
         rm -rf "$TMP"
-        log "cloned existing remote contents"
+        log "cloned existing remote contents (adapter .gitignore + .gitattributes preserved)"
     else
         rm -rf "$TMP"
         log "remote is empty; initializing locally"
