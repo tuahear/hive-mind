@@ -203,20 +203,18 @@ if ! git diff --cached --quiet; then
   fi
 
   git commit -q -m "$MSG" 2>>"$LOG"
+fi
 
-  # --- Rate-limited push ---------------------------------------------------
-  # Debounce: if we pushed within HIVE_MIND_MIN_PUSH_INTERVAL_SEC, commit
-  # locally but skip the push. The next turn-end fires it if enough time
-  # has passed, catching any queued commits together.
+# --- Rate-limited push ----------------------------------------------------
+# Push runs whenever there are unpushed commits — NOT only when this
+# invocation made a new commit. Otherwise a debounced/failed push from a
+# prior turn would never get retried until the next file change. The
+# push-block lives outside the staged-diff branch so it always fires.
+if [ -n "$(git log @{u}.. --oneline 2>/dev/null)" ]; then
   : "${HIVE_MIND_MIN_PUSH_INTERVAL_SEC:=10}"
-  # Validate numeric inputs — a corrupted state file or user env var
-  # would otherwise trip `integer expression expected` noise in arithmetic.
   case "$HIVE_MIND_MIN_PUSH_INTERVAL_SEC" in
     ''|*[!0-9]*) HIVE_MIND_MIN_PUSH_INTERVAL_SEC=10 ;;
   esac
-  # Rate-limit state lives in $HIVE_MIND_STATE_DIR (already created
-  # above for the sync lock). Outside the hive-mind git checkout so
-  # `git pull` upgrades don't see it as untracked noise.
   LAST_PUSH_FILE="${HIVE_MIND_STATE_DIR}/last-push"
 
   should_push=1
@@ -243,7 +241,6 @@ if ! git diff --cached --quiet; then
     max_retries=5
     backoff=1
     push_ok=0
-    # Bash arithmetic for-loop -- no dependency on `seq` (not on all systems).
     for (( _attempt=1; _attempt<=max_retries; _attempt++ )); do
       if git push -q 2>>"$LOG"; then
         push_ok=1

@@ -356,6 +356,40 @@ marker() {
   [ "$remote_head1" != "$remote_head2" ]
 }
 
+@test "REGRESSION: a previously-debounced commit gets pushed on the next non-edit sync" {
+  # Debounce the second push, then run sync a third time with no new
+  # staged changes. The pending local commit must still get pushed (the
+  # older impl gated push behind staged-diff and would silently strand
+  # the commit on the local branch until another file change triggered it).
+
+  # First edit + sync establishes a baseline (and writes last-push).
+  export HIVE_MIND_MIN_PUSH_INTERVAL_SEC=0
+  printf 'baseline\n' > "$HOME/.claude/CLAUDE.md"
+  run run_sync
+  [ "$status" -eq 0 ]
+  remote_head_before="$(git -C "$HOME/remote.git" rev-parse HEAD)"
+
+  # Second edit + sync with high min-interval — commit lands locally,
+  # push is debounced.
+  export HIVE_MIND_MIN_PUSH_INTERVAL_SEC=9999
+  printf 'second\n' > "$HOME/.claude/CLAUDE.md"
+  run run_sync
+  [ "$status" -eq 0 ]
+  local_head_after_debounce="$(git -C "$HOME/.claude" rev-parse HEAD)"
+  remote_head_after_debounce="$(git -C "$HOME/remote.git" rev-parse HEAD)"
+  # Local advanced, remote did not — confirms the debounce fired.
+  [ "$local_head_after_debounce" != "$remote_head_after_debounce" ]
+  [ "$remote_head_after_debounce" = "$remote_head_before" ]
+
+  # Now relax the rate limit and run sync again with NO file edits.
+  # The unpushed local commit must reach the remote.
+  export HIVE_MIND_MIN_PUSH_INTERVAL_SEC=0
+  run run_sync
+  [ "$status" -eq 0 ]
+  remote_head_final="$(git -C "$HOME/remote.git" rev-parse HEAD)"
+  [ "$remote_head_final" = "$local_head_after_debounce" ]
+}
+
 @test "rate limit: last-push state file is written after successful push outside hive-mind git repo" {
   printf 'hello\n' > "$HOME/.claude/CLAUDE.md"
   run run_sync
