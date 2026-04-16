@@ -188,6 +188,32 @@ else
 fi
 log "detected state: $STATE"
 
+# Define register_merge_drivers up-front so the already_synced branch (below)
+# can call it. Full definition is in the fresh/existing flow section.
+register_merge_drivers() {
+    local target_git="$1"
+    [ -d "$target_git/.git" ] || git -C "$target_git" rev-parse --git-dir >/dev/null 2>&1 || return 0
+
+    local drivers=""
+    if [ -n "${ADAPTER_SETTINGS_MERGE_BINDINGS:-}" ]; then
+        drivers="$(printf '%s\n' "$ADAPTER_SETTINGS_MERGE_BINDINGS" | awk 'NF>=2 {print $2}' | sort -u)"
+    fi
+
+    while IFS= read -r drv; do
+        [ -z "$drv" ] && continue
+        local driver_script="$HIVE_MIND_DIR/core/${drv}.sh"
+        [ -f "$driver_script" ] || continue
+        git -C "$target_git" config "merge.${drv}.driver" "${driver_script} %A %O %B"
+        git -C "$target_git" config "merge.${drv}.name" "hive-mind ${drv} driver"
+    done <<< "$drivers"
+
+    if [ -z "$drivers" ] && [ -f "$HIVE_MIND_DIR/core/jsonmerge.sh" ]; then
+        git -C "$target_git" config merge.jsonmerge.driver "$HIVE_MIND_DIR/core/jsonmerge.sh %A %O %B"
+        git -C "$target_git" config merge.jsonmerge.name "Deep-merge JSON with array union (hive-mind)"
+    fi
+}
+register_jsonmerge_driver() { register_merge_drivers "$@"; }
+
 case "$STATE" in
     already_synced)
         log "$MEMORY_DIR is already a git repo with remote $(git -C "$MEMORY_DIR" remote get-url origin)"
@@ -210,16 +236,16 @@ case "$STATE" in
             log "sync/ already present; pulling latest"
             git -C "$HIVE_MIND_DIR" pull --rebase --autostash --quiet
         fi
-        # register_jsonmerge_driver needs HIVE_MIND_DIR populated; defined below.
-        git -C "$MEMORY_DIR" config merge.jsonmerge.driver "$HIVE_MIND_DIR/core/jsonmerge.sh %A %O %B"
-        git -C "$MEMORY_DIR" config merge.jsonmerge.name "Deep-merge JSON with array union (hive-mind)"
-        # Source the adapter to get the right template paths for refresh.
+        # Source the adapter to get template paths + merge-binding list for refresh.
         if [ -f "$HIVE_MIND_DIR/core/adapter-loader.sh" ]; then
             ADAPTER_ROOT="$HIVE_MIND_DIR/adapters/$ADAPTER"
             export ADAPTER_ROOT
             # shellcheck disable=SC1091
             source "$HIVE_MIND_DIR/core/adapter-loader.sh"
             load_adapter "$ADAPTER" || log "warning: adapter '$ADAPTER' failed to load — continuing with legacy paths"
+            # Register every declared merge driver (adapter-agnostic) AFTER
+            # load_adapter so ADAPTER_SETTINGS_MERGE_BINDINGS is populated.
+            register_merge_drivers "$MEMORY_DIR"
             # Refresh gitignore + gitattributes from the adapter templates.
             # New template entries (e.g. .hive-mind-format whitelist) only
             # take effect after this; without it, existing installs miss
@@ -233,6 +259,11 @@ case "$STATE" in
             # Migrate existing install, passing the previous version so the
             # adapter can make version-conditional decisions.
             declare -f adapter_migrate >/dev/null 2>&1 && adapter_migrate "$prev_version"
+            # Re-run adapter_install_hooks so upgrades are self-healing:
+            # if the user removed a hook or the adapter template gained a
+            # new event since the previous install, this brings the hook
+            # config back in sync. install_hooks is idempotent.
+            declare -f adapter_install_hooks >/dev/null 2>&1 && adapter_install_hooks
         fi
         manage_claude_skills
         exit 0
@@ -253,17 +284,9 @@ log "[1/5] cloning hive-mind scripts into $HIVE_MIND_DIR"
 rm -rf "$HIVE_MIND_DIR"
 git clone --quiet "$HIVE_MIND_REPO" "$HIVE_MIND_DIR"
 
-# ---------- register the jsonmerge driver for settings.json conflicts ----------
-# Custom merge drivers must be registered in the LOCAL .git/config (they run
-# arbitrary commands at merge time; git intentionally doesn't let the driver
-# name come from a tracked file for security). We register it up-front so the
-# driver is active BEFORE the unrelated-histories merge below.
-register_jsonmerge_driver() {
-    local target_git="$1"
-    [ -d "$target_git/.git" ] || git -C "$target_git" rev-parse --git-dir >/dev/null 2>&1 || return 0
-    git -C "$target_git" config merge.jsonmerge.driver "$HIVE_MIND_DIR/core/jsonmerge.sh %A %O %B"
-    git -C "$target_git" config merge.jsonmerge.name "Deep-merge JSON with array union (hive-mind)"
-}
+# register_merge_drivers + register_jsonmerge_driver defined above (before
+# the state case), so both already_synced and fresh/existing paths can use
+# them. Adapter must be loaded first so ADAPTER_SETTINGS_MERGE_BINDINGS is set.
 
 # ---------- load the adapter (validates API version, gives us template paths) ----------
 ADAPTER_ROOT="$HIVE_MIND_DIR/adapters/$ADAPTER"
