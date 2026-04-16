@@ -71,13 +71,26 @@ load_adapter() {
   # (e.g. forgot to set ADAPTER_LOG_PATH, forgot to define
   # adapter_migrate) would be masked by the leftover, defeating
   # _validate_adapter's contract check.
-  local _v _f
+  #
+  # Exception: ADAPTER_DIR is the supported caller override (shim,
+  # test, alternative install). Preserve it across the clear so the
+  # new adapter's `ADAPTER_DIR="${ADAPTER_DIR:-<default>}"` fallback
+  # honors it. Every dependent path (ADAPTER_GLOBAL_MEMORY,
+  # ADAPTER_PROJECT_MEMORY_DIR, ADAPTER_LOG_PATH) derives from
+  # ADAPTER_DIR in the adapters we ship, so this one preservation
+  # propagates the override through the full contract.
+  local _v _f _preserved_adapter_dir
+  _preserved_adapter_dir="${ADAPTER_DIR:-}"
   for _v in $(compgen -v ADAPTER_ 2>/dev/null); do
     unset "$_v"
   done
   for _f in $(compgen -A function adapter_ 2>/dev/null); do
     unset -f "$_f"
   done
+  if [ -n "$_preserved_adapter_dir" ]; then
+    ADAPTER_DIR="$_preserved_adapter_dir"
+    export ADAPTER_DIR
+  fi
 
   # ADAPTER_ROOT is set before sourcing so the adapter can reference its
   # own bundled assets (gitignore template, skills, etc.) portably.
