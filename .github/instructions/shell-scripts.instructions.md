@@ -4,7 +4,7 @@ applyTo: "core/*.sh,adapters/**/*.sh,setup.sh,scripts/*.sh"
 
 # Review guidance for hive-mind shell scripts
 
-This project is **pure bash + standard POSIX userland** (awk/sed/grep/tr/cut/sort/mktemp/jq). Hook-invoked scripts (`core/sync.sh`, `core/check-dupes.sh`, `core/mirror-projects.sh`, `core/marker-nudge.sh`) must never block an agent session — every failure path logs and exits 0. `setup.sh` is the exception: it's the installer, uses strict mode, and exits non-zero on failures. Comments below are specifically for Copilot code review; they distill patterns that wasted review rounds on this codebase.
+This project is **bash + standard Unix utilities** (awk, sed, grep, tr, cut, sort, mktemp — the POSIX-defined userland) plus a small set of required external deps (`jq`, `git`, `curl`). The contract is "no python / node / go / rust in the sync path"; POSIX-strict isn't the bar, but neither is "anything goes." Hook-invoked scripts (`core/sync.sh`, `core/check-dupes.sh`, `core/mirror-projects.sh`, `core/marker-nudge.sh`) must never block an agent session — every failure path logs and exits 0. `setup.sh` is the exception: it's the installer, uses strict mode, and exits non-zero on failures. Comments below are specifically for Copilot code review; they distill patterns that wasted review rounds on this codebase.
 
 ## Top principle: verify before asserting
 
@@ -19,7 +19,7 @@ If a prior review round already adjudicated a concern (visible in the PR's resol
 They're usually wrong or noise in this repo:
 
 - **"`<tool>` isn't on macOS / BSD / busybox"** — verify per-flag availability with `man <tool>` on macOS (or against the BSD manpages) before asserting non-portability. Real platform divergences — e.g. `stat -c` (GNU) vs `stat -f` (BSD), GNU-only long options on `sed` / `awk` — are worth flagging. Don't assume non-portability of common flags without checking; many widely-assumed-GNU flags are in fact available on current macOS.
-- **"This comment claims pure POSIX but the code uses bash `[[`"** — we use bash features freely. The contract is "no python/node/go"; bash + standard userland is the floor, not POSIX sh.
+- **"This comment claims pure POSIX but the code uses bash `[[`"** — we use bash features freely. The contract is "no python/node/go/rust in the sync path"; bash + standard Unix utilities + the short external-dep list (`jq`, `git`, `curl`) is the floor, not POSIX sh.
 - **"Missing `set -e` / `pipefail`"** on hook-reached scripts — `core/sync.sh`, `core/check-dupes.sh`, `core/mirror-projects.sh`, `core/marker-nudge.sh` run with `set +e` by design. Flagging missing strict-mode on these is a false positive — move on.
 - **Stylistic comment drift** — whether a header comment says "core/X.sh" vs "scripts/X.sh" is not load-bearing for a reviewer to raise unless the documented command is wrong and users will copy-paste it.
 
