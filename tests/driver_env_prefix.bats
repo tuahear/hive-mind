@@ -74,6 +74,45 @@ _load_helper() {
   [ "$output" = "FIRST=1 " ]
 }
 
+@test "register_merge_drivers quotes the %A/%O/%B placeholders in the git config" {
+  # Regression: the merge-driver command string registered via
+  # `git config merge.<drv>.driver "...<script> %A %O %B"` must
+  # single-quote each placeholder. Git substitutes them with absolute
+  # paths to temp files before invoking the driver via `sh -c`; a
+  # path containing spaces (Windows "C:/Users/Jane Doe", macOS home
+  # dirs with spaces) would otherwise word-split at sh invocation and
+  # pass the driver the wrong arguments. Pin the quoting directly so a
+  # future refactor that drops the quotes shows up as a clear failure
+  # instead of a driver-only-breaks-on-spaced-paths mystery.
+  target="$(mktemp -d)"
+  git -c init.defaultBranch=main init -q "$target"
+
+  # Fake HIVE_MIND_DIR that only needs a core/jsonmerge.sh marker
+  # file; register_merge_drivers skips drivers whose core script is
+  # absent.
+  HIVE_MIND_DIR="$(mktemp -d)"
+  mkdir -p "$HIVE_MIND_DIR/core"
+  : > "$HIVE_MIND_DIR/core/jsonmerge.sh"
+
+  ADAPTER_SETTINGS_MERGE_BINDINGS=$'settings.json jsonmerge'
+  ADAPTER_MERGE_DRIVER_ENV=""
+
+  # Extract register_merge_drivers from setup.sh and call it.
+  eval "$(awk '/^register_merge_drivers\(\)/,/^}/' "$SETUP")"
+  register_merge_drivers "$target"
+
+  driver="$(git -C "$target" config --get merge.jsonmerge.driver)"
+  # Exact placeholder quoting; also asserts the script path is
+  # single-quoted so the full command remains word-safe.
+  [[ "$driver" == *"'$HIVE_MIND_DIR/core/jsonmerge.sh' '%A' '%O' '%B'"* ]]
+
+  # Defense-in-depth: no un-quoted placeholder survived, and no
+  # placeholder appears without its wrapping single quotes.
+  [[ "$driver" != *' %A '* ]]
+  [[ "$driver" != *' %O '* ]]
+  [[ "$driver" != *' %B'* ]] || [[ "$driver" == *"'%B'"* ]]
+}
+
 @test "docs describe ADAPTER_SETTINGS_MERGE_BINDINGS format that setup.sh's awk parser actually accepts" {
   # Pins the docs' stated format against setup.sh's parser. If the docs
   # drift back to `pattern=driver-script` (the wrong form), an adapter
