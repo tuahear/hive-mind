@@ -258,6 +258,58 @@ run_merge() {
   [ "$status" -ne 0 ]
 }
 
+@test "root-level keys stay root after merging a file with mixed root + section keys" {
+  # Classic TOML gotcha: a root-level key emitted AFTER a [section]
+  # header gets silently reassigned to that section by the parser
+  # (`rootkey = "x"` after `[section]` parses as `section.rootkey`).
+  # The old single-pass emitter relied on input order; merging doesn't
+  # guarantee it. Reconstruction must always emit root keys BEFORE any
+  # [section] header.
+  printf 'rootkey = "a"\n[section]\nskey = "1"\n' > "$OURS"
+  printf 'rootkey = "b"\n[section]\nskey = "1"\n' > "$THEIRS"
+
+  run run_merge
+  [ "$status" -eq 0 ]
+
+  # Root key wins theirs (scalar collision) and is emitted BEFORE the
+  # [section] header, not after it.
+  root_line="$(grep -n '^rootkey' "$OURS" | head -1 | cut -d: -f1)"
+  header_line="$(grep -n '^\[section\]' "$OURS" | head -1 | cut -d: -f1)"
+  [ -n "$root_line" ]
+  [ -n "$header_line" ]
+  [ "$root_line" -lt "$header_line" ]
+  grep -q 'rootkey = "b"' "$OURS"
+  grep -q '^\[section\]$' "$OURS"
+  grep -q 'skey = "1"' "$OURS"
+}
+
+@test "multiple root keys + multiple sections reconstruct without root-key absorption" {
+  # Broader variant: many root keys interleaved with many sections
+  # across both sides. After merge the output must still have every
+  # root key above any [header]. Pin the invariant directly: every
+  # original root key appears before the first [header]. Can't check
+  # the inverse ("no root key after a header") from the output alone
+  # because inside a section, `key = value` is a valid section-key
+  # syntax indistinguishable from an absorbed root key.
+  printf 'a = "1"\nb = "2"\n[s1]\nk = "x"\n[s2]\nm = "y"\n' > "$OURS"
+  printf 'c = "3"\n[s1]\nk = "xx"\n[s3]\nz = "q"\n' > "$THEIRS"
+
+  run run_merge
+  [ "$status" -eq 0 ]
+
+  first_header="$(grep -n '^\[' "$OURS" | head -1 | cut -d: -f1)"
+  [ -n "$first_header" ]
+  pre_header="$(head -n "$((first_header - 1))" "$OURS")"
+  # Every root key from the inputs survives above the first header.
+  printf '%s\n' "$pre_header" | grep -q '^a = '
+  printf '%s\n' "$pre_header" | grep -q '^b = '
+  printf '%s\n' "$pre_header" | grep -q '^c = '
+  # And three distinct section headers are present in the output.
+  grep -q '^\[s1\]$' "$OURS"
+  grep -q '^\[s2\]$' "$OURS"
+  grep -q '^\[s3\]$' "$OURS"
+}
+
 @test "plain quoted scalars (no inline comment) still merge normally" {
   # Negative control: the new inline-comment reject must not break
   # the common case where neither side has comments. This is the

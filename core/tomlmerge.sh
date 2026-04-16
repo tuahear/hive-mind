@@ -254,32 +254,48 @@ lookup_val() {
 done > "$tmp.merged" || exit 1
 
 # --- Reconstruct TOML from flat representation ----------------------------
+# Two-pass emit: every root-level key (no section prefix) MUST be printed
+# before any `[table]` header, otherwise TOML semantics reassign it to
+# the most recent table (e.g. a flat `foo = "x"` printed after
+# `[section]` is parsed back as `section.foo`). The earlier single-pass
+# emitter relied on input order, which merging does not guarantee.
+# Also: no blank line between header and keys (toml_flatten rejects
+# blank lines after content; keeping them out preserves self-round-trip).
 awk -F'\t' '
-  BEGIN { section = "" }
   {
     key = $1
     val = $2
-    # Split dotted key into section + local key
     n = split(key, parts, ".")
     if (n >= 2) {
       sec = parts[1]
       for (i = 2; i < n; i++) sec = sec "." parts[i]
       local_key = parts[n]
+      sec_count[sec]++
+      sec_key[sec, sec_count[sec]] = local_key
+      sec_val[sec, sec_count[sec]] = val
+      if (!(sec in sec_seen)) {
+        sec_seen[sec] = 1
+        sec_order[++n_sec] = sec
+      }
     } else {
-      sec = ""
-      local_key = key
+      n_root++
+      root_key[n_root] = key
+      root_val[n_root] = val
     }
-    if (sec != section) {
-      # No blank line before the new section header. toml_flatten
-      # rejects blank lines after content (blank lines carry visual
-      # grouping intent we do not track), so emitting one here would
-      # make our own output non-round-trippable: a second merge on
-      # the first merge output would parse-fail and fall back to git
-      # default merger.
-      if (sec != "") print "[" sec "]"
-      section = sec
+  }
+  END {
+    # Root keys first so they stay root on the next parse.
+    for (i = 1; i <= n_root; i++) print root_key[i] " = " root_val[i]
+    # Sections in first-seen order; keys within each section in
+    # first-seen order too so a stable input gives a stable output
+    # (helps the self-round-trip test pin behavior).
+    for (i = 1; i <= n_sec; i++) {
+      sec = sec_order[i]
+      print "[" sec "]"
+      for (j = 1; j <= sec_count[sec]; j++) {
+        print sec_key[sec, j] " = " sec_val[sec, j]
+      }
     }
-    print local_key " = " val
   }
 ' "$tmp.merged" > "$tmp"
 
