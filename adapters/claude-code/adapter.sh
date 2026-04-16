@@ -8,7 +8,11 @@ set -euo pipefail
 ADAPTER_API_VERSION="1.0.0"
 ADAPTER_VERSION="0.1.0"
 ADAPTER_NAME="claude-code"
-ADAPTER_DIR="${HOME}/.claude"
+# Honor a caller-provided ADAPTER_DIR (tests, alternative installs,
+# the legacy scripts/sync.sh shim that exports ADAPTER_DIR before
+# loading the adapter). Hardcoding would overwrite it, routing sync
+# to the default location even when the caller meant another.
+ADAPTER_DIR="${ADAPTER_DIR:-$HOME/.claude}"
 ADAPTER_MEMORY_MODEL="flat"
 ADAPTER_GLOBAL_MEMORY="${ADAPTER_DIR}/CLAUDE.md"
 ADAPTER_PROJECT_MEMORY_DIR="${ADAPTER_DIR}/projects/{encoded_cwd}/memory"

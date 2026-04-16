@@ -140,8 +140,25 @@ if [ -z "$(git status --porcelain)" ] && [ "$_early_unpushed" -eq 0 ]; then
   exit 0
 fi
 
-# Pull-rebase first so our imminent push is a fast-forward.
-if ! git pull --rebase --autostash --quiet 2>>"$LOG"; then
+# Pull-rebase first so our imminent push is a fast-forward. Plain
+# `git pull` errors on a branch with no configured upstream even when
+# `origin/<branch>` exists — the same fresh-init scenario the format-
+# version gate and the early-exit gate already fall back on. Mirror
+# that logic here: prefer @{u}; fall back to explicit origin refspec.
+_pull_branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)"
+if git rev-parse --abbrev-ref @{u} >/dev/null 2>&1; then
+  _pull_ok=1
+  git pull --rebase --autostash --quiet 2>>"$LOG" || _pull_ok=0
+elif [ -n "$_pull_branch" ] \
+     && git rev-parse --verify "origin/$_pull_branch" >/dev/null 2>&1; then
+  _pull_ok=1
+  git pull --rebase --autostash --quiet origin "$_pull_branch" 2>>"$LOG" || _pull_ok=0
+else
+  # No upstream AND no matching origin/<branch>: nothing to pull, the
+  # push block will handle publishing with -u on the first push.
+  _pull_ok=1
+fi
+if [ "$_pull_ok" -eq 0 ]; then
   git rebase --abort 2>/dev/null
   echo "$TS sync pull-rebase failed -- local edits preserved, resolve in $ADAPTER_DIR" >>"$LOG"
 fi

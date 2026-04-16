@@ -17,6 +17,31 @@ teardown() {
   rm -rf "$HOME"
 }
 
+# === ADAPTER_DIR override =================================================
+
+@test "ADAPTER_DIR pre-set by the caller is preserved on adapter load" {
+  # Default path must be ~/.claude, but a caller (tests, alternative
+  # installs, the deprecated scripts/sync.sh shim that exports
+  # ADAPTER_DIR before sourcing the adapter) should be able to
+  # override it. Hardcoding `ADAPTER_DIR=$HOME/.claude` without a
+  # fallback would overwrite the override; this test pins the ${:-}
+  # fallback so a regression fails here instead of silently routing
+  # sync to the wrong directory.
+  custom="$HOME/alt-claude-dir"
+  mkdir -p "$custom"
+  (
+    ADAPTER_DIR="$custom"
+    export ADAPTER_DIR
+    source "$LOADER"
+    load_adapter "claude-code"
+    [ "$ADAPTER_DIR" = "$custom" ]
+    # Dependent paths must derive from the override, not the default.
+    [ "$ADAPTER_GLOBAL_MEMORY" = "$custom/CLAUDE.md" ]
+    [[ "$ADAPTER_PROJECT_MEMORY_DIR" == "$custom/projects/"* ]]
+    [ "$ADAPTER_LOG_PATH" = "$custom/.sync-error.log" ]
+  )
+}
+
 # === settings.json schema ==================================================
 
 @test "settings.json template has SessionStart hook" {

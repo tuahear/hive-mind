@@ -494,6 +494,47 @@ EOF
   git -C "$HOME/remote.git" show HEAD:.hive-mind-format | grep -q 'format-version='
 }
 
+@test "pull-rebase falls back to origin/<branch> when @{u} is unset" {
+  # Regression: `git pull --rebase` without the upstream fallback errors
+  # on a repo whose branch has no configured upstream but whose
+  # origin/<branch> ref exists (classic state after git init + git
+  # remote add + fetch). The remote-format gate already uses this
+  # fallback; the pull step must match, otherwise fresh-init memory
+  # repos can't receive remote commits and sync push-fail-loops.
+  #
+  # Simulate: drop upstream tracking on the local clone, advance the
+  # remote with a commit, make a local edit, run sync. Expect: local
+  # ends up with both the remote commit and the local commit, and
+  # the remote receives the local commit.
+  git -C "$HOME/.claude" branch --unset-upstream 2>/dev/null || true
+  run git -C "$HOME/.claude" rev-parse --abbrev-ref '@{u}'
+  [ "$status" -ne 0 ]
+  git -C "$HOME/.claude" rev-parse --verify origin/main >/dev/null
+
+  # Advance remote via a sibling clone.
+  other="$(mktemp -d)"
+  git clone -q "$HOME/remote.git" "$other/w"
+  git -C "$other/w" config user.email test@example.com
+  git -C "$other/w" config user.name test
+  printf 'from-other-machine\n' > "$other/w/CLAUDE.md"
+  git -C "$other/w" add CLAUDE.md
+  git -C "$other/w" commit -q -m "other machine edit"
+  git -C "$other/w" push -q
+  rm -rf "$other"
+
+  # Local edit so sync also pushes.
+  mkdir -p "$HOME/.claude/projects/proj-A/memory"
+  printf 'local edit\n' > "$HOME/.claude/projects/proj-A/MEMORY.md"
+
+  run run_sync
+  [ "$status" -eq 0 ]
+
+  # Pull landed: remote's CLAUDE.md content is locally visible.
+  grep -q 'from-other-machine' "$HOME/.claude/CLAUDE.md"
+  # Push landed: local edit reached the remote.
+  git -C "$HOME/remote.git" show HEAD:projects/proj-A/MEMORY.md | grep -q 'local edit'
+}
+
 @test "deprecated scripts/sync.sh shim loads claude adapter so non-.md files under skills/ get marker-scanned" {
   # The shim at scripts/sync.sh exec's core/sync.sh. If the shim does
   # NOT pre-load the claude adapter, core/sync.sh falls back to the
