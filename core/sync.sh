@@ -166,7 +166,52 @@ if ! git diff --cached --quiet; then
   fi
 
   git commit -q -m "$MSG" 2>>"$LOG"
-  git push -q 2>>"$LOG" || echo "$TS sync push rejected -- will retry next turn" >>"$LOG"
+
+  # --- Rate-limited push ---------------------------------------------------
+  # Debounce: if we pushed within HIVE_MIND_MIN_PUSH_INTERVAL_SEC, commit
+  # locally but skip the push. The next turn-end fires it if enough time
+  # has passed, catching any queued commits together.
+  : "${HIVE_MIND_MIN_PUSH_INTERVAL_SEC:=10}"
+  HIVE_MIND_DIR="${ADAPTER_DIR}/hive-mind"
+  LAST_PUSH_FILE="${HIVE_MIND_DIR}/.last-push"
+
+  should_push=1
+  if [ -f "$LAST_PUSH_FILE" ]; then
+    last_push="$(cat "$LAST_PUSH_FILE" 2>/dev/null)"
+    now="$(date +%s)"
+    if [ -n "$last_push" ] && [ "$((now - last_push))" -lt "$HIVE_MIND_MIN_PUSH_INTERVAL_SEC" ]; then
+      should_push=0
+    fi
+  fi
+
+  # HIVE_MIND_FORCE_PUSH overrides debounce (used by `hivemind sync`).
+  if [ "${HIVE_MIND_FORCE_PUSH:-}" = "1" ]; then
+    should_push=1
+  fi
+
+  if [ "$should_push" -eq 1 ]; then
+    # Exponential backoff on push failure (1s, 2s, 4s, 8s, cap at 30s).
+    max_retries=5
+    backoff=1
+    push_ok=0
+    for _attempt in $(seq 1 $max_retries); do
+      if git push -q 2>>"$LOG"; then
+        push_ok=1
+        break
+      fi
+      echo "$TS WARN sync: push failed, backing off ${backoff}s" >>"$LOG"
+      sleep "$backoff"
+      backoff=$((backoff * 2))
+      [ "$backoff" -gt 30 ] && backoff=30
+    done
+
+    if [ "$push_ok" -eq 1 ]; then
+      mkdir -p "$HIVE_MIND_DIR"
+      date +%s > "$LAST_PUSH_FILE"
+    else
+      echo "$TS ERROR sync: push failed after $max_retries retries" >>"$LOG"
+    fi
+  fi
 fi
 
 exit 0

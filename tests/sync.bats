@@ -313,3 +313,54 @@ marker() {
   grep -q 'local side' "$HOME/.claude/CLAUDE.md"
   [ "$(git -C "$HOME/.claude" rev-parse HEAD)" = "$local_head" ]
 }
+
+# Rate-limit tests ----------------------------------------------------------
+
+@test "rate limit: push is skipped when interval has not elapsed" {
+  # Set a very long push interval so the second push is definitely skipped.
+  export HIVE_MIND_MIN_PUSH_INTERVAL_SEC=9999
+
+  # First edit + sync — should push.
+  printf 'first\n' > "$HOME/.claude/CLAUDE.md"
+  run run_sync
+  [ "$status" -eq 0 ]
+  remote_head1="$(git -C "$HOME/remote.git" rev-parse HEAD)"
+
+  # Second edit + sync — should commit locally but skip push.
+  printf 'second\n' > "$HOME/.claude/CLAUDE.md"
+  run run_sync
+  [ "$status" -eq 0 ]
+  remote_head2="$(git -C "$HOME/remote.git" rev-parse HEAD)"
+
+  # Remote should not have advanced.
+  [ "$remote_head1" = "$remote_head2" ]
+  # But local should have the commit.
+  [ "$(git -C "$HOME/.claude" log -1 --format=%s)" = "update CLAUDE.md" ]
+}
+
+@test "rate limit: HIVE_MIND_FORCE_PUSH overrides debounce" {
+  export HIVE_MIND_MIN_PUSH_INTERVAL_SEC=9999
+  export HIVE_MIND_FORCE_PUSH=1
+
+  printf 'first\n' > "$HOME/.claude/CLAUDE.md"
+  run run_sync
+  [ "$status" -eq 0 ]
+  remote_head1="$(git -C "$HOME/remote.git" rev-parse HEAD)"
+
+  printf 'forced\n' > "$HOME/.claude/CLAUDE.md"
+  run run_sync
+  [ "$status" -eq 0 ]
+  remote_head2="$(git -C "$HOME/remote.git" rev-parse HEAD)"
+
+  # Remote DID advance because force-push overrides debounce.
+  [ "$remote_head1" != "$remote_head2" ]
+}
+
+@test "rate limit: .last-push file is written after successful push" {
+  printf 'hello\n' > "$HOME/.claude/CLAUDE.md"
+  run run_sync
+  [ "$status" -eq 0 ]
+  [ -f "$HOME/.claude/hive-mind/.last-push" ]
+  # Contents should be a unix timestamp (all digits).
+  [[ "$(cat "$HOME/.claude/hive-mind/.last-push")" =~ ^[0-9]+$ ]]
+}
