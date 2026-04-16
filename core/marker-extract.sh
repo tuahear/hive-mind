@@ -8,9 +8,10 @@
 #   core/marker-extract.sh <file>
 #
 # Writes extracted messages (one per line) to stdout. Modifies <file>
-# in-place (strips markers + trims trailing blanks). Exits 0 always.
+# in-place (strips markers + trims trailing blanks). Non-zero exit only
+# on unrecoverable I/O errors (mktemp failure, unwritable target).
 
-set -euo pipefail
+set -eu
 
 FILE="$1"
 [ -f "$FILE" ] || exit 0

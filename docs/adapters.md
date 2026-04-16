@@ -20,7 +20,7 @@ Each adapter lives in `adapters/<name>/` and answers questions like:
 - What files hold memory? (CLAUDE.md, AGENTS.md, etc.)
 - What files must never be synced? (auth tokens, session data, etc.)
 
-When you run `setup.sh`, it detects which tool is installed, loads the right adapter, and dispatches to core with that adapter's configuration.
+When you run `setup.sh`, it reads the `ADAPTER` env var (defaulting to `claude-code`), sources the adapter's `adapter.sh` through `core/adapter-loader.sh` (which validates the API version), and dispatches hook install + template seeding through the adapter interface. Multi-adapter detection (picking the right adapter when several tools are installed) will land with the second shipped adapter.
 
 ## For Claude Code users
 

@@ -32,9 +32,26 @@ set -euo pipefail
 HIVE_MIND_REPO="git@github.com:tuahear/hive-mind.git"
 HIVE_MIND_RAW="https://raw.githubusercontent.com/tuahear/hive-mind/main"
 
-MEMORY_DIR="$HOME/.claude"
+# Adapter selection: defaults to claude-code. Future adapters (codex, etc.)
+# set ADAPTER=<name>. When running via curl | bash pre-clone, we can't
+# source adapter.sh yet, so we resolve paths from adapter defaults below
+# (Claude Code is the only shipped adapter at v1). Post-clone, the
+# installer re-sources via core/adapter-loader.sh to validate the
+# capability surface against HIVE_MIND_CORE_API_VERSION.
+ADAPTER="${ADAPTER:-claude-code}"
+
+case "$ADAPTER" in
+    claude-code)
+        MEMORY_DIR="$HOME/.claude"
+        ;;
+    *)
+        echo "error: unknown adapter '$ADAPTER'" >&2
+        echo "  supported: claude-code" >&2
+        exit 1
+        ;;
+esac
 HIVE_MIND_DIR="$MEMORY_DIR/hive-mind"
-BACKUP_DIR="$HOME/.claude.backup-$(date +%Y%m%d-%H%M%S)"
+BACKUP_DIR="${MEMORY_DIR}.backup-$(date +%Y%m%d-%H%M%S)"
 
 # Allow caller to pass repo via $1 as an alternative to MEMORY_REPO env var.
 MEMORY_REPO="${MEMORY_REPO:-${1:-}}"
@@ -57,7 +74,10 @@ confirm() {
 # it (renamed to `skills/hive-mind/` on 2026-04-15). Safe because
 # `memory-commit` was only ever shipped by hive-mind.
 manage_claude_skills() {
-    local src="$HIVE_MIND_DIR/templates/skills"
+    # Prefer the adapter's bundled skills dir; fall back to the legacy
+    # templates/skills for pre-refactor installs.
+    local src="$HIVE_MIND_DIR/adapters/$ADAPTER/skills"
+    [ -d "$src" ] || src="$HIVE_MIND_DIR/templates/skills"
     local dst="$MEMORY_DIR/skills"
     [ -d "$src" ] || return 0
     mkdir -p "$dst"
@@ -182,8 +202,18 @@ case "$STATE" in
             git -C "$HIVE_MIND_DIR" pull --rebase --autostash --quiet
         fi
         # register_jsonmerge_driver needs HIVE_MIND_DIR populated; defined below.
-        git -C "$MEMORY_DIR" config merge.jsonmerge.driver "$HIVE_MIND_DIR/scripts/jsonmerge.sh %A %O %B"
+        git -C "$MEMORY_DIR" config merge.jsonmerge.driver "$HIVE_MIND_DIR/core/jsonmerge.sh %A %O %B"
         git -C "$MEMORY_DIR" config merge.jsonmerge.name "Deep-merge JSON with array union (hive-mind)"
+        # Source the adapter to get the right template paths for refresh.
+        if [ -f "$HIVE_MIND_DIR/core/adapter-loader.sh" ]; then
+            ADAPTER_ROOT="$HIVE_MIND_DIR/adapters/$ADAPTER"
+            export ADAPTER_ROOT
+            # shellcheck disable=SC1091
+            source "$HIVE_MIND_DIR/core/adapter-loader.sh"
+            load_adapter "$ADAPTER" || log "warning: adapter '$ADAPTER' failed to load — continuing with legacy paths"
+            # Migrate existing install (rewrites scripts/ → core/ paths if needed).
+            declare -f adapter_migrate >/dev/null 2>&1 && adapter_migrate "0.1.0"
+        fi
         manage_claude_skills
         exit 0
         ;;
@@ -211,14 +241,23 @@ git clone --quiet "$HIVE_MIND_REPO" "$HIVE_MIND_DIR"
 register_jsonmerge_driver() {
     local target_git="$1"
     [ -d "$target_git/.git" ] || git -C "$target_git" rev-parse --git-dir >/dev/null 2>&1 || return 0
-    git -C "$target_git" config merge.jsonmerge.driver "$HIVE_MIND_DIR/scripts/jsonmerge.sh %A %O %B"
+    git -C "$target_git" config merge.jsonmerge.driver "$HIVE_MIND_DIR/core/jsonmerge.sh %A %O %B"
     git -C "$target_git" config merge.jsonmerge.name "Deep-merge JSON with array union (hive-mind)"
 }
 
+# ---------- load the adapter (validates API version, gives us template paths) ----------
+ADAPTER_ROOT="$HIVE_MIND_DIR/adapters/$ADAPTER"
+export ADAPTER_ROOT
+# shellcheck disable=SC1091
+source "$HIVE_MIND_DIR/core/adapter-loader.sh"
+if ! load_adapter "$ADAPTER"; then
+    die "failed to load adapter '$ADAPTER'"
+fi
+
 # ---------- seed ignore + attrs ----------
 log "[2/5] seeding memory-repo .gitignore + .gitattributes from templates"
-cp "$HIVE_MIND_DIR/templates/gitignore"    "$MEMORY_DIR/.gitignore"
-cp "$HIVE_MIND_DIR/templates/gitattributes" "$MEMORY_DIR/.gitattributes"
+cp "$ADAPTER_GITIGNORE_TEMPLATE"     "$MEMORY_DIR/.gitignore"
+cp "$ADAPTER_GITATTRIBUTES_TEMPLATE" "$MEMORY_DIR/.gitattributes"
 
 # ---------- flow A: fresh clone ----------
 if [ "$STATE" = fresh ]; then
@@ -282,34 +321,18 @@ fi
 # ---------- install skills ----------
 manage_claude_skills
 
-# ---------- install hook config ----------
-log "[4/5] merging hook + permission config into settings.json"
-if [ -f "$MEMORY_DIR/settings.json" ]; then
-    # Deep-merge template into existing settings.json. jq's `*` operator
-    # overwrites arrays by default, so we explicitly union permissions.allow
-    # (dedup via `unique`) to preserve user's existing allow rules while
-    # adding ours. Other keys deep-merge normally.
-    tmp="$(mktemp)"
-    jq -s '
-      .[0] as $user | .[1] as $new
-      | ($user * $new)
-      | .permissions.allow = (
-          (($user.permissions.allow // []) + ($new.permissions.allow // [])) | unique
-        )
-    ' "$MEMORY_DIR/settings.json" "$HIVE_MIND_DIR/templates/settings.json" > "$tmp"
-    mv "$tmp" "$MEMORY_DIR/settings.json"
-else
-    cp "$HIVE_MIND_DIR/templates/settings.json" "$MEMORY_DIR/settings.json"
-fi
+# ---------- install hook config (via adapter) ----------
+log "[4/5] installing hook config via adapter"
+adapter_install_hooks
 
 # ---------- push + verify ----------
 log "[5/5] running a sync cycle to verify and push"
-if [ -x "$HIVE_MIND_DIR/scripts/sync.sh" ]; then
-    "$HIVE_MIND_DIR/scripts/sync.sh"
-    if [ -s "$MEMORY_DIR/.sync-error.log" ]; then
+if [ -x "$HIVE_MIND_DIR/core/sync.sh" ]; then
+    ADAPTER_DIR="$ADAPTER_DIR" "$HIVE_MIND_DIR/core/sync.sh"
+    if [ -s "$ADAPTER_LOG_PATH" ]; then
         echo
         echo "WARNING: sync produced errors:"
-        tail -5 "$MEMORY_DIR/.sync-error.log" >&2
+        tail -5 "$ADAPTER_LOG_PATH" >&2
     fi
 fi
 
@@ -317,7 +340,6 @@ fi
 echo
 log "done."
 echo
-echo "IMPORTANT: open /hooks in Claude Code once (or start a fresh session)"
-echo "so the settings watcher picks up the SessionStart + Stop hooks."
+adapter_activation_instructions
 echo
 [ -d "$BACKUP_DIR" ] && echo "Backup preserved at: $BACKUP_DIR (delete once you've confirmed a clean session)"

@@ -129,21 +129,20 @@ teardown() {
   [ "$ADAPTER_HAS_HOOK_SYSTEM" != "true" ] && skip "no hook system"
   mkdir -p "$ADAPTER_DIR"
 
-  adapter_install_hooks
-  if [ -d "$ADAPTER_DIR" ]; then
-    snapshot1="$(find "$ADAPTER_DIR" -type f -exec md5sum {} + 2>/dev/null \
-                 || find "$ADAPTER_DIR" -type f -exec md5 {} +)"
-  else
-    snapshot1=""
-  fi
+  # find doesn't guarantee stable ordering; sort so identical file sets
+  # always produce identical snapshots.
+  snap() {
+    if [ -d "$ADAPTER_DIR" ]; then
+      find "$ADAPTER_DIR" -type f -print0 2>/dev/null | sort -z | xargs -0 \
+        sh -c 'md5sum "$@" 2>/dev/null || md5 "$@"' _
+    fi
+  }
 
   adapter_install_hooks
-  if [ -d "$ADAPTER_DIR" ]; then
-    snapshot2="$(find "$ADAPTER_DIR" -type f -exec md5sum {} + 2>/dev/null \
-                 || find "$ADAPTER_DIR" -type f -exec md5 {} +)"
-  else
-    snapshot2=""
-  fi
+  snapshot1="$(snap)"
+
+  adapter_install_hooks
+  snapshot2="$(snap)"
 
   [ "$snapshot1" = "$snapshot2" ]
 }

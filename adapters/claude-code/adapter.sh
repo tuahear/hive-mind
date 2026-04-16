@@ -59,8 +59,10 @@ adapter_uninstall_hooks() {
   local settings="$ADAPTER_DIR/settings.json"
   [ -f "$settings" ] || return 0
 
-  # Remove hive-mind hook entries by filtering out commands containing
-  # "hive-mind" from each hook event array. Preserves user's other hooks.
+  # Remove hive-mind hook entries by filtering out commands that reference
+  # the specific hive-mind install path. Narrower than a plain "hive-mind"
+  # substring match so user-defined hooks that happen to reference a
+  # different hive-mind (a repo path, for instance) aren't removed.
   local tmp
   tmp="$(mktemp)"
   if jq '
@@ -68,7 +70,7 @@ adapter_uninstall_hooks() {
       .hooks |= with_entries(
         .value |= map(
           if .hooks then
-            .hooks |= map(select(.command | test("hive-mind") | not))
+            .hooks |= map(select(.command | test("(~/\\.claude|\\$HOME/\\.claude)/hive-mind/(core|scripts)/") | not))
           else . end
           | select((.hooks // []) | length > 0)
         )

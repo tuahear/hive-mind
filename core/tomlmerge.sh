@@ -23,6 +23,11 @@
 #   - Inline tables and nested arrays-of-tables are NOT supported.
 #   - Multi-line basic strings are NOT supported.
 #   - Only handles simple key = "value" / key = [array] / [table] forms.
+#
+# Safety: if either file contains constructs we can't parse, we exit
+# non-zero so git falls back to its default 3-way merge (with conflict
+# markers). This surfaces the divergence to the user rather than silently
+# dropping unparsed content.
 
 set -e
 
@@ -35,11 +40,15 @@ trap 'rm -f "$tmp" "$tmp.ours" "$tmp.theirs" "$tmp.merged"' EXIT
 
 # --- Parse TOML into a flat key=value representation ----------------------
 # Output: section.key<TAB>value (one per line, arrays expanded per-element)
+# Exit non-zero if any non-blank, non-comment, non-section, non-key line
+# appears (inline tables, array-of-tables, multi-line strings, etc.) so
+# git can fall back to its default merge instead of silently dropping.
 toml_flatten() {
   awk '
-    BEGIN { section = "" }
+    BEGIN { section = ""; unrecognized = 0 }
     /^[[:space:]]*#/  { next }
     /^[[:space:]]*$/  { next }
+    /^\[\[/ { unrecognized = 1; exit }   # array-of-tables
     /^\[([^\]]+)\][[:space:]]*$/ {
       s = $0
       gsub(/^[[:space:]]*\[/, "", s)
@@ -47,21 +56,25 @@ toml_flatten() {
       section = s
       next
     }
-    {
+    /^[[:space:]]*[A-Za-z0-9_-]+[[:space:]]*=/ {
       line = $0
-      # Match key = value
-      if (match(line, /^[[:space:]]*([A-Za-z0-9_-]+)[[:space:]]*=/, arr)) {
-        key = line
-        sub(/[[:space:]]*=.*/, "", key)
-        gsub(/^[[:space:]]+/, "", key)
-        val = line
-        sub(/^[^=]+=/, "", val)
-        gsub(/^[[:space:]]+/, "", val)
-        gsub(/[[:space:]]+$/, "", val)
-        fullkey = (section != "" ? section "." : "") key
-        print fullkey "\t" val
+      key = line
+      sub(/[[:space:]]*=.*/, "", key)
+      gsub(/^[[:space:]]+/, "", key)
+      val = line
+      sub(/^[^=]+=/, "", val)
+      gsub(/^[[:space:]]+/, "", val)
+      gsub(/[[:space:]]+$/, "", val)
+      # Reject inline tables and multi-line strings.
+      if (val ~ /^\{/ || val ~ /^"""/ || val ~ /^[[:space:]]*$/) {
+        unrecognized = 1; exit
       }
+      fullkey = (section != "" ? section "." : "") key
+      print fullkey "\t" val
+      next
     }
+    { unrecognized = 1; exit }
+    END { exit unrecognized }
   ' "$1"
 }
 
@@ -100,8 +113,16 @@ rebuild_array() {
 
 # --- Main merge logic -----------------------------------------------------
 
-toml_flatten "$OURS" > "$tmp.ours"
-toml_flatten "$THEIRS" > "$tmp.theirs"
+toml_flatten "$OURS" > "$tmp.ours" || exit 1
+toml_flatten "$THEIRS" > "$tmp.theirs" || exit 1
+
+# Look up a value for an exact key match. Uses awk for fixed-string
+# key comparison on field 1 — grep with dotted keys would treat `.` as
+# a regex wildcard and cross-match unrelated keys.
+lookup_val() {
+  local file="$1" key="$2"
+  awk -F'\t' -v k="$key" '$1 == k { print $2; exit }' "$file"
+}
 
 # Build merged flat representation. Theirs wins on scalar collision.
 # For union keys, merge array elements.
@@ -110,8 +131,8 @@ toml_flatten "$THEIRS" > "$tmp.theirs"
   cut -f1 "$tmp.ours" "$tmp.theirs" | sort -u
 } | while IFS= read -r key; do
   [ -z "$key" ] && continue
-  ours_val="$(grep -m1 "^${key}	" "$tmp.ours" 2>/dev/null | cut -f2- || true)"
-  theirs_val="$(grep -m1 "^${key}	" "$tmp.theirs" 2>/dev/null | cut -f2- || true)"
+  ours_val="$(lookup_val "$tmp.ours" "$key")"
+  theirs_val="$(lookup_val "$tmp.theirs" "$key")"
 
   if [ -n "$theirs_val" ] && [ -n "$ours_val" ]; then
     # Both sides have this key
