@@ -215,19 +215,26 @@ register_merge_drivers() {
     # env-prefix string (e.g. "TOMLMERGE_UNION_KEYS=permissions.allow,deny ").
     # Adapter declares ADAPTER_MERGE_DRIVER_ENV as newline-separated lines
     # of the form "<driver>:<KEY=val KEY2=val2>". Empty when not declared.
+    # Reads via a here-string so the while loop runs in the current shell;
+    # a pipeline (printf ... | while ...) would put the loop in a subshell
+    # where `return` only exits the subshell, not this function, making
+    # the control flow invisible to the caller and fragile under set -e.
     _driver_env_prefix() {
         local want_drv="$1"
-        [ -n "${ADAPTER_MERGE_DRIVER_ENV:-}" ] || { printf ''; return; }
-        printf '%s\n' "$ADAPTER_MERGE_DRIVER_ENV" | while IFS= read -r line; do
+        [ -n "${ADAPTER_MERGE_DRIVER_ENV:-}" ] || { printf ''; return 0; }
+        local line d rest
+        while IFS= read -r line; do
             [ -z "$line" ] && continue
-            local d="${line%%:*}"
-            local rest="${line#*:}"
-            [ "$d" = "$want_drv" ] || continue
-            # Trim whitespace and emit with trailing space so the
-            # caller can concatenate directly with the script path.
-            printf '%s ' "$rest"
-            return
-        done
+            d="${line%%:*}"
+            rest="${line#*:}"
+            if [ "$d" = "$want_drv" ]; then
+                # Trim whitespace and emit with trailing space so the
+                # caller can concatenate directly with the script path.
+                printf '%s ' "$rest"
+                return 0
+            fi
+        done <<< "$ADAPTER_MERGE_DRIVER_ENV"
+        return 0
     }
 
     while IFS= read -r drv; do

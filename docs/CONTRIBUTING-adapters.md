@@ -37,7 +37,7 @@ These pass validation with an empty string but the assignment itself must be pre
 | Variable | Purpose |
 |---|---|
 | `ADAPTER_SECRET_FILES` | Space-separated filenames that must never be synced (empty = no opt-out list) |
-| `ADAPTER_SETTINGS_MERGE_BINDINGS` | Newline-separated `pattern=driver-script` entries registered as git merge drivers (empty = none) |
+| `ADAPTER_SETTINGS_MERGE_BINDINGS` | Newline-separated whitespace-delimited `<path-pattern> <driver-name>` pairs — e.g. `settings.json jsonmerge` — registered as git merge drivers. `<driver-name>` must match a script at `core/<driver-name>.sh`. Empty = no drivers. |
 | `ADAPTER_FALLBACK_STRATEGY` | How the adapter behaves when the tool's config is missing (empty = adapter's default) |
 | `ADAPTER_SKILL_ROOT` | Absolute path to the tool's skills dir (empty = fall back to `$MEMORY_DIR/skills`) |
 | `ADAPTER_SKILL_FORMAT` | Skill file layout identifier (empty = the tool has no distinct skill system) |
