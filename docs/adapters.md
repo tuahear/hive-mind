@@ -30,4 +30,4 @@ The only visible change: hook commands in `settings.json` now reference `core/sy
 
 ## Writing a new adapter
 
-See the [Contributing adapters](./CONTRIBUTING-adapters) guide.
+See the [Contributing adapters](./CONTRIBUTING-adapters.md) guide.
