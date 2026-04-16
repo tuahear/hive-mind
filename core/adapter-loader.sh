@@ -221,9 +221,20 @@ _validate_adapter() {
   fi
 
   if [ "$ADAPTER_MEMORY_MODEL" = "hierarchical" ]; then
-    # Hierarchical adapters MUST implement adapter_list_memory_files —
-    # core mirror-projects walks it to discover memory files when the
-    # model isn't flat. A no-op stub silently breaks mirroring.
+    # Hierarchical adapters MUST declare adapter_list_memory_files —
+    # the function enumerates memory files the adapter recognizes in
+    # a given project (e.g. tree-walked AGENTS.md for Codex/Kimi/Qwen).
+    # Note: core/mirror-projects.sh and core/check-dupes.sh currently
+    # scope to the flat-layout `projects/<encoded-cwd>/` tree and do
+    # NOT invoke this function — hierarchical memory typically lives
+    # inside user project checkouts (versioned by the user's own repo)
+    # rather than the hive-mind memory repo, so there is no cross-
+    # machine mirror step for it. The contract still requires the
+    # declaration so the adapter's own install/diagnostic tooling has
+    # a standard surface, and so core can layer on hierarchical sync
+    # in the future without a contract break. A no-op stub is a
+    # deliberate and acceptable implementation for adapters that
+    # don't need per-project enumeration today.
     if ! declare -f adapter_list_memory_files >/dev/null 2>&1; then
       _loader_log ERROR "adapter '$name' declares hierarchical memory model but does not define adapter_list_memory_files"
       return 1

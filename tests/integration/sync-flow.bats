@@ -57,7 +57,20 @@ teardown() {
 }
 
 run_sync() {
-  ADAPTER_DIR="$ADAPTER_DIR" bash "$SYNC"
+  # Pass the full ADAPTER_* set sync.sh consumes (matches how setup.sh
+  # at step [5/5] invokes core/sync.sh). Without this the integration
+  # test would silently miss wiring regressions — e.g. if a future
+  # setup.sh edit forgot to propagate ADAPTER_SECRET_FILES,
+  # ADAPTER_MARKER_TARGETS, or ADAPTER_LOG_PATH, sync.sh would fall
+  # back to defaults and the test would still pass.
+  ADAPTER_DIR="$ADAPTER_DIR" \
+  ADAPTER_LOG_PATH="${ADAPTER_LOG_PATH:-}" \
+  ADAPTER_MARKER_TARGETS="${ADAPTER_MARKER_TARGETS:-}" \
+  ADAPTER_SECRET_FILES="${ADAPTER_SECRET_FILES:-}" \
+  ADAPTER_EVENT_SESSION_START="${ADAPTER_EVENT_SESSION_START:-}" \
+  ADAPTER_EVENT_TURN_END="${ADAPTER_EVENT_TURN_END:-}" \
+  ADAPTER_EVENT_POST_EDIT="${ADAPTER_EVENT_POST_EDIT:-}" \
+    bash "$SYNC"
 }
 
 marker() {

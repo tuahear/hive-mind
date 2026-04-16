@@ -6,8 +6,15 @@
 # model via hookSpecificOutput.additionalContext when duplicates exist.
 # Silent and exit-0 otherwise.
 #
-# Adapter-agnostic: uses ADAPTER_DIR and ADAPTER_GLOBAL_MEMORY to locate
-# files. Falls back to ~/.claude / CLAUDE.md for backward compat.
+# Scope split by memory model:
+#   - ADAPTER_GLOBAL_MEMORY (every adapter): scanned.
+#   - `projects/<encoded-cwd>/**/*.md` (flat-layout adapters only):
+#     scanned. Hierarchical-model adapters don't populate this tree
+#     (their per-project memory lives in user project checkouts), so
+#     the find walk below is a clean no-op when `projects/` is absent.
+#
+# Uses ADAPTER_DIR and ADAPTER_GLOBAL_MEMORY to locate files. Falls
+# back to ~/.claude / CLAUDE.md for backward compat.
 
 set +e
 

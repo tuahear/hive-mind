@@ -1,14 +1,20 @@
 #!/bin/bash
 # Mirror per-project memory across path-variant directories.
 #
-# AI tools store project memory at projects/<encoded-cwd>/ where the
-# encoding depends on the host's absolute path (Mac vs Windows, username,
-# etc.). The same repo cloned on two machines maps to two different
-# variant dirs, so per-project memory written on one machine is invisible
-# on the other.
+# Scope: handles the FLAT-layout `projects/<encoded-cwd>/` tree that
+# Claude-style adapters use. Tools encode the cwd path into the
+# directory name, so the same repo cloned on two machines maps to
+# two different variant dirs; per-project memory written on one
+# machine is invisible on the other until this script unifies them.
 #
-# Adapter-agnostic: uses ADAPTER_DIR to locate the memory repo.
-# Falls back to ~/.claude for backward compat.
+# Hierarchical-model adapters (Codex, Qwen, Kimi, …) do NOT use this
+# layout — their per-project memory (e.g. tree-walked AGENTS.md) lives
+# inside user project checkouts, versioned by the user's own repo, not
+# in the hive-mind memory repo. For those adapters this script is a
+# clean no-op: it exits at line ~27 when `projects/` is absent.
+#
+# Uses ADAPTER_DIR to locate the memory repo; falls back to ~/.claude
+# for backward compat with pre-adapter-contract installs.
 #
 # Identity model:
 #   - Each variant carries a metadata sidecar at
