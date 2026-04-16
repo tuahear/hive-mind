@@ -126,13 +126,20 @@ parse_array() {
 }
 
 # --- Rebuild array from lines of elements ---------------------------------
+# Emits every unique line (including empty-string elements, which are
+# valid TOML). `sort -u` handles dedup; the while loop emits one
+# double-quoted entry per line with a leading comma after the first.
 rebuild_array() {
   local elements
   elements="$(sort -u)"
+  # If input was empty, sort produces empty output; emit "[]" and return.
+  if [ -z "$elements" ]; then
+    printf '[]'
+    return
+  fi
   local first=1
   printf '['
   while IFS= read -r elem; do
-    [ -z "$elem" ] && continue
     [ "$first" -eq 1 ] || printf ', '
     printf '"%s"' "$elem"
     first=0

@@ -15,9 +15,10 @@ setup() {
 teardown() {
   rm -rf "$REPO_ROOT/adapters/api-2-0-0"
   rm -rf "$REPO_ROOT/adapters/api-1-3-0"
+  rm -rf "$REPO_ROOT/adapters/api-0-1-0"
+  rm -rf "$REPO_ROOT/adapters/api-1-0-0"
   rm -rf "$REPO_ROOT/adapters/missing-version"
   rm -rf "$REPO_ROOT/adapters/malformed"
-  rm -rf "$REPO_ROOT/adapters/api-1-0-0"
   rm -rf "$REPO_ROOT/adapters/fake"
   rm -rf "$HOME"
 }
@@ -45,8 +46,7 @@ install_fixture() {
 
   run bash -c "source '$LOADER' && load_adapter 'api-0-1-0'"
   [ "$status" -ne 0 ]
-
-  rm -rf "$REPO_ROOT/adapters/api-0-1-0"
+  # Cleanup happens in teardown so a mid-test failure/abort still cleans up.
 }
 
 @test "minor_forward_refused: adapter 1.3.0, core 1.0.x → refuses to load" {

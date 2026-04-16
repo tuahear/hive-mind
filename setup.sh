@@ -246,19 +246,28 @@ case "$STATE" in
             git -C "$HIVE_MIND_DIR" pull --rebase --autostash --quiet
         fi
         # Source the adapter to get template paths + merge-binding list for refresh.
+        # Adapter-dependent steps (template refresh, migrate, install_hooks)
+        # run ONLY after a successful load_adapter — a partial / failed
+        # source can leave ADAPTER_* vars and adapter_* functions in a
+        # half-populated state, which would make the upgrade path worse
+        # than doing nothing.
+        _adapter_loaded=0
         if [ -f "$HIVE_MIND_DIR/core/adapter-loader.sh" ]; then
             ADAPTER_ROOT="$HIVE_MIND_DIR/adapters/$ADAPTER"
             export ADAPTER_ROOT
             # shellcheck disable=SC1091
             source "$HIVE_MIND_DIR/core/adapter-loader.sh"
-            load_adapter "$ADAPTER" || log "warning: adapter '$ADAPTER' failed to load — continuing with legacy paths"
-            # Register every declared merge driver (adapter-agnostic) AFTER
-            # load_adapter so ADAPTER_SETTINGS_MERGE_BINDINGS is populated.
+            if load_adapter "$ADAPTER"; then
+                _adapter_loaded=1
+            else
+                log "warning: adapter '$ADAPTER' failed to load — falling back to legacy jsonmerge registration, skipping template refresh / migrate / install_hooks"
+            fi
+        fi
+
+        if [ "$_adapter_loaded" -eq 1 ]; then
+            # Register every declared merge driver (adapter-agnostic).
             register_merge_drivers "$MEMORY_DIR"
             # Refresh gitignore + gitattributes from the adapter templates.
-            # New template entries (e.g. .hive-mind-format whitelist) only
-            # take effect after this; without it, existing installs miss
-            # post-install additions until the user re-seeds manually.
             if [ -n "${ADAPTER_GITIGNORE_TEMPLATE:-}" ] && [ -f "$ADAPTER_GITIGNORE_TEMPLATE" ]; then
                 cp "$ADAPTER_GITIGNORE_TEMPLATE" "$MEMORY_DIR/.gitignore"
             fi
@@ -268,11 +277,13 @@ case "$STATE" in
             # Migrate existing install, passing the previous version so the
             # adapter can make version-conditional decisions.
             declare -f adapter_migrate >/dev/null 2>&1 && adapter_migrate "$prev_version"
-            # Re-run adapter_install_hooks so upgrades are self-healing:
-            # if the user removed a hook or the adapter template gained a
-            # new event since the previous install, this brings the hook
-            # config back in sync. install_hooks is idempotent.
+            # Re-run adapter_install_hooks so upgrades are self-healing.
             declare -f adapter_install_hooks >/dev/null 2>&1 && adapter_install_hooks
+        else
+            # Legacy fallback: register the known jsonmerge driver directly
+            # so pre-adapter-contract installs keep working on upgrade.
+            git -C "$MEMORY_DIR" config merge.jsonmerge.driver "$HIVE_MIND_DIR/core/jsonmerge.sh %A %O %B" 2>/dev/null || true
+            git -C "$MEMORY_DIR" config merge.jsonmerge.name "Deep-merge JSON with array union (hive-mind)" 2>/dev/null || true
         fi
         manage_claude_skills
         exit 0

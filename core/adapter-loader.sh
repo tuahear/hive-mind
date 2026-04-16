@@ -58,8 +58,16 @@ load_adapter() {
   ADAPTER_ROOT="$loader_root/adapters/$adapter_name"
   export ADAPTER_ROOT
 
+  # Save caller's shell options, source the adapter (which typically
+  # runs `set -euo pipefail` at its top), then restore so the loader
+  # stays side-effect-free from the caller's perspective.
+  local _saved_opts
+  _saved_opts="$(set +o)"
   # shellcheck source=/dev/null
   source "$adapter_file"
+  # Restore: `set +o` prints the full `set -o ...` / `set +o ...`
+  # lines that reproduce the pre-source state.
+  eval "$_saved_opts"
 
   _validate_adapter "$adapter_name" || return 1
 }
