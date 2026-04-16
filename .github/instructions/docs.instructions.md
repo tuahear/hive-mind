@@ -21,7 +21,7 @@ Same rule as elsewhere: if a prior review adjudicated a concern, move on.
 ## Skip these kinds of comments
 
 - **Relative link style `./foo` vs `./foo.md`** — VitePress resolves both. Only flag if the link 404s.
-- **"Add a TOC"** — VitePress renders one automatically in the sidebar.
+- **"Add a TOC"** — VitePress auto-generates a per-page outline from headings; the site sidebar is separately curated in `docs/.vitepress/config.ts`. Don't ask for a manually-written TOC inside the markdown.
 - **Suggestions to add emojis, callout boxes, or decorative markdown** — English-only plain prose is the house style.
 - **"Reword for clarity" on terminology that's already precise** — words like "adapter", "hook", "marker", "sync" are specific terms in this project; don't suggest softening them to generic synonyms.
 - **Hallucinated table / list / code-block syntax errors** — particularly common with markdown tables. Read the raw markdown; standard GFM single-pipe rows are correct even if a rendered preview happens to show alignment issues.

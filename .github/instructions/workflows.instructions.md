@@ -20,7 +20,7 @@ If a prior review adjudicated the workflow's design, don't re-raise unless there
 - **Concurrency group scoped to the entire workflow** when it should be deploy-only. A shared group means PR builds serialize with main deploys — this is a real correctness bug.
 - **Secrets passed to PRs from forked repos** — GitHub's default is safe, but any explicit workaround is a security risk worth flagging.
 - **Missing `if:` gating on deploy steps** that must not fire on PR events. Pages/release workflows deploying on every `pull_request` event is wrong.
-- **Hardcoded `secrets.GITHUB_TOKEN` usage when `permissions:` would suffice** — the default token should be the restricted one.
+- **Custom PATs or personal tokens passed when `secrets.GITHUB_TOKEN` + scoped `permissions:` would suffice** — the default token with narrow `permissions:` is preferred over a broader PAT. Also flag tokens passed to steps that don't need them, and missing or overbroad `permissions:` blocks.
 - **Missing `SHA256SUMS` / artifact integrity checks** for release workflows that publish binaries.
 - **Actions pinned only by tag (not SHA)** for third-party actions — supply-chain risk. First-party (`actions/*`) tag-pinning is fine.
 

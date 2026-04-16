@@ -46,11 +46,11 @@ They're usually wrong or noise in this repo:
 Any script in `core/` or `scripts/` reached through the hook system (sync, check-dupes, mirror-projects, marker-nudge) must:
 
 1. Run with `set +e`.
-2. Redirect stderr of every command to `$LOG` or `/dev/null`.
+2. Redirect stderr to `$LOG` (or `/dev/null`) on commands that can produce noisy output: network/git operations, external tool invocations, parsers, anything reading untrusted input. Silent commands (`cd`, `[ ... ]`, variable assignments, pure-bash builtins) don't need a redirect.
 3. Exit 0 on every path.
 4. Not emit any stdout except the specific JSON payload for hooks that use `hookSpecificOutput`.
 
-If you see a raw command in a hook-reached script without a redirect, that's worth a comment. If you see `exit <non-zero>` in such a script, that's worth a comment. Otherwise, assume `set +e` + trailing `exit 0` does the right thing.
+If you see a `git`/`curl`/external-tool invocation in a hook-reached script without a stderr redirect, that's worth a comment. If you see `exit <non-zero>` in such a script, that's worth a comment. Otherwise, assume `set +e` + trailing `exit 0` does the right thing.
 
 ## When in doubt about a file's purpose
 
