@@ -175,6 +175,15 @@ _validate_adapter() {
     _loader_log ERROR "adapter '$name' ADAPTER_GLOBAL_MEMORY must be an absolute path, got '$ADAPTER_GLOBAL_MEMORY'"
     ok=0
   fi
+  if [ -n "${ADAPTER_SKILL_ROOT:-}" ] && [ "${ADAPTER_SKILL_ROOT:0:1}" != "/" ]; then
+    _loader_log ERROR "adapter '$name' ADAPTER_SKILL_ROOT must be an absolute path when non-empty, got '$ADAPTER_SKILL_ROOT'"
+    ok=0
+  fi
+  if [ "${ADAPTER_MEMORY_MODEL:-}" = "flat" ] && [ -n "${ADAPTER_PROJECT_MEMORY_DIR:-}" ] \
+     && [ "${ADAPTER_PROJECT_MEMORY_DIR:0:1}" != "/" ]; then
+    _loader_log ERROR "adapter '$name' ADAPTER_PROJECT_MEMORY_DIR must be an absolute path (flat model), got '$ADAPTER_PROJECT_MEMORY_DIR'"
+    ok=0
+  fi
 
   # Bail early if fundamentals are missing.
   [ "$ok" -eq 1 ] || return 1

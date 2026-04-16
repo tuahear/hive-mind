@@ -97,6 +97,38 @@ try_load() {
   [[ "$output" = *"ADAPTER_LOG_PATH must be an absolute path"* ]]
 }
 
+@test "relative ADAPTER_SKILL_ROOT (when non-empty) is rejected" {
+  # setup.sh uses ADAPTER_SKILL_ROOT as a filesystem path when
+  # installing skills. A relative value would create files in whatever
+  # cwd setup.sh happens to run from (user's current dir), not under
+  # the adapter's config root. Absolute required whenever non-empty;
+  # empty is still allowed (falls back to $MEMORY_DIR/skills in
+  # manage_claude_skills).
+  write_adapter "rel-skill-root" 'ADAPTER_SKILL_ROOT="relative/skills"'
+  run try_load "rel-skill-root"
+  [ "$status" -ne 0 ]
+  [[ "$output" = *"ADAPTER_SKILL_ROOT must be an absolute path"* ]]
+}
+
+@test "empty ADAPTER_SKILL_ROOT is accepted (adapter opts out of distinct skills dir)" {
+  # Negative control: the absolute-path requirement applies only when
+  # the value is non-empty. An adapter without a separate skill system
+  # declares empty; the validator must not confuse "empty" with
+  # "relative".
+  write_adapter "empty-skill-root" 'ADAPTER_SKILL_ROOT=""'
+  run try_load "empty-skill-root"
+  [ "$status" -eq 0 ]
+}
+
+@test "relative ADAPTER_PROJECT_MEMORY_DIR (flat model) is rejected" {
+  # setup.sh and mirror-projects treat ADAPTER_PROJECT_MEMORY_DIR as a
+  # filesystem path for flat adapters. Relative values drift with cwd.
+  write_adapter "rel-proj-memory" 'ADAPTER_PROJECT_MEMORY_DIR="projects/{encoded_cwd}/memory"'
+  run try_load "rel-proj-memory"
+  [ "$status" -ne 0 ]
+  [[ "$output" = *"ADAPTER_PROJECT_MEMORY_DIR must be an absolute path"* ]]
+}
+
 @test "relative ADAPTER_GLOBAL_MEMORY (flat model) is rejected" {
   write_adapter "rel-mem" 'ADAPTER_GLOBAL_MEMORY="memory/MEMORY.md"'
   run try_load "rel-mem"
@@ -159,9 +191,14 @@ try_load() {
 # === hierarchical model invariant =========================================
 
 @test "hierarchical adapter without adapter_list_memory_files is rejected" {
-  # Core mirror-projects calls adapter_list_memory_files to discover
-  # memory files when the model isn't flat. A no-op stub silently
-  # breaks mirroring rather than failing fast.
+  # Contract surface requirement: hierarchical adapters must declare
+  # adapter_list_memory_files so the adapter's own install/diagnostic
+  # tooling has a standard enumeration entry point, and so core can
+  # layer hierarchical mirror support on top in a future release
+  # without a contract break. No core script currently invokes it
+  # (core/mirror-projects.sh and core/check-dupes.sh scope to the
+  # flat projects/<encoded-cwd>/ layout), but the function must be
+  # defined for load to succeed.
   write_adapter "hier-no-fn" 'ADAPTER_MEMORY_MODEL="hierarchical"
 unset -f adapter_list_memory_files'
   run try_load "hier-no-fn"
