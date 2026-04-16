@@ -113,10 +113,16 @@ _validate_adapter() {
   done
 
   # Required variables that must be defined (may be empty string).
+  # Must match the conformance suite's `@test "ADAPTER_FOO is declared..."`
+  # assertions — a divergence lets an adapter load in production but fail
+  # conformance, or vice versa. tests/docs_contract.bats parses both
+  # sides to catch future drift.
   local required_defined_vars=(
     ADAPTER_SECRET_FILES
     ADAPTER_SETTINGS_MERGE_BINDINGS
     ADAPTER_FALLBACK_STRATEGY
+    ADAPTER_SKILL_ROOT
+    ADAPTER_SKILL_FORMAT
   )
   for var in "${required_defined_vars[@]}"; do
     if [ -z "${!var+x}" ]; then

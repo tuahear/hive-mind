@@ -30,11 +30,15 @@ setup() {
 
   # Match the real deployment: ~/.claude is a whitelist-only repo so the
   # script's `git add -A` doesn't pick up the script's own .sync-error.log
-  # or other stray files outside the synced tree.
+  # or other stray files outside the synced tree. Mirror a post-setup.sh
+  # install: whitelist .hive-mind-format and pre-seed it so tests below
+  # don't trip on the first-sync "seed format file" branch that would
+  # otherwise inject .hive-mind-format into every commit message.
   cat > "$HOME/.claude/.gitignore" <<'EOF'
 /*
 !/.gitignore
 !/.gitattributes
+!/.hive-mind-format
 !/settings.json
 !/CLAUDE.md
 !/projects/
@@ -46,8 +50,9 @@ setup() {
 !/skills/
 !/skills/**
 EOF
-  git -C "$HOME/.claude" add .gitignore
-  git -C "$HOME/.claude" commit -q -m "add whitelist gitignore"
+  printf 'format-version=1\n' > "$HOME/.claude/.hive-mind-format"
+  git -C "$HOME/.claude" add .gitignore .hive-mind-format
+  git -C "$HOME/.claude" commit -q -m "add whitelist gitignore and format seed"
   git -C "$HOME/.claude" push -q
 }
 
@@ -434,6 +439,59 @@ EOF
   git -C "$empty_remote" log --oneline --all | grep -q .
   # Upstream tracking got configured by the `-u` flag.
   git -C "$fresh" rev-parse --abbrev-ref '@{u}' >/dev/null 2>&1
+}
+
+@test ".hive-mind-format is force-staged even when gitignore does not whitelist it" {
+  # Pre-refactor installs had a .gitignore that predated
+  # .hive-mind-format. A plain `git add -A` skips ignored files, so
+  # without `git add -f` the format file silently never reaches the
+  # remote — the format-version gate then stops advancing and future
+  # installs can't reliably detect a newer-format remote.
+  #
+  # Construct a pre-refactor sandbox: drop the pre-seeded format file
+  # from the index AND rewrite .gitignore without a .hive-mind-format
+  # whitelist entry. After sync, the file must still reach the remote.
+  git -C "$HOME/.claude" rm -q --cached -- .hive-mind-format
+  rm -f "$HOME/.claude/.hive-mind-format"
+  cat > "$HOME/.claude/.gitignore" <<'EOF'
+/*
+!/.gitignore
+!/.gitattributes
+!/settings.json
+!/CLAUDE.md
+!/projects/
+/projects/*
+!/projects/*/
+/projects/*/*
+!/projects/*/memory/
+!/projects/*/MEMORY.md
+!/skills/
+!/skills/**
+EOF
+  git -C "$HOME/.claude" add -A
+  git -C "$HOME/.claude" commit -q -m "pre-refactor whitelist without .hive-mind-format"
+  git -C "$HOME/.claude" push -q
+
+  # Sanity: with the format file untracked and the whitelist above,
+  # check-ignore reports the path as ignored. Otherwise this test
+  # would be vacuous (the fix's if-branch never triggered).
+  : > "$HOME/.claude/.hive-mind-format"
+  run git -C "$HOME/.claude" check-ignore -q .hive-mind-format
+  [ "$status" -eq 0 ]
+  rm -f "$HOME/.claude/.hive-mind-format"
+
+  # Something has to change for sync to push, but the change alone
+  # shouldn't smuggle in the format file — leave the stage via
+  # CLAUDE.md, which is whitelisted.
+  printf 'content\n' > "$HOME/.claude/CLAUDE.md"
+  run run_sync
+  [ "$status" -eq 0 ]
+
+  # Force-stage proved out: the format file is tracked locally and
+  # its content reached the remote.
+  [ -f "$HOME/.claude/.hive-mind-format" ]
+  git -C "$HOME/.claude" ls-files --error-unmatch .hive-mind-format
+  git -C "$HOME/remote.git" show HEAD:.hive-mind-format | grep -q 'format-version='
 }
 
 @test "deprecated scripts/sync.sh shim loads claude adapter so non-.md files under skills/ get marker-scanned" {

@@ -57,3 +57,25 @@ CONFORMANCE="$REPO_ROOT/tests/adapter-conformance/conformance.bats"
     }
   done
 }
+
+@test "loader's required_defined_vars matches every ADAPTER_* declared-required by conformance" {
+  # Closes the triangle: conformance <-> loader <-> docs. If conformance
+  # tests treat a variable as required-declared, the loader must enforce
+  # it too, or an adapter can load in production yet fail conformance
+  # (or the reverse — subtle behavior differences between env where the
+  # loader runs vs env where conformance runs). This test parses both
+  # sources of truth and requires matching sets.
+  loader_required="$(awk '/required_defined_vars=\(/,/\)/' "$LOADER" | grep -oE 'ADAPTER_[A-Z_]+' | sort -u)"
+  conformance_required="$(grep -oE '@test "ADAPTER_[A-Z_]+ is declared' "$CONFORMANCE" | grep -oE 'ADAPTER_[A-Z_]+' | sort -u)"
+
+  [ -n "$loader_required" ]
+  [ -n "$conformance_required" ]
+
+  # Every conformance-declared var must be in the loader's required list.
+  for var in $conformance_required; do
+    printf '%s\n' "$loader_required" | grep -Fxq "$var" || {
+      echo "conformance requires '$var' as declared but loader's required_defined_vars does not enforce it" >&2
+      return 1
+    }
+  done
+}

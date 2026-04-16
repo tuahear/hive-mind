@@ -172,6 +172,14 @@ fi
 
 # Stage whatever changed in whitelisted paths (gitignore filters the rest).
 git add -A 2>/dev/null
+# Force-stage the format file so it reaches the remote even when a
+# pre-refactor .gitignore (one that hasn't been refreshed via setup.sh
+# on this install) would otherwise ignore it. Without this, remote
+# format-version state stops advancing and future installs can't
+# reliably detect / abort on a newer-format remote.
+if [ -f "$FORMAT_FILE" ]; then
+  git add -f -- "$FORMAT_FILE" 2>/dev/null || true
+fi
 
 # Secret-file safety gate. ADAPTER_SECRET_FILES is a space-separated list
 # of relative paths that MUST NOT be synced, even if a misconfigured

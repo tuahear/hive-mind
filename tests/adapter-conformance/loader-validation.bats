@@ -134,6 +134,28 @@ try_load() {
   [[ "$output" = *"ADAPTER_SECRET_FILES"* ]]
 }
 
+@test "missing ADAPTER_SKILL_ROOT declaration is rejected" {
+  # ADAPTER_SKILL_ROOT may be empty (adapter with no distinct skill
+  # system falls back to MEMORY_DIR/skills) but it must be declared so
+  # the contract surface is explicit. The conformance suite requires
+  # this; the loader must match or an adapter can load in production
+  # while still failing conformance.
+  write_adapter "no-skill-root" 'unset ADAPTER_SKILL_ROOT'
+  run try_load "no-skill-root"
+  [ "$status" -ne 0 ]
+  [[ "$output" = *"ADAPTER_SKILL_ROOT"* ]]
+}
+
+@test "missing ADAPTER_SKILL_FORMAT declaration is rejected" {
+  # Pairs with SKILL_ROOT above — both are part of the skill-surface
+  # contract. Forcing declaration makes adapters authors explicitly
+  # answer "do you have a skill system and what shape is it".
+  write_adapter "no-skill-format" 'unset ADAPTER_SKILL_FORMAT'
+  run try_load "no-skill-format"
+  [ "$status" -ne 0 ]
+  [[ "$output" = *"ADAPTER_SKILL_FORMAT"* ]]
+}
+
 # === hierarchical model invariant =========================================
 
 @test "hierarchical adapter without adapter_list_memory_files is rejected" {
