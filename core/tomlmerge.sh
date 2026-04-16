@@ -55,11 +55,12 @@ trap 'rm -f "$tmp" "$tmp.ours" "$tmp.theirs" "$tmp.merged"' EXIT
 # Comment-loss safety: this driver reconstructs the output TOML from the
 # flat key list, which drops comments and blank lines. Users frequently
 # document config in TOML comments, so losing them on merge is a real
-# data-loss hazard. If either input contains comments or non-trailing
-# blank lines, exit non-zero so git falls back to its default 3-way
-# merge (which preserves comments via conflict markers for manual
-# resolution). Only activate the union-merge code path on "simple"
-# comment-free, blank-line-free TOML.
+# data-loss hazard. Both full-line comments (`# note` on its own line)
+# AND inline comments on key lines (`key = "x" # note`) trigger a
+# non-zero exit so git falls back to its default 3-way merge (which
+# preserves comments via conflict markers for manual resolution). Only
+# activate the union-merge code path on "simple" comment-free,
+# blank-line-free TOML.
 toml_flatten() {
   awk '
     BEGIN { section = ""; unrecognized = 0; saw_content = 0 }
@@ -93,6 +94,18 @@ toml_flatten() {
       if (val ~ /^\{/ || val ~ /^"""/ || val ~ /^[[:space:]]*$/) {
         unrecognized = 1; exit
       }
+      # Reject inline comments on scalar lines. Without this, a line
+      # like `key = "x" # note` would be absorbed with the comment text
+      # included in the flattened value — merging against the comment-
+      # free side would see a spurious difference and apply theirs-wins
+      # rather than recognizing the values are TOML-equivalent. Arrays
+      # are handled downstream by parse_array (which already rejects
+      # inline comments after the closing bracket). For scalars, the
+      # conservative rule below is: if the value contains a # anywhere,
+      # bail out. A genuine # inside a string literal (rare in config
+      # files) is collateral — falling back to git default merge is a
+      # safer outcome than silent value corruption.
+      if (val !~ /^\[/ && val ~ /#/) { unrecognized = 1; exit }
       fullkey = (section != "" ? section "." : "") key
       print fullkey "\t" val
       saw_content = 1

@@ -73,6 +73,32 @@ REPO_ROOT="$BATS_TEST_DIRNAME/.."
   fi
 }
 
+@test "setup.sh already_synced upgrade path runs sync.sh with HIVE_MIND_FORCE_PUSH=1 before exit" {
+  # Regression: without this the upgrade flow made local edits
+  # (refreshed .gitignore, migrated settings, re-installed hooks) and
+  # exited without pushing, so cross-machine propagation waited for the
+  # next hook-driven sync. That could be hours if the upgraded machine
+  # didn't start a new session — defeating hive-mind's core value.
+  # Scan the already_synced case block for a HIVE_MIND_FORCE_PUSH=1
+  # invocation of core/sync.sh appearing BEFORE the terminating
+  # exit 0. Implementation-level pin (regression smoke), not a full
+  # end-to-end integration test, which would require substantial
+  # setup.sh stubbing; combined with the existing setup-fresh-flow
+  # integration test, the surface is covered.
+  setup="$BATS_TEST_DIRNAME/../setup.sh"
+  [ -f "$setup" ]
+  block="$(awk '/^    already_synced\)/,/^        ;;/' "$setup")"
+  [ -n "$block" ]
+  # Force-push invocation present.
+  printf '%s\n' "$block" | grep -Fq 'HIVE_MIND_FORCE_PUSH=1'
+  # And it references core/sync.sh so a future rename of the script
+  # does not silently defeat the propagation.
+  printf '%s\n' "$block" | grep -Fq 'core/sync.sh'
+  # The block still terminates with exit 0 — no regression of the
+  # non-blocking guarantee.
+  printf '%s\n' "$block" | grep -qE '^[[:space:]]*exit 0[[:space:]]*$'
+}
+
 @test "docs/*.md: any git config merge.*.driver example uses quoted %A %O %B" {
   # Same drift risk in contributor / adapter docs. If no doc yet
   # mentions the pattern this test trivially passes; if docs add a

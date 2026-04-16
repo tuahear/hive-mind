@@ -233,6 +233,43 @@ run_merge() {
   grep -q '^\[gamma\]$' "$OURS"
 }
 
+@test "rejects scalar line with inline comment (key = \"x\" # note)" {
+  # The header promises comment-containing inputs exit non-zero so git
+  # falls back to its default 3-way merger. Previously only full-line
+  # comments were rejected; inline comments on scalar lines were
+  # silently absorbed into the flattened value, producing spurious
+  # "theirs-wins" conflicts when one side had the comment and the
+  # other did not. Drop into fallback instead.
+  printf '[section]\nkey = "x" # inline note\n' > "$OURS"
+  printf '[section]\nkey = "y"\n' > "$THEIRS"
+
+  run run_merge
+  [ "$status" -ne 0 ]
+}
+
+@test "rejects inline comment on bare-value scalar (key = 42 # note)" {
+  # Same failure mode for non-string scalars. A user annotating a
+  # numeric config value with a trailing comment must not corrupt
+  # the merged output.
+  printf '[section]\ncount = 42 # annotation\n' > "$OURS"
+  printf '[section]\ncount = 42\n' > "$THEIRS"
+
+  run run_merge
+  [ "$status" -ne 0 ]
+}
+
+@test "plain quoted scalars (no inline comment) still merge normally" {
+  # Negative control: the new inline-comment reject must not break
+  # the common case where neither side has comments. This is the
+  # "simple TOML" case the driver exists to handle.
+  printf '[section]\nkey = "x"\n' > "$OURS"
+  printf '[section]\nkey = "y"\n' > "$THEIRS"
+
+  run run_merge
+  [ "$status" -eq 0 ]
+  grep -q 'key = "y"' "$OURS"
+}
+
 @test "reconstruction emits no blank lines between sections" {
   # Explicit pin: the output of a merge must contain zero fully-blank
   # lines. This is the exact invariant the self-round-trip test above

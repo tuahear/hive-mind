@@ -332,6 +332,29 @@ case "$STATE" in
             git -C "$MEMORY_DIR" config merge.jsonmerge.name "Deep-merge JSON with array union (hive-mind)" 2>/dev/null || true
         fi
         manage_claude_skills
+
+        # Run a sync cycle before exiting so any upgrade edits (refreshed
+        # .gitignore / .gitattributes, migrated settings, re-installed
+        # hooks) propagate to the remote immediately instead of waiting
+        # for the next hook-driven sync. Without this, multi-machine
+        # users can go hours between upgrade and propagation if they
+        # don't start a new session on the upgraded machine — which
+        # defeats the core cross-machine value of hive-mind. Force-push
+        # bypasses the rate limit that sync.sh applies to normal
+        # hook-driven runs. Non-blocking: errors log to the adapter's
+        # log, installer exits 0 regardless.
+        if [ -x "$HIVE_MIND_DIR/core/sync.sh" ]; then
+            ADAPTER_DIR="$ADAPTER_DIR" \
+            ADAPTER_LOG_PATH="${ADAPTER_LOG_PATH:-}" \
+            ADAPTER_MARKER_TARGETS="${ADAPTER_MARKER_TARGETS:-}" \
+            ADAPTER_SECRET_FILES="${ADAPTER_SECRET_FILES:-}" \
+            ADAPTER_EVENT_SESSION_START="${ADAPTER_EVENT_SESSION_START:-}" \
+            ADAPTER_EVENT_TURN_END="${ADAPTER_EVENT_TURN_END:-}" \
+            ADAPTER_EVENT_POST_EDIT="${ADAPTER_EVENT_POST_EDIT:-}" \
+            HIVE_MIND_FORCE_PUSH=1 \
+                "$HIVE_MIND_DIR/core/sync.sh" || true
+        fi
+
         exit 0
         ;;
 esac
