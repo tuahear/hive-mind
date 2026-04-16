@@ -70,7 +70,11 @@ adapter_uninstall_hooks() {
       .hooks |= with_entries(
         .value |= map(
           if .hooks then
-            .hooks |= map(select(.command | test("(~/\\.claude|\\$HOME/\\.claude)/hive-mind/(core|scripts)/") | not))
+            # Guard against hook entries missing a `.command` field (prompt
+            # hooks, agent hooks, or any other non-command schema). Treat
+            # missing/null command as a non-match -- we only want to
+            # remove hive-mind command hooks, nothing else.
+            .hooks |= map(select((.command // "") | test("(~/\\.claude|\\$HOME/\\.claude)/hive-mind/(core|scripts)/") | not))
           else . end
           | select((.hooks // []) | length > 0)
         )

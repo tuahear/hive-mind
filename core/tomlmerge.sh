@@ -87,12 +87,21 @@ is_union_key() {
 }
 
 # --- Parse array value into lines of elements -----------------------------
+# Returns non-zero if the array is not well-formed (e.g. the closing `]`
+# isn't the last non-whitespace char, which happens with inline comments
+# like `[...]  # comment`). Caller must treat that as a parse failure.
 parse_array() {
   local val="$1"
-  # Strip outer brackets
+  # Must start with `[` and end with `]` (allowing trailing whitespace).
+  # Inline comments or stray text after `]` are not supported.
+  if [[ ! "$val" =~ ^\[.*\][[:space:]]*$ ]]; then
+    return 1
+  fi
+  # Strip outer brackets.
   val="${val#\[}"
+  val="${val%%[[:space:]]}"
   val="${val%\]}"
-  # Split on comma, strip quotes and whitespace
+  # Split on comma, strip quotes and whitespace.
   printf '%s' "$val" | tr ',' '\n' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e 's/^"//' -e 's/"$//' | grep -v '^$'
 }
 
@@ -137,8 +146,12 @@ lookup_val() {
   if [ -n "$theirs_val" ] && [ -n "$ours_val" ]; then
     # Both sides have this key
     if is_union_key "$key" && [[ "$ours_val" == \[* ]] && [[ "$theirs_val" == \[* ]]; then
-      # Union arrays
-      merged_val="$( { parse_array "$ours_val"; parse_array "$theirs_val"; } | rebuild_array )"
+      # Union arrays — both sides must parse cleanly. A non-zero return
+      # from parse_array (e.g. inline comment after `]`) exits the whole
+      # script so git falls back to its default merge.
+      ours_elems="$(parse_array "$ours_val")" || exit 1
+      theirs_elems="$(parse_array "$theirs_val")" || exit 1
+      merged_val="$( printf '%s\n%s\n' "$ours_elems" "$theirs_elems" | rebuild_array )"
       printf '%s\t%s\n' "$key" "$merged_val"
     else
       # Theirs wins
@@ -149,7 +162,7 @@ lookup_val() {
   else
     printf '%s\t%s\n' "$key" "$ours_val"
   fi
-done > "$tmp.merged"
+done > "$tmp.merged" || exit 1
 
 # --- Reconstruct TOML from flat representation ----------------------------
 awk -F'\t' '

@@ -190,7 +190,7 @@ log "detected state: $STATE"
 
 case "$STATE" in
     already_synced)
-        log "~/.claude is already a git repo with remote $(git -C "$MEMORY_DIR" remote get-url origin)"
+        log "$MEMORY_DIR is already a git repo with remote $(git -C "$MEMORY_DIR" remote get-url origin)"
 
         # Read the previously-installed hive-mind version BEFORE pulling the
         # latest (so adapter_migrate can make version-conditional decisions).

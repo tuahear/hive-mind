@@ -115,9 +115,7 @@ if ! git diff --cached --quiet; then
     [ -f "$f" ] || continue
     file_is_marker_target "$f" || continue
 
-    pre_sha=""
     if [ -x "$extractor" ]; then
-      pre_sha="$(cat "$f" | shasum -a 1 2>/dev/null | awk '{print $1}')"
       while IFS= read -r extracted; do
         extracted="$(printf %s "$extracted" | tr -d '\r')"
         [ -z "$extracted" ] && continue
@@ -132,8 +130,10 @@ if ! git diff --cached --quiet; then
           MSG="$MSG + $extracted"
         fi
       done < <("$extractor" "$f" 2>>"$LOG")
-      post_sha="$(cat "$f" | shasum -a 1 2>/dev/null | awk '{print $1}')"
-      if [ -n "$pre_sha" ] && [ "$pre_sha" != "$post_sha" ]; then
+      # Re-stage if marker-extract mutated the working-tree copy. Compare
+      # index vs worktree via `git diff` -- portable and doesn't depend on
+      # shasum/sha1sum availability.
+      if ! git diff --quiet -- "$f" 2>/dev/null; then
         git add "$f"
       fi
     fi
