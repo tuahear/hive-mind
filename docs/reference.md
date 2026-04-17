@@ -10,7 +10,7 @@ Every attached AI tool registers the same single entry point in its native hook 
 | `Stop` (end of each turn) | `"$HOME/.hive-mind/bin/sync"` | Hub sync entry point. Harvests the tool dir → hub, pull-rebase-pushes the shared memory repo, fans the merged state back out to every attached tool |
 | `PostToolUse` on `Edit|Write|NotebookEdit` | `"$HOME/.hive-mind/hive-mind/core/marker-nudge.sh"` | Reminds the model to drop a `<!-- commit: ... -->` marker when it edits memory so the next sync gets a meaningful commit subject |
 
-Other adapters (Codex, Qwen, Kimi) will wire the same three events to the same three paths in their native hook config formats — see [`docs/adapters.md`](./adapters.md).
+Other adapters (Codex, Qwen, Kimi) will wire the same three events to the same three paths in their native hook config formats — see [Adapters](./adapters/).
 
 ## Commit marker convention
 
