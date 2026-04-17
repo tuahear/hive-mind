@@ -253,10 +253,15 @@ mkdir -p "$HIVE_MIND_HUB_DIR/bin" \
          "$HIVE_MIND_HUB_DIR/.install-state" \
          "$HIVE_MIND_HUB_DIR/.hive-mind-state"
 
-# bin/sync -> hive-mind/core/hub/sync.sh (relative so the symlink
-# survives moves of $HIVE_MIND_HUB_DIR). macOS `ln -sf` replaces
-# atomically; works cross-platform.
-ln -sfn "../hive-mind/core/hub/sync.sh" "$HIVE_MIND_HUB_DIR/bin/sync"
+# bin/sync — wrapper that execs the real sync script. A symlink would
+# be simpler, but MSYS/Git Bash on Windows copies instead of symlinking
+# (requires admin or developer mode), so _resolve_self in sync.sh can't
+# follow the chain and CORE_DIR resolves to the wrong directory.
+cat > "$HIVE_MIND_HUB_DIR/bin/sync" <<'WRAPPER'
+#!/usr/bin/env bash
+exec "$(dirname "$0")/../hive-mind/core/hub/sync.sh" "$@"
+WRAPPER
+chmod +x "$HIVE_MIND_HUB_DIR/bin/sync"
 chmod +x "$HIVE_MIND_SRC/core/hub/sync.sh" 2>/dev/null || true
 
 # Seed BEFORE git init so merge drivers are active from commit 1.
@@ -314,63 +319,69 @@ if ! grep -Fxq "$ADAPTER" "$ATTACHED_FILE" \
 fi
 mkdir -p "$ADAPTER_DIR"
 
-# ---------- harvest-then-seed ----------
-# Harvest captures whatever the user has in the tool dir (existing
-# CLAUDE.md, skills, permissions) into the hub — otherwise the fan-out
-# below would overwrite it with possibly-empty hub content on a fresh
-# install. The first push + pull-rebase sequence then merges with the
-# remote (which may contain content from another machine).
+# ---------- pull → fan-out → harvest → push ----------
+# On a second-machine install the hub remote already has content from
+# machine 1. We must pull that content FIRST, fan it out to the tool
+# dir, THEN harvest — otherwise the tool's stale/older files overwrite
+# the hub's canonical content and get pushed, destroying memory.
+#
+# On a first-machine install the remote is empty, so pull is a no-op,
+# fan-out is a no-op, and harvest captures the tool's existing content.
 # shellcheck source=/dev/null
 source "$HIVE_MIND_SRC/core/hub/harvest-fanout.sh"
 
 # Migrate BEFORE harvest so legacy hook commands in the tool's
-# settings.json get rewritten to hub-topology paths. Otherwise
-# harvest captures the old commands (e.g. `cd ~/.claude && git pull
-# ... && ~/.claude/hive-mind/scripts/check-dupes.sh`) and pushes
-# them to the hub — polluting the hub with stale hook entries that
-# reference paths that no longer exist.
+# settings.json get rewritten to hub-topology paths.
 declare -f adapter_migrate >/dev/null 2>&1 && adapter_migrate "$PREV_HIVE_MIND_VERSION"
 
-# Install hooks BEFORE harvest too — an existing pre-hub install
-# may have hooks pointing at old paths; adapter_install_hooks
-# merges the current template on top, giving harvest the new
-# commands to capture.
+# Install hooks BEFORE harvest — an existing pre-hub install may have
+# hooks pointing at old paths; adapter_install_hooks merges the current
+# template on top, giving harvest the new commands to capture.
 adapter_install_hooks
 
+# Pull remote content FIRST — the hub may already have content from
+# another machine. This must happen before harvest so the tool's local
+# files don't blindly overwrite the hub's canonical content.
+(
+    cd "$HIVE_MIND_HUB_DIR"
+    if git rev-parse --abbrev-ref '@{u}' >/dev/null 2>&1; then
+        git pull --rebase --autostash --quiet || true
+    fi
+)
+
+# Fan-out remote content to the tool dir BEFORE harvest — populates
+# the tool with whatever the hub (from the remote) already has. On
+# a first install this is a no-op (empty hub).
+log "  fanning hub content -> tool dir"
+hub_fan_out "$HIVE_MIND_HUB_DIR" "$ADAPTER_DIR"
+
 # Bootstrap project-id sidecars before harvest — same pre-pass the hub
-# sync engine runs (core/hub/sync.sh). Without this, a fresh install
-# with existing per-project memory has no sidecars → harvest skips
-# every project → zero per-project content reaches the hub.
+# sync engine runs (core/hub/sync.sh).
 if [ "${ADAPTER_MEMORY_MODEL:-}" = "flat" ] && [ -x "$HIVE_MIND_SRC/core/mirror-projects.sh" ]; then
     log "  bootstrapping per-project sidecars"
     ADAPTER_DIR="$ADAPTER_DIR" "$HIVE_MIND_SRC/core/mirror-projects.sh" || true
 fi
 
+# Harvest AFTER fan-out: now the tool dir has been populated with hub
+# content, so harvest only picks up genuinely new/changed tool-side
+# files (not stale pre-hive-mind content overwriting newer hub state).
 log "  harvesting existing tool content -> hub"
 hub_harvest "$ADAPTER_DIR" "$HIVE_MIND_HUB_DIR"
 
-# Commit whatever changed in the hub after harvest + seed.
+# Commit and push whatever changed.
 (
     cd "$HIVE_MIND_HUB_DIR"
     git add -A >/dev/null 2>&1 || true
     if ! git diff --cached --quiet; then
         git commit -q -m "hub: attach $ADAPTER on $(hostname)"
     fi
-    # First push needs -u; subsequent pushes don't.
     if git rev-parse --abbrev-ref '@{u}' >/dev/null 2>&1; then
         git push -q 2>/dev/null || true
     else
         branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo main)"
         git push -q -u origin "$branch" 2>/dev/null || true
     fi
-    # Pull back any remote state (e.g. from another machine).
-    if git rev-parse --abbrev-ref '@{u}' >/dev/null 2>&1; then
-        git pull --rebase --autostash --quiet || true
-    fi
 )
-
-log "  fanning hub content -> tool dir"
-hub_fan_out "$HIVE_MIND_HUB_DIR" "$ADAPTER_DIR"
 
 # Record this adapter in the attached-adapters list.
 if ! grep -Fxq "$ADAPTER" "$ATTACHED_FILE"; then

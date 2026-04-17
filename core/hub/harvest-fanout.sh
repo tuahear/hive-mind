@@ -170,15 +170,18 @@ _hub_jsonpath_to_jq() {
 # survive in the hub until the commit phase's marker-extract reads it.
 _hub_sync_file() {
   local src="$1" dst="$2"
-  if [ -f "$src" ]; then
-    if [ -f "$dst" ] \
-       && grep -q '<!--[[:space:]]*commit:' "$dst" 2>/dev/null \
-       && ! grep -q '<!--[[:space:]]*commit:' "$src" 2>/dev/null; then
-      return 0
-    fi
-    mkdir -p "$(dirname "$dst")" 2>/dev/null
-    cp "$src" "$dst"
+  [ -f "$src" ] || return 0
+
+  # Marker preservation: don't overwrite a marker-containing dst with
+  # a marker-free src (prevents fan-out from erasing source markers).
+  if [ -f "$dst" ] \
+     && grep -q '<!--[[:space:]]*commit:' "$dst" 2>/dev/null \
+     && ! grep -q '<!--[[:space:]]*commit:' "$src" 2>/dev/null; then
+    return 0
   fi
+
+  mkdir -p "$(dirname "$dst")" 2>/dev/null
+  cp "$src" "$dst"
 }
 
 # Mirror a directory tree src → dst. When src_dir EXISTS, files present
