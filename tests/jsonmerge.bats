@@ -1,11 +1,11 @@
 #!/usr/bin/env bats
-# Tests for scripts/jsonmerge.sh — the git merge driver for settings.json.
+# Tests for core/jsonmerge.sh — the git merge driver for settings.json.
 #
 # Invoked by git as: jsonmerge.sh <ours> <base> <theirs>
 # Writes merged JSON to <ours>; exits non-zero on failure so git falls back
 # to its default merge driver.
 
-SCRIPT="$BATS_TEST_DIRNAME/../scripts/jsonmerge.sh"
+SCRIPT="$BATS_TEST_DIRNAME/../core/jsonmerge.sh"
 
 setup() {
   command -v jq >/dev/null || skip "jq not on PATH"

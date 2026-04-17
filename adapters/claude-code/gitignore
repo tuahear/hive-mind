@@ -5,6 +5,7 @@
 
 !/.gitignore
 !/.gitattributes
+!/.hive-mind-format
 !/settings.json
 
 # Global user-level Claude instructions (created on demand).

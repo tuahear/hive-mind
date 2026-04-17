@@ -1,12 +1,13 @@
 #!/usr/bin/env bats
-# Tests for scripts/mirror-projects.sh.
+# Tests for core/mirror-projects.sh.
 #
-# The script reads ~/.claude (via `cd ~/.claude`), so each test sandboxes
-# HOME into a temp dir and lays out the projects/ tree before invoking.
-# Identity is established per-variant via .hive-mind sidecars (or by
-# deriving from a local jsonl + git remote, exercised separately).
+# The script reads $ADAPTER_DIR (defaults to ~/.claude) via `cd "$ADAPTER_DIR"`,
+# so each test sandboxes HOME into a temp dir and lays out the projects/
+# tree before invoking. Identity is established per-variant via .hive-mind
+# sidecars at the variant root (or by deriving from a local jsonl + git
+# remote, exercised separately).
 
-SCRIPT="$BATS_TEST_DIRNAME/../scripts/mirror-projects.sh"
+SCRIPT="$BATS_TEST_DIRNAME/../core/mirror-projects.sh"
 MARKER=".hive-mind"
 
 setup() {
@@ -30,7 +31,7 @@ mkvariant() {
 mark() {
   local variant="$1" id="$2"
   mkdir -p "$HOME/.claude/projects/$variant/memory"
-  printf 'project-id=%s\n' "$id" > "$HOME/.claude/projects/$variant/memory/$MARKER"
+  printf 'project-id=%s\n' "$id" > "$HOME/.claude/projects/$variant/$MARKER"
 }
 
 run_mirror() {
@@ -188,8 +189,8 @@ run_mirror() {
 
   run run_mirror
   [ "$status" -eq 0 ]
-  [ -f "$variant/memory/$MARKER" ]
-  grep -Fq "project-id=github.com/owner/myrepo" "$variant/memory/$MARKER"
+  [ -f "$variant/$MARKER" ]
+  grep -Fq "project-id=github.com/owner/myrepo" "$variant/$MARKER"
 }
 
 @test "content-less variant is left alone — no sidecar is bootstrapped into an empty project dir" {
@@ -209,7 +210,7 @@ run_mirror() {
 
   run run_mirror
   [ "$status" -eq 0 ]
-  [ ! -f "$variant/memory/$MARKER" ]
+  [ ! -f "$variant/$MARKER" ]
   [ ! -d "$variant/memory" ]
 }
 
@@ -229,7 +230,7 @@ run_mirror() {
   # alice's variant (pulled from remote) — has content + sidecar.
   alice="$HOME/.claude/projects/-Users-alice-Repo-adtof"
   mkdir -p "$alice/memory"
-  printf 'project-id=github.com/me/adtof\n' > "$alice/memory/$MARKER"
+  printf 'project-id=github.com/me/adtof\n' > "$alice/$MARKER"
   printf 'alice memory line\n' > "$alice/memory/notes.md"
   printf '# adtof alice\n' > "$alice/MEMORY.md"
 
@@ -242,8 +243,8 @@ run_mirror() {
   [ "$status" -eq 0 ]
 
   # bob's sidecar was bootstrapped because the derived id matched alice's.
-  [ -f "$bob/memory/$MARKER" ]
-  grep -Fq "project-id=github.com/me/adtof" "$bob/memory/$MARKER"
+  [ -f "$bob/$MARKER" ]
+  grep -Fq "project-id=github.com/me/adtof" "$bob/$MARKER"
   # alice's content mirrored into bob's variant.
   [ -f "$bob/memory/notes.md" ]
   grep -Fq "alice memory line" "$bob/memory/notes.md"
@@ -264,8 +265,8 @@ run_mirror() {
 
   run run_mirror
   [ "$status" -eq 0 ]
-  [ -f "$variant/memory/$MARKER" ]
-  grep -Fq "project-id=github.com/me/live-repo" "$variant/memory/$MARKER"
+  [ -f "$variant/$MARKER" ]
+  grep -Fq "project-id=github.com/me/live-repo" "$variant/$MARKER"
 }
 
 @test "user-supplied identity (no git remote) is honored — manual override path" {
@@ -284,7 +285,7 @@ run_mirror() {
   [ -f "$HOME/.claude/projects/C--Users-bob-Repo-no-remote-2/memory/note.md" ]
   # Sidecars unchanged.
   grep -Fq "project-id=user-id/local-project" \
-    "$HOME/.claude/projects/-Users-alice-Repo-no-remote-1/memory/$MARKER"
+    "$HOME/.claude/projects/-Users-alice-Repo-no-remote-1/$MARKER"
 }
 
 @test "discover_id: SSH and HTTPS forms of the same remote normalize to the same id and group" {
@@ -438,8 +439,8 @@ run_mirror() {
 
   run run_mirror
   [ "$status" -eq 0 ]
-  [ -f "$variant/memory/$MARKER" ]
-  grep -Fq "project-id=github.com/me/live-repo" "$variant/memory/$MARKER"
+  [ -f "$variant/$MARKER" ]
+  grep -Fq "project-id=github.com/me/live-repo" "$variant/$MARKER"
 }
 
 @test "n=3 variants, only one edits: edit replaces baseline on the other two (no union)" {
@@ -521,11 +522,11 @@ run_mirror() {
   mkvariant "C--Users-bob-Repo-foo"
   # Same project-id (so they group), but extra per-variant metadata
   # that would be visibly different if the file got cross-mirrored.
-  cat > "$HOME/.claude/projects/-Users-alice-Repo-foo/memory/$MARKER" <<EOF
+  cat > "$HOME/.claude/projects/-Users-alice-Repo-foo/$MARKER" <<EOF
 project-id=github.com/me/foo
 machine=mac
 EOF
-  cat > "$HOME/.claude/projects/C--Users-bob-Repo-foo/memory/$MARKER" <<EOF
+  cat > "$HOME/.claude/projects/C--Users-bob-Repo-foo/$MARKER" <<EOF
 project-id=github.com/me/foo
 machine=windows
 EOF
@@ -536,6 +537,76 @@ EOF
   [ "$status" -eq 0 ]
 
   # Each side keeps its own per-variant metadata (no cross-overwrite).
-  grep -Fq "machine=mac"     "$HOME/.claude/projects/-Users-alice-Repo-foo/memory/$MARKER"
-  grep -Fq "machine=windows" "$HOME/.claude/projects/C--Users-bob-Repo-foo/memory/$MARKER"
+  grep -Fq "machine=mac"     "$HOME/.claude/projects/-Users-alice-Repo-foo/$MARKER"
+  grep -Fq "machine=windows" "$HOME/.claude/projects/C--Users-bob-Repo-foo/$MARKER"
+}
+
+@test "commit markers are stripped when copying to sibling variants" {
+  # An agent's Edit tool embeds <!-- commit: ... --> markers in memory
+  # files. mirror-projects must strip them before copying to siblings —
+  # otherwise the marker leaks to every sibling variant and gets
+  # re-committed as a stale subject on the next sync cycle.
+  proj_dir="$HOME/myrepo"
+  git -c init.defaultBranch=main init -q "$proj_dir"
+  git -C "$proj_dir" remote add origin git@github.com:Owner/MyRepo.git
+
+  alice="$HOME/.claude/projects/-Users-alice-Repo-myrepo"
+  bob="$HOME/.claude/projects/C--Users-bob-Repo-myrepo"
+  mkdir -p "$alice/memory" "$bob/memory"
+  printf 'project-id=github.com/owner/myrepo\n' > "$alice/$MARKER"
+  printf 'project-id=github.com/owner/myrepo\n' > "$bob/$MARKER"
+
+  # Alice edits with an embedded commit marker (normal agent behavior).
+  printf '# notes\nsome content\n<!-- commit: add project notes -->\n' \
+    > "$alice/memory/notes.md"
+  # Bob has older content, no marker.
+  printf '# notes\nsome content\n' > "$bob/memory/notes.md"
+
+  run run_mirror
+  [ "$status" -eq 0 ]
+
+  # Alice's file keeps the marker (mirror-projects doesn't strip the source).
+  grep -Fq '<!-- commit:' "$alice/memory/notes.md"
+  # Bob's copy must NOT have the marker — mirror-projects must strip it
+  # before copying to the sibling.
+  run grep -F '<!-- commit:' "$bob/memory/notes.md"
+  [ "$status" -ne 0 ]
+  # But the actual content survived.
+  grep -Fq 'some content' "$bob/memory/notes.md"
+}
+
+@test "source variant keeps marker even when its content diverges from the union-merged result" {
+  # Regression: when multiple variants share a project-id and their
+  # content has diverged (accumulated union-merge junk from earlier
+  # cycles), the union-merged $merged differs from the source variant's
+  # $dst. The old code used `cmp -s "$dst" "$merged"` to decide whether
+  # to use the stripped copy — divergent content meant the source was
+  # treated as a sibling and got stripped. The fix checks whether $dst
+  # itself has a marker instead of comparing against $merged.
+  proj_dir="$HOME/myrepo"
+  git -c init.defaultBranch=main init -q "$proj_dir"
+  git -C "$proj_dir" remote add origin git@github.com:Owner/MyRepo.git
+
+  alice="$HOME/.claude/projects/-Users-alice-Repo-myrepo"
+  bob="$HOME/.claude/projects/C--Users-bob-Repo-myrepo"
+  mkdir -p "$alice/memory" "$bob/memory"
+  printf 'project-id=github.com/owner/myrepo\n' > "$alice/$MARKER"
+  printf 'project-id=github.com/owner/myrepo\n' > "$bob/$MARKER"
+
+  # Source has SHORT content with a marker.
+  printf '# notes\nnew edit\n<!-- commit: source marker -->\n' \
+    > "$alice/memory/notes.md"
+  # Sibling has DIVERGENT content (longer, accumulated from earlier
+  # union-merges). No marker.
+  printf '# notes\nold content\nextra line from earlier merge\nmore junk\n' \
+    > "$bob/memory/notes.md"
+
+  run run_mirror
+  [ "$status" -eq 0 ]
+
+  # Source MUST keep its marker despite content divergence.
+  grep -Fq '<!-- commit: source marker -->' "$alice/memory/notes.md"
+  # Sibling must NOT have the marker.
+  run grep -F '<!-- commit:' "$bob/memory/notes.md"
+  [ "$status" -ne 0 ]
 }

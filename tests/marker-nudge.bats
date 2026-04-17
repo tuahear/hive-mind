@@ -1,10 +1,12 @@
 #!/usr/bin/env bats
-# Tests for scripts/marker-nudge.sh — the PostToolUse hook that nudges the
+# Tests for core/marker-nudge.sh — the PostToolUse hook that nudges the
 # agent to recall the hive-mind skill after editing a hive-mind-synced
 # file. Reads hook JSON from stdin, emits JSON to stdout when the edit
-# targets $HOME/.claude/ but NOT $HOME/.claude/hive-mind/.
+# targets $HOME/.claude/ but NOT $HOME/.claude/hive-mind/ (pre-0.3
+# legacy source install location — kept as a defensive exclusion so
+# leftover-legacy edits don't nudge after a hub-topology upgrade).
 
-SCRIPT="$BATS_TEST_DIRNAME/../scripts/marker-nudge.sh"
+SCRIPT="$BATS_TEST_DIRNAME/../core/marker-nudge.sh"
 
 setup() {
   command -v jq >/dev/null || skip "jq not on PATH"
@@ -45,8 +47,13 @@ run_nudge() {
   [ -n "$output" ]
 }
 
-@test "edit under ~/.claude/hive-mind/ is excluded — silent, exit 0" {
-  payload="$(jq -cn --arg p "$HOME/.claude/hive-mind/scripts/sync.sh" '{tool_input:{file_path:$p}}')"
+@test "edit under legacy ~/.claude/hive-mind/ source install is excluded — silent, exit 0" {
+  # Pre-0.3 installs kept the hive-mind source under $ADAPTER_DIR/hive-mind/.
+  # Hub-topology setup.sh doesn't delete that dir on upgrade, so a user
+  # opening a Claude session in a leftover may still edit files under
+  # it. Nudging on hive-mind's own install files is noise — pin the
+  # exclusion so we don't regress the UX for lingering legacy trees.
+  payload="$(jq -cn --arg p "$HOME/.claude/hive-mind/VERSION" '{tool_input:{file_path:$p}}')"
   run bash -c "printf '%s' '$payload' | bash '$SCRIPT'"
   [ "$status" -eq 0 ]
   [ -z "$output" ]

@@ -53,10 +53,11 @@ Auto-sync covers normal use. For the odd moment you want explicit action, add th
 
 ```bash
 # Pull latest memory (read-only, use mid-session to catch up)
-alias mind='git -C ~/.claude pull --rebase --autostash'
+alias mind='git -C ~/.hive-mind pull --rebase --autostash'
 
-# Full bidirectional sync — pull then stage/commit/push
-alias msync='~/.claude/hive-mind/scripts/sync.sh'
+# Full bidirectional sync — pull then stage/commit/push, also fans out
+# back into every attached adapter's tool dir.
+alias msync='~/.hive-mind/bin/sync'
 ```
 
 ## Temporarily disable

@@ -2,58 +2,76 @@
 
 ## Hooks registered in `settings.json`
 
-| Event | Script | Behavior |
+Under the v0.3.0 hub topology every attached AI tool registers the same single entry point in its native hook config. For Claude Code that's `~/.claude/settings.json`:
+
+| Event | Command | Behavior |
 |---|---|---|
-| `SessionStart` | `scripts/check-dupes.sh` | Hook wrapper runs `git pull --rebase --autostash`, then invokes `scripts/check-dupes.sh` to scan memory files for union-merge duplicates and nudge the model to clean them up |
-| `Stop` (end of each turn) | `scripts/sync.sh` | Early-exit in ~20 ms if nothing changed; otherwise pull-rebase, commit, push |
+| `SessionStart` | `"$HOME/.hive-mind/bin/sync"` then `"$HOME/.hive-mind/hive-mind/core/check-dupes.sh"` | Pulls fresh memory from the hub remote (so a new session on a second machine sees cross-machine edits immediately), then scans for union-merge duplicates and nudges the model to clean them up |
+| `Stop` (end of each turn) | `"$HOME/.hive-mind/bin/sync"` | Hub sync entry point. Harvests the tool dir → hub, pull-rebase-pushes the shared memory repo, fans the merged state back out to every attached tool |
+| `PostToolUse` on `Edit|Write|NotebookEdit` | `"$HOME/.hive-mind/hive-mind/core/marker-nudge.sh"` | Reminds the model to drop a `<!-- commit: ... -->` marker when it edits memory so the next sync gets a meaningful commit subject |
+
+Other adapters (Codex, Qwen, Kimi) will wire the same three events to the same three paths in their native hook config formats — see [`docs/adapters.md`](./adapters.md).
 
 ## Commit marker convention
 
-The bundled `hive-mind` skill instructs the agent to embed an HTML comment like `<!-- commit: <one-line summary> -->` inside any memory/skill edit. `sync.sh` extracts non-fenced markers, joins them with ` + ` across files, strips them from disk (so they never enter history), then commits with that message. Markers inside ` ``` ` code fences are preserved — lets the skill's own docs show example markers without triggering extraction.
+The bundled `hive-mind` skill instructs the agent to embed an HTML comment like `<!-- commit: <one-line summary> -->` inside any memory/skill edit. The hub sync extracts non-fenced markers, joins them with ` + ` across files, strips them from disk (so they never enter history), then commits with that message. Markers inside ` ``` ` code fences are preserved — lets the skill's own docs show example markers without triggering extraction.
 
 Fallback (no markers found): `update <basename>` or `update <f1>, <f2>, <f3>, +N more` so even uninstrumented edits get a recognizable commit message.
 
-## What gets synced vs ignored
+## Hub schema
 
-The memory git repo's `.gitignore` is whitelist-only:
+The shared memory git repo's `.gitignore` (written from `core/hub/gitignore`) whitelists only:
 
-- `!/CLAUDE.md`
-- `!/settings.json` (via a hook snippet merge, not wholesale replacement)
-- `!/projects/*/MEMORY.md` — per-project index
-- `!/projects/*/memory/` — per-project memory entries
-- `!/skills/**` — skill definitions (including any scripts or resources)
+- `!/content.md` — canonical global content (maps to CLAUDE.md, AGENTS.md, etc.)
+- `!/projects/<project-id>/content.md` + `!/projects/<project-id>/**` — canonical per-project content (subdirs preserved via project rules)
+- `!/skills/**` — provider-agnostic skill definitions
+- `!/config/hooks/<event>/<id>.json` — tool-agnostic hook entries
+- `!/config/permissions/{allow,deny,ask}.txt` — permission rule lists
+- `!/config/env.sh` — reserved for v0.3.1+ (cross-provider env vars)
+- `!/.hive-mind-format` — format-version gate file
 
-Everything else under `~/.claude/` stays local by default.
+Machine-local state stays out: `hive-mind/` (source clone), `bin/` (symlinked entry), `.install-state/attached-adapters`, `.hive-mind-state/` (lock + last-push).
 
 ## Conflict resolution
 
-Text-content conflicts in `CLAUDE.md` or `projects/**/*.md` auto-merge with git's `union` driver (concatenates both sides' hunks). Duplicates may result; `check-dupes.sh` detects union-merged regions and asks the next session to dedupe.
+Text-content conflicts on `content.md` and `projects/**/*.md` auto-merge with git's built-in `union` driver (concatenates both sides' hunks) — configured in `core/hub/gitattributes`. Duplicates may result; `core/check-dupes.sh` detects union-merged regions from the SessionStart hook and asks the next session to dedupe.
 
-`settings.json` merges are trickier because JSON breaks under union semantics. We register a custom `jsonmerge` driver (in `scripts/jsonmerge.sh`) that deep-merges both versions of `settings.json` at the key level and unions the `permissions.allow`, `permissions.deny`, `permissions.ask`, and `permissions.additionalDirectories` arrays.
+Tool-side JSON config conflicts are resolved before they hit the hub: harvest extracts the relevant subkey into the canonical hub shape (text lines for permission arrays, per-event/per-entry files for hooks), the git merge happens on those line-oriented forms, then fan-out rebuilds the JSON. The `jsonmerge`/`tomlmerge` drivers in `core/` remain available for adapters that want to carry a full JSON/TOML config through the hub unchanged.
 
 ## Repo layout
 
 ```
 hive-mind/
-├── setup.sh                      ← installer (run once per machine)
+├── setup.sh                       ← installer: set up hub + attach an adapter
+├── VERSION                        ← installed hive-mind version
+├── core/
+│   ├── adapter-loader.sh          ← sources adapter.sh, validates contract surface
+│   ├── check-dupes.sh             ← SessionStart helper (duplicate-line scanner)
+│   ├── marker-nudge.sh            ← PostToolUse helper (commit-marker prompt)
+│   ├── marker-extract.sh          ← fence-aware commit-marker extractor
+│   ├── mirror-projects.sh         ← bootstraps project-id sidecars pre-sync
+│   ├── jsonmerge.sh               ← custom git merge driver for JSON configs
+│   ├── tomlmerge.sh               ← custom git merge driver for TOML configs
+│   ├── log.sh                     ← shared logging helpers
+│   └── hub/
+│       ├── sync.sh                ← THE hub sync entry point (installed to bin/sync)
+│       ├── harvest-fanout.sh      ← bidirectional tool ↔ hub mapper
+│       ├── gitignore              ← hub-level whitelist
+│       └── gitattributes          ← hub-level merge-driver bindings
+├── adapters/
+│   └── claude-code/
+│       ├── adapter.sh             ← contract surface for Claude Code
+│       ├── settings.json          ← hook template (installed into ~/.claude/)
+│       ├── gitignore              ← reserved (per-adapter tool-dir ignores)
+│       ├── gitattributes          ← reserved (per-adapter tool-dir attrs)
+│       ├── skills/                ← bundled skills (installed into hub)
+│       └── tests/                 ← Claude-specific adapter tests
 ├── scripts/
-│   ├── sync.sh                   ← Stop-hook: pull + commit + push
-│   ├── mirror-projects.sh        ← pre-commit: mirror project memory across path-variant dirs
-│   ├── check-dupes.sh            ← SessionStart-hook: union-merge duplicate detector
-│   ├── jsonmerge.sh              ← custom git merge driver for settings.json
-│   └── install-dev-hooks.sh      ← maintainer-only; pre-commit hook for this repo
-├── templates/
-│   ├── gitignore                 ← whitelist-only pattern dropped into memory git repo
-│   ├── gitattributes             ← union driver + jsonmerge driver bindings
-│   ├── settings.json             ← hook + permission snippet merged into user settings
-│   └── skills/
-│       └── hive-mind/            ← bundled skill that teaches the commit-marker convention
-├── LICENSE
-└── README.md
+│   └── install-dev-hooks.sh       ← maintainer-only; pre-commit for this repo
+├── tests/                         ← bats test suite (see ./test runner)
+└── docs/                          ← docs site
 ```
 
 ## Roadmap: AI-agnostic
 
-hive-mind currently plugs into Claude Code's hook + skill surfaces. The architecture underneath — a git-backed memory directory, event-driven sync, portable file conventions — is deliberately independent of which AI reads those files. As other assistants (Cursor, Aider, Windsurf, local agents, …) stabilise similar hook and skill mechanisms, hive-mind is built to grow with them: swap the CLI-specific adapter, keep the sync core.
-
-If you maintain an AI coding assistant that stores memory in a directory and runs per-session / per-turn hooks, a hive-mind adapter for your tool is likely a few hundred lines of shell at most. PRs and issues welcome.
+hive-mind v0.3.0 makes the architecture explicitly multi-provider. The hub's schema is lowercase and canonical; each adapter is a translator between that schema and its tool's native layout. Claude Code is the only shipped adapter today; Codex ([#11](https://github.com/tuahear/hive-mind/issues/11)), Qwen ([#19](https://github.com/tuahear/hive-mind/issues/19)), and Kimi ([#23](https://github.com/tuahear/hive-mind/issues/23)) are on the roadmap. See [docs/CONTRIBUTING-adapters.md](./CONTRIBUTING-adapters.md) for the contract.

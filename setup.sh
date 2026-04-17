@@ -1,99 +1,81 @@
 #!/bin/bash
-# hive-mind installer. Sets up git-backed auto-sync for an AI tool's memory
-# directory across machines.
+# hive-mind installer (v0.3.0+ hub topology).
 #
-# Currently supports Claude Code (~/.claude). Designed so that other tools
-# (Cursor, Windsurf, …) can be added later without rewriting callers.
+# Installs or upgrades the single per-machine hub at $HIVE_MIND_HUB_DIR
+# (default ~/.hive-mind), then attaches the adapter named by ADAPTER
+# (default claude-code) to it. Rerunning with a different ADAPTER
+# attaches a second tool to the same hub — one git repo, one remote,
+# cross-provider + cross-machine memory sharing.
 #
 # Usage:
 #   MEMORY_REPO=git@github.com:you/your-memory.git bash setup.sh
 #   bash setup.sh git@github.com:you/your-memory.git
-#   curl -fsSL https://raw.githubusercontent.com/tuahear/hive-mind/main/setup.sh | \
-#       MEMORY_REPO=git@github.com:you/your-memory.git bash
+#   ADAPTER=codex bash setup.sh          # attach a second adapter
 #
-# What it does (high-level):
+# What happens (high-level):
 #   1. Preflight: git / jq / curl / SSH auth to GitHub present
-#   2. Detect current state of the memory dir (fresh / already-synced / existing)
-#   3. Back up ~/.claude before any destructive operation
-#   4. Clone the hive-mind scripts into ~/.claude/hive-mind/ (gitignored by the
-#      memory repo)
-#   5. Lay down `.gitignore` + `.gitattributes` templates at the memory dir
-#      root BEFORE the first commit so merge drivers are active during merge
-#   6. Either clone MEMORY_REPO (fresh case) or init-in-place + merge with
-#      --allow-unrelated-histories (existing-local-memory case)
-#   7. Install hook config into settings.json (merges; doesn't replace)
-#   8. Run sync.sh once to verify
-#
-# Failure modes all surface errors and bail before wrecking anything. The
-# pre-step backup is always recoverable.
+#   2. Clone (or pull) the hive-mind source into
+#      $HIVE_MIND_HUB_DIR/hive-mind/
+#   3. Seed the hub:
+#      - .gitignore / .gitattributes from core/hub/ templates
+#      - bin/sync symlink -> hive-mind/core/hub/sync.sh
+#      - .hive-mind-format file
+#   4. Initialize or connect the hub's git repo to MEMORY_REPO
+#   5. Load the adapter, register merge drivers on the hub
+#   6. Attach adapter:
+#      - Back up tool dir on first attach
+#      - Harvest existing tool content -> hub (avoid losing user memory)
+#      - Push, pull-rebase, fan out -> tool dir
+#      - Install the tool's hooks, pointing at $HIVE_MIND_HUB_DIR/bin/sync
+#      - Record adapter name in .install-state/attached-adapters
+#   7. Run the hub's bin/sync once to verify
 
 set -euo pipefail
 
-HIVE_MIND_REPO="git@github.com:tuahear/hive-mind.git"
-HIVE_MIND_RAW="https://raw.githubusercontent.com/tuahear/hive-mind/main"
+# Where setup.sh clones the hive-mind source from. Env-overridable
+# because hard-coding an SSH URL forces GitHub SSH auth even for users
+# who only have HTTPS (corporate SSH restrictions, non-GitHub memory
+# remotes, HTTPS token auth) — set `HIVE_MIND_REPO=https://github.com/
+# tuahear/hive-mind.git` to skip the SSH preflight below.
+: "${HIVE_MIND_REPO:=git@github.com:tuahear/hive-mind.git}"
+: "${HIVE_MIND_HUB_DIR:=$HOME/.hive-mind}"
+HIVE_MIND_SRC="$HIVE_MIND_HUB_DIR/hive-mind"
 
-MEMORY_DIR="$HOME/.claude"
-HIVE_MIND_DIR="$MEMORY_DIR/hive-mind"
-BACKUP_DIR="$HOME/.claude.backup-$(date +%Y%m%d-%H%M%S)"
-
-# Allow caller to pass repo via $1 as an alternative to MEMORY_REPO env var.
+ADAPTER="${ADAPTER:-claude-code}"
 MEMORY_REPO="${MEMORY_REPO:-${1:-}}"
 
 die() { echo "error: $*" >&2; exit 1; }
 log() { echo "--> $*"; }
+sanitize_remote_url() {
+    printf '%s' "$1" | sed 's|://[^@/]*@|://***@|'
+}
 confirm() {
     local prompt="${1:-continue?}"
     read -r -p "$prompt [y/N] " ans
     [[ "$ans" =~ ^[yY]$ ]] || { echo "aborted."; exit 1; }
 }
 
-# Install / refresh hive-mind skills under ~/.claude/skills/.
-# Bundled skills use uniquely-namespaced folder names (e.g. `hive-mind`, not
-# `memory-commit`) so collision with a user's own skills is unlikely. Users
-# shouldn't edit hive-mind-installed skills in place; edit the upstream
-# templates/skills/ copy and push to the hive-mind repo instead.
-#
-# Migration: if an older install left `skills/memory-commit/` behind, remove
-# it (renamed to `skills/hive-mind/` on 2026-04-15). Safe because
-# `memory-commit` was only ever shipped by hive-mind.
-manage_claude_skills() {
-    local src="$HIVE_MIND_DIR/templates/skills"
-    local dst="$MEMORY_DIR/skills"
-    [ -d "$src" ] || return 0
-    mkdir -p "$dst"
-    if [ -d "$dst/memory-commit" ]; then
-        log "migrating old memory-commit skill → hive-mind (removing $dst/memory-commit)"
-        rm -rf "$dst/memory-commit"
-    fi
-    local count=0
-    for skill_dir in "$src"/*/; do
-        [ -d "$skill_dir" ] || continue
-        local name
-        name="$(basename "$skill_dir")"
-        rm -rf "$dst/$name"
-        cp -r "$skill_dir" "$dst/$name"
-        count=$((count + 1))
-    done
-    [ $count -gt 0 ] && log "installed/refreshed $count skill(s) under $dst"
-}
-
 # ---------- preflight ----------
 log "preflight: checking required tools"
 install_hint() {
     case "$1" in
-        jq)
-            echo "  install: brew install jq  |  winget install jqlang.jq  |  apt install jq" ;;
-        git)
-            echo "  install: https://git-scm.com/downloads (on Windows pick 'Git for Windows', includes Git Bash)" ;;
-        curl)
-            echo "  install: usually preinstalled; apt install curl / brew install curl / winget install curl" ;;
+        jq) echo "  install: brew install jq  |  winget install jqlang.jq  |  apt install jq" ;;
+        git) echo "  install: https://git-scm.com/downloads" ;;
+        curl) echo "  install: apt install curl / brew install curl / winget install curl" ;;
     esac
 }
-# Try to auto-install jq using whatever package manager this OS has. Returns
-# 0 if the tool is on PATH after the attempt, 1 otherwise. git/curl are not
-# auto-installed (they're typically prerequisites of the install path itself).
+# Auto-install jq is opt-in via HIVE_MIND_AUTO_INSTALL_JQ=1. Running
+# `sudo apt-get install` (and the Linux / MSYS equivalents) implicitly
+# during install is surprising in CI and locked-down environments, and
+# can hang on interactive password prompts. Default behavior: fail with
+# the install_hint output so the user picks their own package manager.
+# Brew / winget / scoop don't need sudo, but for one predictable code
+# path we gate every branch behind the same env flag.
 auto_install_jq() {
-    log "jq not found; attempting auto-install"
+    if [ "${HIVE_MIND_AUTO_INSTALL_JQ:-0}" != "1" ]; then
+        return 1
+    fi
+    log "jq not found; HIVE_MIND_AUTO_INSTALL_JQ=1 set — attempting auto-install"
     case "$(uname -s)" in
         Darwin)
             command -v brew >/dev/null 2>&1 && brew install jq
@@ -117,30 +99,73 @@ auto_install_jq() {
 }
 for tool in git curl jq; do
     if ! command -v "$tool" >/dev/null 2>&1; then
-        if [ "$tool" = jq ] && auto_install_jq; then
-            log "jq installed"
-            continue
-        fi
+        if [ "$tool" = jq ] && auto_install_jq; then log "jq installed"; continue; fi
         echo "error: missing required tool: $tool" >&2
         install_hint "$tool" >&2
+        [ "$tool" = jq ] && echo "  opt in to auto-install: HIVE_MIND_AUTO_INSTALL_JQ=1 bash setup.sh" >&2
         exit 1
     fi
 done
 
-log "preflight: checking SSH auth to github.com"
-set +o pipefail
-ssh_out="$(ssh -T -o BatchMode=yes -o StrictHostKeyChecking=accept-new \
-    git@github.com 2>&1 || true)"
-set -o pipefail
-grep -q "successfully authenticated" <<<"$ssh_out" \
-    || die "github SSH auth failed. Add an SSH key: https://github.com/settings/keys"
+# SSH preflight — only run when we actually need to clone via SSH.
+# HIVE_MIND_REPO is the repo we clone for the installer itself; if the
+# user has overridden it to an https:// URL they don't need a GitHub
+# SSH key. MEMORY_REPO is the user's memory remote — if it's https://
+# too, no SSH anywhere is required. Checking the actual host matters
+# for non-GitHub remotes: a user with `git@gitlab.com:...` shouldn't
+# be gated on GitHub SSH access.
+_is_ssh_url() {
+    case "$1" in
+        git@*|ssh://*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+_extract_ssh_host() {
+    # Accept `git@host:path` and `ssh://[user@]host[:port]/path` forms.
+    local url="$1" host=""
+    case "$url" in
+        git@*)   host="${url#git@}"; host="${host%%:*}" ;;
+        ssh://*) host="${url#ssh://}"; host="${host#*@}"; host="${host%%/*}"; host="${host%%:*}" ;;
+    esac
+    printf '%s' "$host"
+}
+_ssh_preflight() {
+    local host="$1"
+    [ -n "$host" ] || return 0
+    log "preflight: checking SSH auth to $host"
+    set +o pipefail
+    local ssh_out
+    ssh_out="$(ssh -T -o BatchMode=yes -o StrictHostKeyChecking=accept-new \
+        "git@$host" 2>&1 || true)"
+    set -o pipefail
+    # GitHub says "successfully authenticated". Other hosts vary
+    # (GitLab: "Welcome to GitLab"; self-hosted: anything). Treat any
+    # exit-code path that reached a banner as ok — only abort when we
+    # clearly couldn't authenticate (permission denied) so this works
+    # on non-GitHub remotes without adding per-host rules.
+    case "$ssh_out" in
+        *"Permission denied"*|*"Could not resolve hostname"*|*"Host key verification failed"*)
+            die "SSH auth to $host failed. Add an SSH key for $host or set HIVE_MIND_REPO / MEMORY_REPO to an https:// URL. First line of ssh output: $(printf '%s' "$ssh_out" | head -1)"
+            ;;
+    esac
+}
+# Dedup hosts so a single GitHub-for-both setup doesn't probe twice.
+_seen_hosts=""
+for _ssh_repo in "$HIVE_MIND_REPO" "${MEMORY_REPO:-}"; do
+    _is_ssh_url "$_ssh_repo" || continue
+    _host="$(_extract_ssh_host "$_ssh_repo")"
+    [ -z "$_host" ] && continue
+    case "$_seen_hosts" in
+        *",$_host,"*) continue ;;
+    esac
+    _seen_hosts="$_seen_hosts,$_host,"
+    _ssh_preflight "$_host"
+done
+unset _seen_hosts _ssh_repo _host
 
 # ---------- memory repo URL ----------
-if [ -z "$MEMORY_REPO" ]; then
-    # Fall back to whatever the existing memory repo is pointing at, if any.
-    if [ -d "$MEMORY_DIR/.git" ]; then
-        MEMORY_REPO="$(git -C "$MEMORY_DIR" remote get-url origin 2>/dev/null || true)"
-    fi
+if [ -z "$MEMORY_REPO" ] && [ -d "$HIVE_MIND_HUB_DIR/.git" ]; then
+    MEMORY_REPO="$(git -C "$HIVE_MIND_HUB_DIR" remote get-url origin 2>/dev/null || true)"
 fi
 if [ -z "$MEMORY_REPO" ]; then
     echo
@@ -150,166 +175,259 @@ if [ -z "$MEMORY_REPO" ]; then
     read -r -p "MEMORY_REPO: " MEMORY_REPO
 fi
 [ -n "$MEMORY_REPO" ] || die "MEMORY_REPO is required"
-log "memory repo: $MEMORY_REPO"
+log "memory repo: $(sanitize_remote_url "$MEMORY_REPO")"
 
-# ---------- detect state ----------
-if [ ! -d "$MEMORY_DIR" ]; then
-    STATE=fresh
-elif [ -d "$MEMORY_DIR/.git" ]; then
-    if git -C "$MEMORY_DIR" remote get-url origin >/dev/null 2>&1; then
-        STATE=already_synced
-    else
-        STATE=existing
-    fi
-elif [ -z "$(ls -A "$MEMORY_DIR" 2>/dev/null)" ]; then
-    STATE=fresh
+# ---------- install/refresh hive-mind source ----------
+log "[1/6] installing hive-mind source at $HIVE_MIND_SRC"
+mkdir -p "$HIVE_MIND_HUB_DIR"
+# Capture the previously-installed hive-mind version BEFORE `git pull`
+# rewrites $HIVE_MIND_SRC/VERSION to the latest. adapter_migrate
+# expects the pre-upgrade version string so adapter authors can gate
+# migrations on specific transitions (v0.2.x → v0.3.x hook-path
+# rewrite, for example). A missing VERSION file means a pre-0.2
+# install without version tracking — use the documented "0.1.0"
+# sentinel that adapter-loader.sh's migrate contract recognizes.
+PREV_HIVE_MIND_VERSION="0.1.0"
+if [ -f "$HIVE_MIND_SRC/VERSION" ]; then
+    PREV_HIVE_MIND_VERSION="$(tr -d '[:space:]' < "$HIVE_MIND_SRC/VERSION" 2>/dev/null || echo "0.1.0")"
+fi
+if [ -d "$HIVE_MIND_SRC/.git" ]; then
+    log "  source already present; pulling latest (previous version: $PREV_HIVE_MIND_VERSION)"
+    git -C "$HIVE_MIND_SRC" pull --rebase --autostash --quiet || true
 else
-    STATE=existing
-fi
-log "detected state: $STATE"
-
-case "$STATE" in
-    already_synced)
-        log "~/.claude is already a git repo with remote $(git -C "$MEMORY_DIR" remote get-url origin)"
-        # Ensure sync/ exists even if the memory repo was set up pre-split.
-        if [ ! -d "$HIVE_MIND_DIR/.git" ]; then
-            log "installing sync/ scripts (not present yet)"
-            rm -rf "$HIVE_MIND_DIR"
-            git clone --quiet "$HIVE_MIND_REPO" "$HIVE_MIND_DIR"
-            log "done — sync scripts now at $HIVE_MIND_DIR"
-        else
-            log "sync/ already present; pulling latest"
-            git -C "$HIVE_MIND_DIR" pull --rebase --autostash --quiet
-        fi
-        # register_jsonmerge_driver needs HIVE_MIND_DIR populated; defined below.
-        git -C "$MEMORY_DIR" config merge.jsonmerge.driver "$HIVE_MIND_DIR/scripts/jsonmerge.sh %A %O %B"
-        git -C "$MEMORY_DIR" config merge.jsonmerge.name "Deep-merge JSON with array union (hive-mind)"
-        manage_claude_skills
-        exit 0
-        ;;
-esac
-
-# ---------- back up ----------
-if [ -d "$MEMORY_DIR" ]; then
-    log "backing up $MEMORY_DIR to $BACKUP_DIR"
-    cp -a "$MEMORY_DIR" "$BACKUP_DIR"
-    log "backup done (restore with:  rm -rf $MEMORY_DIR && mv $BACKUP_DIR $MEMORY_DIR )"
+    rm -rf "$HIVE_MIND_SRC"
+    git clone --quiet "$HIVE_MIND_REPO" "$HIVE_MIND_SRC"
 fi
 
-mkdir -p "$MEMORY_DIR"
+# ---------- load the adapter ----------
+ADAPTER_ROOT="$HIVE_MIND_SRC/adapters/$ADAPTER"
+[ -d "$ADAPTER_ROOT" ] || die "unknown adapter '$ADAPTER' (not found at $ADAPTER_ROOT)"
+export ADAPTER_ROOT
 
-# ---------- install sync/ (scripts) ----------
-log "[1/5] cloning hive-mind scripts into $HIVE_MIND_DIR"
-rm -rf "$HIVE_MIND_DIR"
-git clone --quiet "$HIVE_MIND_REPO" "$HIVE_MIND_DIR"
+# shellcheck source=/dev/null
+source "$HIVE_MIND_SRC/core/adapter-loader.sh"
+if ! load_adapter "$ADAPTER"; then
+    die "failed to load adapter '$ADAPTER'"
+fi
 
-# ---------- register the jsonmerge driver for settings.json conflicts ----------
-# Custom merge drivers must be registered in the LOCAL .git/config (they run
-# arbitrary commands at merge time; git intentionally doesn't let the driver
-# name come from a tracked file for security). We register it up-front so the
-# driver is active BEFORE the unrelated-histories merge below.
-register_jsonmerge_driver() {
+# ---------- merge driver registration (shared by hub init + upgrade) ----------
+register_merge_drivers() {
     local target_git="$1"
     [ -d "$target_git/.git" ] || git -C "$target_git" rev-parse --git-dir >/dev/null 2>&1 || return 0
-    git -C "$target_git" config merge.jsonmerge.driver "$HIVE_MIND_DIR/scripts/jsonmerge.sh %A %O %B"
-    git -C "$target_git" config merge.jsonmerge.name "Deep-merge JSON with array union (hive-mind)"
+
+    local drivers=""
+    if [ -n "${ADAPTER_SETTINGS_MERGE_BINDINGS:-}" ]; then
+        drivers="$(printf '%s\n' "$ADAPTER_SETTINGS_MERGE_BINDINGS" | awk 'NF>=2 {print $2}' | sort -u)"
+    fi
+
+    _driver_env_prefix() {
+        local want_drv="$1"
+        [ -n "${ADAPTER_MERGE_DRIVER_ENV:-}" ] || { printf ''; return 0; }
+        local line d rest
+        while IFS= read -r line; do
+            [ -z "$line" ] && continue
+            d="${line%%:*}"
+            rest="${line#*:}"
+            if [ "$d" = "$want_drv" ]; then
+                printf '%s ' "$rest"
+                return 0
+            fi
+        done <<< "$ADAPTER_MERGE_DRIVER_ENV"
+        return 0
+    }
+
+    while IFS= read -r drv; do
+        [ -z "$drv" ] && continue
+        local driver_script="$HIVE_MIND_SRC/core/${drv}.sh"
+        [ -f "$driver_script" ] || continue
+        local env_prefix
+        env_prefix="$(_driver_env_prefix "$drv")"
+        git -C "$target_git" config "merge.${drv}.driver" "${env_prefix}'${driver_script}' '%A' '%O' '%B'"
+        git -C "$target_git" config "merge.${drv}.name" "hive-mind ${drv} driver"
+    done <<< "$drivers"
 }
 
-# ---------- seed ignore + attrs ----------
-log "[2/5] seeding memory-repo .gitignore + .gitattributes from templates"
-cp "$HIVE_MIND_DIR/templates/gitignore"    "$MEMORY_DIR/.gitignore"
-cp "$HIVE_MIND_DIR/templates/gitattributes" "$MEMORY_DIR/.gitattributes"
+# ---------- seed hub tree ----------
+log "[2/6] seeding hub at $HIVE_MIND_HUB_DIR"
+mkdir -p "$HIVE_MIND_HUB_DIR/bin" \
+         "$HIVE_MIND_HUB_DIR/.install-state" \
+         "$HIVE_MIND_HUB_DIR/.hive-mind-state"
 
-# ---------- flow A: fresh clone ----------
-if [ "$STATE" = fresh ]; then
-    log "[3/5] fresh flow: cloning $MEMORY_REPO into memory dir"
-    # Clone into a tmp dir then move .git in, preserving the gitignore/attrs
-    # and sync/ we just set up.
+# bin/sync — wrapper that execs the real sync script. A symlink would
+# be simpler, but MSYS/Git Bash on Windows copies instead of symlinking
+# (requires admin or developer mode), so _resolve_self in sync.sh can't
+# follow the chain and CORE_DIR resolves to the wrong directory.
+cat > "$HIVE_MIND_HUB_DIR/bin/sync" <<'WRAPPER'
+#!/usr/bin/env bash
+exec "$(dirname "$0")/../hive-mind/core/hub/sync.sh" "$@"
+WRAPPER
+chmod +x "$HIVE_MIND_HUB_DIR/bin/sync"
+chmod +x "$HIVE_MIND_SRC/core/hub/sync.sh" 2>/dev/null || true
+
+# Seed BEFORE git init so merge drivers are active from commit 1.
+cp "$HIVE_MIND_SRC/core/hub/gitignore"     "$HIVE_MIND_HUB_DIR/.gitignore"
+cp "$HIVE_MIND_SRC/core/hub/gitattributes" "$HIVE_MIND_HUB_DIR/.gitattributes"
+
+if [ ! -f "$HIVE_MIND_HUB_DIR/.hive-mind-format" ]; then
+    printf 'format-version=1\n' > "$HIVE_MIND_HUB_DIR/.hive-mind-format"
+fi
+
+# ---------- init hub git repo ----------
+if [ ! -d "$HIVE_MIND_HUB_DIR/.git" ]; then
+    log "[3/6] cloning memory repo into hub"
     TMP="$(mktemp -d)"
     if git clone --quiet "$MEMORY_REPO" "$TMP/memory" 2>/dev/null; then
-        # Merge cloned files on top of our seeded dir.
-        mv "$TMP/memory/.git" "$MEMORY_DIR/.git"
+        mv "$TMP/memory/.git" "$HIVE_MIND_HUB_DIR/.git"
         shopt -s dotglob
         for f in "$TMP/memory"/*; do
-            [ -e "$f" ] && cp -a "$f" "$MEMORY_DIR/" 2>/dev/null || true
+            [ -e "$f" ] || continue
+            case "$(basename "$f")" in
+                .gitignore|.gitattributes) continue ;;
+            esac
+            cp -a "$f" "$HIVE_MIND_HUB_DIR/" 2>/dev/null || true
         done
         shopt -u dotglob
         rm -rf "$TMP"
-        log "cloned existing remote contents"
+        log "  pulled existing hub contents from remote"
     else
         rm -rf "$TMP"
-        log "remote is empty; initializing locally"
-        git -C "$MEMORY_DIR" init -b main -q
-        git -C "$MEMORY_DIR" remote add origin "$MEMORY_REPO"
+        log "  remote is empty; initializing hub locally"
+        git -C "$HIVE_MIND_HUB_DIR" init -b main -q
+        git -C "$HIVE_MIND_HUB_DIR" remote add origin "$MEMORY_REPO"
     fi
-    register_jsonmerge_driver "$MEMORY_DIR"
-fi
-
-# ---------- flow B: preserve local + merge ----------
-if [ "$STATE" = existing ]; then
-    log "[3/5] existing flow: init-in-place + merge with remote"
-    cd "$MEMORY_DIR"
-    git init -b main -q
-    git remote add origin "$MEMORY_REPO"
-    register_jsonmerge_driver "$MEMORY_DIR"
-    git add -A
-
-    if git diff --cached --name-only | grep -qE '^(shell-snapshots|sessions|session-env|file-history|telemetry|debug|ide|backups|plugins)/'; then
-        echo
-        echo "WARNING: machine-local noise got staged despite .gitignore:"
-        git diff --cached --name-only | grep -E '^(shell-snapshots|sessions|session-env|file-history|telemetry|debug|ide|backups|plugins)/' >&2
-        die "aborting to avoid polluting the repo. Inspect .gitignore and retry."
-    fi
-
-    git commit -q -m "local memory snapshot before hive-mind sync"
-
-    if git fetch origin main 2>/dev/null; then
-        if ! git merge origin/main --allow-unrelated-histories --no-edit; then
-            echo
-            echo "MERGE CONFLICTS:"
-            git diff --name-only --diff-filter=U >&2
-            echo
-            echo "Resolve manually in $MEMORY_DIR, then:"
-            echo "  git add <files> && git commit --no-edit && git push -u origin main"
-            echo "Backup at: $BACKUP_DIR"
-            exit 2
-        fi
-    else
-        log "remote is empty; nothing to merge"
-    fi
-fi
-
-# ---------- install skills ----------
-manage_claude_skills
-
-# ---------- install hook config ----------
-log "[4/5] merging hook + permission config into settings.json"
-if [ -f "$MEMORY_DIR/settings.json" ]; then
-    # Deep-merge template into existing settings.json. jq's `*` operator
-    # overwrites arrays by default, so we explicitly union permissions.allow
-    # (dedup via `unique`) to preserve user's existing allow rules while
-    # adding ours. Other keys deep-merge normally.
-    tmp="$(mktemp)"
-    jq -s '
-      .[0] as $user | .[1] as $new
-      | ($user * $new)
-      | .permissions.allow = (
-          (($user.permissions.allow // []) + ($new.permissions.allow // [])) | unique
-        )
-    ' "$MEMORY_DIR/settings.json" "$HIVE_MIND_DIR/templates/settings.json" > "$tmp"
-    mv "$tmp" "$MEMORY_DIR/settings.json"
 else
-    cp "$HIVE_MIND_DIR/templates/settings.json" "$MEMORY_DIR/settings.json"
+    log "[3/6] hub git repo already present; pulling latest"
+    if git -C "$HIVE_MIND_HUB_DIR" rev-parse --abbrev-ref '@{u}' >/dev/null 2>&1; then
+        git -C "$HIVE_MIND_HUB_DIR" pull --rebase --autostash --quiet || true
+    fi
 fi
 
-# ---------- push + verify ----------
-log "[5/5] running a sync cycle to verify and push"
-if [ -x "$HIVE_MIND_DIR/scripts/sync.sh" ]; then
-    "$HIVE_MIND_DIR/scripts/sync.sh"
-    if [ -s "$MEMORY_DIR/.sync-error.log" ]; then
+register_merge_drivers "$HIVE_MIND_HUB_DIR"
+
+# ---------- attach adapter ----------
+log "[4/6] attaching adapter '$ADAPTER' (ADAPTER_DIR=$ADAPTER_DIR)"
+
+# First-ever attach on this hub? Back up the tool dir if it has content.
+ATTACHED_FILE="$HIVE_MIND_HUB_DIR/.install-state/attached-adapters"
+touch "$ATTACHED_FILE"
+if ! grep -Fxq "$ADAPTER" "$ATTACHED_FILE" \
+   && [ -d "$ADAPTER_DIR" ] \
+   && [ -n "$(ls -A "$ADAPTER_DIR" 2>/dev/null)" ]; then
+    BACKUP_DIR="${ADAPTER_DIR}.backup-$(date +%Y%m%d-%H%M%S)"
+    log "  backing up $ADAPTER_DIR to $BACKUP_DIR"
+    cp -a "$ADAPTER_DIR" "$BACKUP_DIR"
+fi
+mkdir -p "$ADAPTER_DIR"
+
+# ---------- pull → fan-out → harvest → push ----------
+# On a second-machine install the hub remote already has content from
+# machine 1. We must pull that content FIRST, fan it out to the tool
+# dir, THEN harvest — otherwise the tool's stale/older files overwrite
+# the hub's canonical content and get pushed, destroying memory.
+#
+# On a first-machine install the remote is empty, so pull is a no-op,
+# fan-out is a no-op, and harvest captures the tool's existing content.
+# shellcheck source=/dev/null
+source "$HIVE_MIND_SRC/core/hub/harvest-fanout.sh"
+
+# Migrate BEFORE harvest so legacy hook commands in the tool's
+# settings.json get rewritten to hub-topology paths.
+declare -f adapter_migrate >/dev/null 2>&1 && adapter_migrate "$PREV_HIVE_MIND_VERSION"
+
+# Install hooks BEFORE harvest — an existing pre-hub install may have
+# hooks pointing at old paths; adapter_install_hooks merges the current
+# template on top, giving harvest the new commands to capture.
+adapter_install_hooks
+
+# Pull remote content FIRST — the hub may already have content from
+# another machine. This must happen before harvest so the tool's local
+# files don't blindly overwrite the hub's canonical content.
+(
+    cd "$HIVE_MIND_HUB_DIR"
+    if git rev-parse --abbrev-ref '@{u}' >/dev/null 2>&1; then
+        git pull --rebase --autostash --quiet || true
+    fi
+)
+
+# Bootstrap project-id sidecars BEFORE fan-out — fan-out walks the
+# tool's project variants and needs sidecars to map them to hub
+# project-ids. Without sidecars, fan-out skips all variants and the
+# tool keeps its stale pre-hive-mind content.
+if [ "${ADAPTER_MEMORY_MODEL:-}" = "flat" ] && [ -x "$HIVE_MIND_SRC/core/mirror-projects.sh" ]; then
+    log "  bootstrapping per-project sidecars"
+    ADAPTER_DIR="$ADAPTER_DIR" "$HIVE_MIND_SRC/core/mirror-projects.sh" || true
+fi
+
+# Fan-out remote content to the tool dir BEFORE harvest — populates
+# the tool with whatever the hub (from the remote) already has. On
+# a first install this is a no-op (empty hub).
+log "  fanning hub content -> tool dir"
+hub_fan_out "$HIVE_MIND_HUB_DIR" "$ADAPTER_DIR"
+
+# Harvest AFTER fan-out: now the tool dir has been populated with hub
+# content, so harvest only picks up genuinely new/changed tool-side
+# files (not stale pre-hive-mind content overwriting newer hub state).
+log "  harvesting existing tool content -> hub"
+hub_harvest "$ADAPTER_DIR" "$HIVE_MIND_HUB_DIR"
+
+# Commit and push whatever changed.
+(
+    cd "$HIVE_MIND_HUB_DIR"
+    git add -A >/dev/null 2>&1 || true
+    if ! git diff --cached --quiet; then
+        git commit -q -m "hub: attach $ADAPTER on $(hostname)"
+    fi
+    if git rev-parse --abbrev-ref '@{u}' >/dev/null 2>&1; then
+        git push -q 2>/dev/null || true
+    else
+        branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo main)"
+        git push -q -u origin "$branch" 2>/dev/null || true
+    fi
+)
+
+# Record this adapter in the attached-adapters list.
+if ! grep -Fxq "$ADAPTER" "$ATTACHED_FILE"; then
+    printf '%s\n' "$ADAPTER" >> "$ATTACHED_FILE"
+fi
+
+# ---------- install bundled skills ----------
+# Adapter ships a bundled hive-mind skill. Install into the hub's
+# skills/ (canonical), then fan-out relays it to the tool dir. Older
+# installs may have the legacy `skills/memory-commit/` name under the
+# tool dir; clean it up so the renamed skill doesn't collide.
+log "[5/6] installing bundled skills"
+manage_bundled_skills() {
+    local src="$HIVE_MIND_SRC/adapters/$ADAPTER/skills"
+    [ -d "$src" ] || return 0
+    local hub_skills="$HIVE_MIND_HUB_DIR/skills"
+    mkdir -p "$hub_skills"
+    if [ -d "$ADAPTER_DIR/skills/memory-commit" ]; then
+        rm -rf "$ADAPTER_DIR/skills/memory-commit"
+    fi
+    local count=0
+    for skill_dir in "$src"/*/; do
+        [ -d "$skill_dir" ] || continue
+        local name
+        name="$(basename "$skill_dir")"
+        rm -rf "$hub_skills/$name"
+        cp -r "$skill_dir" "$hub_skills/$name"
+        count=$((count + 1))
+    done
+    [ "$count" -gt 0 ] && log "  installed/refreshed $count skill(s) under $hub_skills"
+}
+manage_bundled_skills
+
+# ---------- verify ----------
+log "[6/6] running hub sync cycle to verify"
+if [ -x "$HIVE_MIND_HUB_DIR/bin/sync" ]; then
+    HIVE_MIND_HUB_DIR="$HIVE_MIND_HUB_DIR" \
+    HIVE_MIND_FORCE_PUSH=1 \
+        "$HIVE_MIND_HUB_DIR/bin/sync" || true
+    rm -rf "$HIVE_MIND_HUB_DIR/.hive-mind-state/sync.lock" 2>/dev/null
+    if [ -s "$HIVE_MIND_HUB_DIR/.sync-error.log" ]; then
         echo
         echo "WARNING: sync produced errors:"
-        tail -5 "$MEMORY_DIR/.sync-error.log" >&2
+        tail -5 "$HIVE_MIND_HUB_DIR/.sync-error.log" >&2
     fi
 fi
 
@@ -317,7 +435,6 @@ fi
 echo
 log "done."
 echo
-echo "IMPORTANT: open /hooks in Claude Code once (or start a fresh session)"
-echo "so the settings watcher picks up the SessionStart + Stop hooks."
+adapter_activation_instructions
 echo
-[ -d "$BACKUP_DIR" ] && echo "Backup preserved at: $BACKUP_DIR (delete once you've confirmed a clean session)"
+[ -n "${BACKUP_DIR:-}" ] && echo "Backup preserved at: $BACKUP_DIR (delete once you've confirmed a clean session)"

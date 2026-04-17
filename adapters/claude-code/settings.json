@@ -5,8 +5,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cd ~/.claude && { git pull --rebase --autostash --quiet 2>>.sync-error.log || { git rebase --abort 2>/dev/null; echo \"$(date -u +%FT%TZ) session-start pull failed\" >>.sync-error.log; }; ~/.claude/hive-mind/scripts/check-dupes.sh; true; }",
-            "timeout": 10
+            "command": "\"$HOME/.hive-mind/bin/sync\" 2>>\"$HOME/.hive-mind/.sync-error.log\" || true; \"$HOME/.hive-mind/hive-mind/core/check-dupes.sh\" 2>>\"$HOME/.claude/.sync-error.log\" || true",
+            "timeout": 30
           }
         ]
       }
@@ -16,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.claude/hive-mind/scripts/sync.sh",
+            "command": "\"$HOME/.hive-mind/bin/sync\"",
             "timeout": 30,
             "async": true
           }
@@ -29,7 +29,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.claude/hive-mind/scripts/marker-nudge.sh",
+            "command": "\"$HOME/.hive-mind/hive-mind/core/marker-nudge.sh\"",
             "timeout": 2
           }
         ]

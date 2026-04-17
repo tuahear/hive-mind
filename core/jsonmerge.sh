@@ -1,8 +1,14 @@
 #!/bin/bash
-# Git merge driver for JSON config files (primarily ~/.claude/settings.json).
+# Git merge driver for JSON config files.
 #
-# Registered locally via:
-#   git config merge.jsonmerge.driver '~/.claude/hive-mind/scripts/jsonmerge.sh %A %O %B'
+# Registered locally via (setup.sh does this at hub-install time —
+# adapter-agnostic path):
+#   git config merge.jsonmerge.driver "'$HIVE_MIND_SRC/core/jsonmerge.sh' '%A' '%O' '%B'"
+# where $HIVE_MIND_SRC is the hive-mind source clone under the hub
+# ($HIVE_MIND_HUB_DIR/hive-mind/ — default ~/.hive-mind/hive-mind/).
+# The %A/%O/%B placeholders must be single-quoted: git substitutes
+# absolute temp-file paths before invoking via `sh -c`, and a path
+# with spaces would otherwise word-split.
 # Referenced per-file in .gitattributes:
 #   settings.json merge=jsonmerge
 #

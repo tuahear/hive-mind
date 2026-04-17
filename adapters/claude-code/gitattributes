@@ -7,7 +7,7 @@ projects/**/*.md   merge=union
 
 # Auto-resolve JSON config conflicts via the jsonmerge driver installed by
 # hive-mind setup.sh (git config merge.jsonmerge.driver ...). Deep-merges
-# objects and unions the known permission arrays. See sync/scripts/jsonmerge.sh.
+# objects and unions the known permission arrays. See core/jsonmerge.sh.
 settings.json      merge=jsonmerge
 
 # Line-based config files that are ok to union on conflict. setup.sh always

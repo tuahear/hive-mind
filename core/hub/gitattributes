@@ -1,0 +1,8 @@
+# Union-merge append-style hub content. Same rationale as the per-adapter
+# gitattributes: these files accumulate memory/instruction bullets,
+# duplicates are harmless, conflict markers are not.
+content.md             merge=union
+projects/**/*.md       merge=union
+
+.gitignore             merge=union
+.gitattributes         merge=union

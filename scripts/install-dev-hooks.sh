@@ -6,14 +6,12 @@
 # let tracked files execute at commit time for security reasons.
 #
 # Run once after cloning hive-mind on a new dev machine:
-#   ~/.claude/hive-mind/scripts/install-dev-hooks.sh
+#   scripts/install-dev-hooks.sh      (from repo root)
 #
 # What the pre-commit hook does:
-#   Strips `<!-- commit: ... -->` markers from staged templates/skills/**/*.md
-#   before the commit lands. Prevents leaks from the hive-mind-dev mirror
-#   workflow (agent cp's live skill file to template before sync.sh has
-#   stripped its per-turn marker — without the hook, the marker would ship
-#   to other users via the next setup.sh).
+#   Strips `<!-- commit: ... -->` markers from staged
+#   adapters/*/skills/**/*.md before the commit lands so markers
+#   don't ship to users via the next setup.sh.
 
 set -euo pipefail
 
@@ -29,8 +27,8 @@ fi
 cat > "$HOOK" <<'HOOK_EOF'
 #!/bin/bash
 # hive-mind pre-commit: strip <!-- commit: ... --> markers from staged
-# templates/skills/**/*.md. Fence-aware (preserves examples inside ```
-# code fences). Mirrors scripts/sync.sh's extract logic.
+# adapters/*/skills/**/*.md. Fence-aware (preserves examples inside ```
+# code fences). Mirrors core/marker-extract.sh's logic.
 set -e
 
 touched=0
@@ -56,13 +54,13 @@ while IFS= read -r f; do
 
     if ! cmp -s "$f" "$tmp"; then
         mv "$tmp" "$f"
-        git add "$f"
+        git add -- "$f"
         echo "pre-commit: stripped commit marker(s) from $f" >&2
         touched=1
     else
         rm -f "$tmp"
     fi
-done < <(git diff --cached --name-only --diff-filter=ACM | grep -E '^templates/skills/.*\.md$' || true)
+done < <(git diff --cached --name-only --diff-filter=ACM | grep -E '^adapters/.*/skills/.*\.md$' || true)
 
 exit 0
 HOOK_EOF

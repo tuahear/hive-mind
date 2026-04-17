@@ -1,0 +1,16 @@
+# Fake adapter gitignore — whitelist-only pattern for tests.
+/*
+!/.gitignore
+!/.gitattributes
+!/.hive-mind-format
+!/hooks.json
+!/MEMORY.md
+!/projects/
+/projects/*
+!/projects/*/
+/projects/*/*
+!/projects/*/memory/
+!/projects/*/MEMORY.md
+!/skills/
+!/skills/**
+**/.DS_Store

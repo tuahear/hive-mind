@@ -1,28 +1,34 @@
 # 🧠 hive-mind
 
-**Your AI's memory, synced across every machine you work on.**
+**Your AI's memory, synced across every machine you work on — and every AI coding tool on each of them.**
 
 📖 **Full docs: [tuahear.github.io/hive-mind](https://tuahear.github.io/hive-mind)**
 
-You teach your AI something useful on your laptop in the morning — a project quirk, a shell preference, a debugging insight. By lunchtime you're at your desktop and it has no idea. You explain it again. And again tomorrow on the work machine.
+You teach your AI something useful on your laptop in the morning — a project quirk, a shell preference, a debugging insight. By lunchtime you're at your desktop and it has no idea. Or you're trying Codex on the side and explaining everything again in its terms.
 
-hive-mind fixes that. It's a **Claude Code skill** today. **Your existing memory files stay exactly where they are** — hive-mind doesn't migrate, move, or reformat anything; it installs on top of whatever you already have and starts syncing it to your private git repo. Quietly pulled when your AI starts a session, pushed back when it finishes. Per-project memory auto-bridges across machines too. Your assistant carries every lesson forward, everywhere.
+hive-mind fixes both. It installs a single `~/.hive-mind/` hub on each machine and attaches your AI tools (Claude Code today; Codex, Qwen, Kimi planned) to it. Your existing memory files stay exactly where they are — `~/.claude/CLAUDE.md` keeps working like always — but the content flows through the hub so every attached tool on every machine shares it. Quietly pulled when your AI starts a session, pushed back when it finishes. Per-project memory auto-bridges too.
 
 ```
-  laptop ──┐                  ┌── desktop
-           │                  │
-           ▼                  ▼
-     ┌───────────────────────────────┐
-     │  your private memory git repo │   ← any git remote you control
-     │  (CLAUDE.md, projects/,       │
-     │   skills/, settings)          │
-     └───────────────────────────────┘
-           ▲                  ▲
-           │                  │
-  work mac ┘                  └── any new machine you set up
+   ┌─────────────────────────────────────────────────────┐
+   │  ~/.hive-mind/ hub (one per machine, one git repo)  │
+   │                                                     │
+   │   content.md ── skills/ ── projects/<id>/            │
+   │                                                     │
+   │  ├─ attached ──▶ ~/.claude/   (CLAUDE.md, skills)   │
+   │  ├─ attached ──▶ ~/.codex/    (AGENTS.md, ...)      │
+   │  └─ attached ──▶ ~/.qwen/     (QWEN.md, ...)        │
+   └──────────────────────┬──────────────────────────────┘
+                          │ push/pull
+                          ▼
+            ┌───────────────────────────────┐
+            │  your private memory git repo │   ← any git remote you control
+            └───────────────────────────────┘
+                          ▲
+                          │
+       same hub on a second machine pulls the same content down
 ```
 
-Only using one computer? hive-mind still earns its keep: automatic memory backup, a full `git log` of every memory edit, easy rollback if a bad memory gets written, and your memory stays in your own private repo — not a vendor cloud.
+Only using one computer with one AI tool? hive-mind still earns its keep: automatic memory backup, a full `git log` of every memory edit, easy rollback if a bad memory gets written, and your memory stays in your own private repo — not a vendor cloud.
 
 ---
 
@@ -37,6 +43,12 @@ Any git host works — GitHub, GitLab, Bitbucket, Codeberg, self-hosted, even a 
 ```bash
 MEMORY_REPO=<your-memory-repo-url> \
   bash -c "$(curl -fsSL https://raw.githubusercontent.com/tuahear/hive-mind/main/setup.sh)"
+```
+
+Attaching a second AI tool to the same hub (once additional adapters ship) is the same installer with a different `ADAPTER=`:
+
+```bash
+ADAPTER=codex bash setup.sh   # same memory, second tool
 ```
 
 `MEMORY_REPO` accepts any URL `git` understands:
@@ -57,6 +69,7 @@ Type `/hooks` in any session or start a fresh one — the sync hooks activate. T
 
 - **Ultralight** — ~175 tokens fully loaded, ~85 tokens idle. Almost zero context overhead.
 - **Synced everywhere** — Sync your global and project memories across every machine. macOS, Linux, Windows.
+- **Cross-provider** — One hub per machine can attach to multiple AI tools (Claude Code, Codex, Qwen, Kimi planned); they all read from the same canonical memory.
 - **Your data, your repo** — Memory lives in a private git repo you control. No vendor lock-in.
 - **Conflict-tolerant** — Edit memory from any machine, anytime. No problem.
 - **Meaningful git history** — Every lesson is auto-committed — git log becomes your AI's learning journal.
@@ -72,17 +85,17 @@ This README is for end users. If you want to hack on hive-mind itself:
 
 1. Fork the repo and clone
 2. Run `scripts/install-dev-hooks.sh` once in your clone — installs a pre-commit hook that keeps bundled skills clean
-3. Edit `templates/skills/hive-mind/SKILL.md` to change skill content (not the copy in `~/.claude/skills/hive-mind/` — that's the user-facing install target)
-4. Install [bats-core](https://github.com/bats-core/bats-core) to run the test suite — `brew install bats-core` (macOS), `apt install bats` (Linux), or `npm install -g bats` (Windows / Git Bash). Then `bats tests/` from the repo root.
+3. Edit `adapters/claude-code/skills/hive-mind/content.md` to change the bundled Claude skill (not the copy in `~/.claude/skills/hive-mind/` — that's a user-facing install target that gets refreshed each time setup.sh runs)
+4. Install [bats-core](https://github.com/bats-core/bats-core) + GNU `parallel` — `brew install bats-core parallel` (macOS), `apt install bats parallel` (Linux). Run `./test` from the repo root.
 5. PRs welcome
 
 ---
 
 ## Roadmap: AI-agnostic
 
-hive-mind currently plugs into Claude Code's hook + skill surfaces. The architecture underneath — a git-backed memory directory, event-driven sync, portable file conventions — is deliberately independent of which AI reads those files. As other assistants (Cursor, Aider, Windsurf, local agents, …) stabilise similar hook and skill mechanisms, hive-mind is built to grow with them: swap the CLI-specific adapter, keep the sync core.
+hive-mind v0.3.0 splits the design in two: a provider-agnostic **hub** at `~/.hive-mind/` holds the canonical memory schema, and **adapters** teach the hub how to read/write each tool's native layout (Claude's `CLAUDE.md` + `~/.claude/settings.json`, Codex's `AGENTS.md` + TOML, Qwen's `QWEN.md`, etc.). Today Claude Code is the only shipped adapter; Codex ([#11](https://github.com/tuahear/hive-mind/issues/11)), Qwen ([#19](https://github.com/tuahear/hive-mind/issues/19)), and Kimi ([#23](https://github.com/tuahear/hive-mind/issues/23)) are on the roadmap.
 
-If you maintain an AI coding assistant that stores memory in a directory and runs per-session / per-turn hooks, a hive-mind adapter for your tool is likely a few hundred lines of shell at most. PRs and issues welcome.
+Writing a new adapter is mostly declaring two mapping strings (`ADAPTER_HUB_MAP`, `ADAPTER_PROJECT_CONTENT_RULES`) plus a few contract functions — a few hundred lines of shell at most. See [docs/CONTRIBUTING-adapters.md](docs/CONTRIBUTING-adapters.md). PRs and issues welcome.
 
 ---
 
