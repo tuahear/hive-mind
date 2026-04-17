@@ -278,14 +278,17 @@ while IFS= read -r key; do
     while IFS= read -r v; do
       [ -z "$v" ] && continue
       dst="$v/$rel"
-      # Pick source: use stripped version for siblings, original for
-      # the variant whose content was the merge source (so its markers
-      # survive for hub sync's marker-extract).
+      # Pick source: if the destination already has a commit marker,
+      # DON'T overwrite it with the stripped version — that's the
+      # source variant whose marker must survive for hub sync's
+      # marker-extract. Every other destination gets the stripped copy.
       copy_src="$merged"
-      if [ -n "$merged_stripped" ] && [ -f "$dst" ] && ! cmp -s "$dst" "$merged"; then
-        copy_src="$merged_stripped"
-      elif [ -n "$merged_stripped" ] && [ ! -f "$dst" ]; then
-        copy_src="$merged_stripped"
+      if [ -n "$merged_stripped" ]; then
+        if [ -f "$dst" ] && grep -q '<!--[[:space:]]*commit:' "$dst" 2>/dev/null; then
+          copy_src="$merged"
+        else
+          copy_src="$merged_stripped"
+        fi
       fi
       if [ -f "$dst" ]; then
         cmp -s "$dst" "$copy_src" && continue
