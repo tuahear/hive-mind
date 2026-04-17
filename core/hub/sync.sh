@@ -179,6 +179,18 @@ for name in "${ATTACHED[@]}"; do
     ADAPTER_DIR="$tool_dir" "$MIRROR_PROJECTS" 2>>"$LOG" || true
   fi
   hub_harvest "$tool_dir" "$HIVE_MIND_HUB_DIR"
+  # Strip commit markers from tool-side files AFTER harvest copied them
+  # to the hub. Without this, fan-out later writes the hub's marker-
+  # stripped content back to the tool variant, but the tool still has
+  # the marker → mirror-projects on the NEXT sync copies it to siblings
+  # again. Stripping here means tool and hub are both marker-free after
+  # the commit phase, and fan-out is a content-identical no-op.
+  if [ -x "$CORE_DIR/marker-extract.sh" ]; then
+    while IFS= read -r -d '' mf; do
+      grep -q '<!--[[:space:]]*commit:' "$mf" 2>/dev/null \
+        && "$CORE_DIR/marker-extract.sh" "$mf" >/dev/null 2>>"$LOG" || true
+    done < <(find "$tool_dir" -name '*.md' -type f -print0 2>/dev/null)
+  fi
 done
 
 if [ "${#HUB_ADAPTER_NAMES[@]}" -eq 0 ]; then
