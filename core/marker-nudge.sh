@@ -19,6 +19,7 @@ command -v jq >/dev/null 2>&1 || exit 0
 input="$(cat)"
 file_path="$(printf '%s' "$input" | jq -r '.tool_input.file_path // empty' 2>/dev/null)"
 
+ADAPTER_DIR="${ADAPTER_DIR%/}"
 case "$file_path" in
   "$ADAPTER_DIR/hive-mind/"*) exit 0 ;;
   "$ADAPTER_DIR/"*) ;;
