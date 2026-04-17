@@ -210,7 +210,18 @@ ADAPTER_PROJECT_CONTENT_RULES=$'content.md\tmemory/MEMORY.md
 content.md\tMEMORY.md
 memory\tmemory'
 
-# --- H. Logging ------------------------------------------------------------
+# --- H. File harvest rules -------------------------------------------------
+# Glob patterns (relative to ADAPTER_DIR) declaring which files this
+# adapter syncs. Used by GC to distinguish synced content from
+# tool-local artifacts. Users can extend this for custom content.
+ADAPTER_FILE_HARVEST_RULES=$'CLAUDE.md\nskills/**/*.md\nprojects/**/*.md'
+
+# Project-specific subset: globs relative to ADAPTER_DIR that match
+# synced per-project files. Used by variant GC to verify content is
+# in the hub before deleting an orphaned variant.
+ADAPTER_PROJECT_CONTENT_GLOBS=$'projects/**/*.md'
+
+# --- I. Logging ------------------------------------------------------------
 ADAPTER_LOG_PATH="${ADAPTER_DIR}/.sync-error.log"
 
 # --- Healthcheck -----------------------------------------------------------

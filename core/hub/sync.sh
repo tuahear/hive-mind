@@ -130,6 +130,8 @@ declare -a HUB_TOOL_DIRS=()
 declare -a HUB_ADAPTER_NAMES=()
 declare -a HUB_SECRET_LISTS=()
 declare -a HUB_FILE_HARVEST_RULES=()
+declare -a HUB_PROJECT_CONTENT_GLOBS=()
+declare -a HUB_PROJECT_CONTENT_RULES=()
 
 # --- phase: harvest --------------------------------------------------------
 # Bootstrap project-id sidecars BEFORE hub_harvest runs. mirror-projects
@@ -156,7 +158,9 @@ for name in "${ATTACHED[@]}"; do
   HUB_ADAPTER_NAMES+=("$name")
   HUB_TOOL_DIRS+=("$tool_dir")
   HUB_SECRET_LISTS+=("${ADAPTER_SECRET_FILES:-}")
-  HUB_FILE_HARVEST_RULES+=("${ADAPTER_PROJECT_CONTENT_RULES:-}")
+  HUB_FILE_HARVEST_RULES+=("${ADAPTER_FILE_HARVEST_RULES:-}")
+  HUB_PROJECT_CONTENT_GLOBS+=("${ADAPTER_PROJECT_CONTENT_GLOBS:-}")
+  HUB_PROJECT_CONTENT_RULES+=("${ADAPTER_PROJECT_CONTENT_RULES:-}")
   # Sidecar bootstrap: only for flat-model adapters (the only kind
   # that have a projects/<encoded-cwd>/ layout to mirror).
   if [ "${ADAPTER_MEMORY_MODEL:-}" = "flat" ] && [ -x "$MIRROR_PROJECTS" ]; then

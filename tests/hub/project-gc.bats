@@ -15,8 +15,10 @@ setup() {
   mkdir -p "$TOOL/projects/-variant-a"
   printf 'project-id=github.com/alice/alive\n' > "$TOOL/projects/-variant-a/.hive-mind"
   HUB_TOOL_DIRS=("$TOOL")
-  # Claude-shaped project rules: same as adapters/claude-code/adapter.sh
-  HUB_FILE_HARVEST_RULES=($'content.md\tmemory/MEMORY.md\ncontent.md\tMEMORY.md\nmemory\tmemory')
+  # Claude-shaped rules: same as adapters/claude-code/adapter.sh
+  HUB_FILE_HARVEST_RULES=($'CLAUDE.md\nskills/**/*.md\nprojects/**/*.md')
+  HUB_PROJECT_CONTENT_GLOBS=($'projects/**/*.md')
+  HUB_PROJECT_CONTENT_RULES=($'content.md\tmemory/MEMORY.md\ncontent.md\tMEMORY.md\nmemory\tmemory')
 
   # Hub has two projects: one alive, one stale.
   mkdir -p "$HIVE_MIND_HUB_DIR/projects/github.com/alice/alive/memory"

@@ -112,48 +112,70 @@ hub_gc_projects() {
 # accumulate when worktrees are deleted, repos are moved, or clones are
 # removed.
 #
-# Uses ADAPTER_PROJECT_CONTENT_RULES (via HUB_FILE_HARVEST_RULES[] parallel
-# array) to know which files are synced content vs tool-local artifacts.
-# Only synced files are compared against the hub for the safety check.
+# Uses ADAPTER_PROJECT_CONTENT_GLOBS (via HUB_PROJECT_CONTENT_GLOBS[]
+# parallel array) to identify which files in a variant are synced
+# content. Only those are compared against the hub for the safety check.
+# Uses ADAPTER_PROJECT_CONTENT_RULES for the tool→hub path mapping
+# (e.g., MEMORY.md → content.md).
 #
 # Gated by HIVE_MIND_HUB_PROJECT_GC_AUTO=1 (report-only by default)
 # and HIVE_MIND_HUB_PROJECT_GC_DAYS=0 to disable entirely.
 
-# Check if a variant's synced content matches the hub, using the
-# adapter's project content rules. Returns 0 if all synced content
-# is identical to the hub (safe to delete), 1 if any differs.
+# Check if a variant's synced content matches the hub.
+# Uses glob patterns from the adapter to identify synced files,
+# then ADAPTER_PROJECT_CONTENT_RULES mapping for hub path derivation.
+# Returns 0 if all synced content is identical (safe to delete).
 _gc_variant_content_matches_hub() {
-  local vdir="$1" hub_proj="$2" rules="$3"
+  local vdir="$1" hub_proj="$2" globs="$3" rules="$4"
   [ -d "$hub_proj" ] || return 1
 
-  # Parse rules: each line is hub_rel<TAB>tool_rel.
-  # File rules (both sides are files) compare directly.
-  # Dir rules (tool_rel has no extension) compare recursively.
+  # Build the tool→hub path mapping from ADAPTER_PROJECT_CONTENT_RULES.
+  # File rules: tool_rel → hub_rel. Dir rules: prefix match.
+  local _file_maps="" _dir_maps=""
   while IFS=$'\t' read -r hub_rel tool_rel; do
     [ -z "$hub_rel" ] || [ -z "$tool_rel" ] && continue
-    local tool_path="$vdir/$tool_rel"
-    local hub_path="$hub_proj/$hub_rel"
-
-    # Determine if this is a file rule or dir rule.
     case "$tool_rel" in
-      *.*) # File rule: direct comparison.
-        if [ -f "$tool_path" ]; then
-          [ -f "$hub_path" ] && cmp -s "$tool_path" "$hub_path" || return 1
-        fi
-        ;;
-      *)   # Dir rule: compare all files recursively.
-        if [ -d "$tool_path" ]; then
-          while IFS= read -r -d '' vf; do
-            local rel="${vf#"$tool_path/"}"
-            local bn="${rel##*/}"
-            case "$bn" in .hive-mind|.DS_Store) continue ;; esac
-            local hf="$hub_path/$rel"
-            [ -f "$hf" ] && cmp -s "$vf" "$hf" || return 1
-          done < <(find "$tool_path" -type f -print0 2>/dev/null)
-        fi
-        ;;
+      *.*) _file_maps="${_file_maps}${tool_rel}"$'\t'"${hub_rel}"$'\n' ;;
+      *)   _dir_maps="${_dir_maps}${tool_rel}"$'\t'"${hub_rel}"$'\n' ;;
     esac
   done <<< "$rules"
+
+  # Walk variant files matching the adapter's project content globs.
+  # For Claude: projects/**/*.md → within the variant, **/*.md.
+  while IFS= read -r glob; do
+    [ -z "$glob" ] && continue
+    # Strip the leading projects/*/ prefix to get the variant-relative glob.
+    local vglob="${glob#projects/*/}"
+    # Use find + name matching. For **/*.md → find -name '*.md'.
+    local name_pattern="${vglob##*/}"
+    while IFS= read -r -d '' vf; do
+      local rel="${vf#"$vdir/"}"
+      local bn="${rel##*/}"
+      case "$bn" in .hive-mind|.DS_Store) continue ;; esac
+
+      # Derive hub path: check file maps first, then dir maps.
+      local hub_rel=""
+      # Exact file match (e.g., MEMORY.md → content.md)
+      while IFS=$'\t' read -r trel hrel; do
+        [ -z "$trel" ] && continue
+        [ "$rel" = "$trel" ] && { hub_rel="$hrel"; break; }
+      done <<< "$_file_maps"
+      # Dir prefix match (e.g., memory/note.md → memory/note.md)
+      if [ -z "$hub_rel" ]; then
+        while IFS=$'\t' read -r tdir hdir; do
+          [ -z "$tdir" ] && continue
+          case "$rel" in "$tdir"/*) hub_rel="${hdir}/${rel#"$tdir/"}" ; break ;; esac
+        done <<< "$_dir_maps"
+      fi
+      # No mapping found — file is not synced, skip.
+      [ -z "$hub_rel" ] && continue
+
+      # Compare content byte-for-byte.
+      if [ ! -f "$hub_proj/$hub_rel" ] || ! cmp -s "$vf" "$hub_proj/$hub_rel"; then
+        return 1
+      fi
+    done < <(find "$vdir" -name "$name_pattern" -type f -print0 2>/dev/null)
+  done <<< "$globs"
   return 0
 }
 
@@ -169,9 +191,9 @@ hub_gc_tool_variants() {
 
   for i in "${!HUB_TOOL_DIRS[@]}"; do
     local tool_dir="${HUB_TOOL_DIRS[$i]}"
-    local rules="${HUB_FILE_HARVEST_RULES[$i]:-}"
+    local globs="${HUB_PROJECT_CONTENT_GLOBS[$i]:-}"
     [ -d "$tool_dir/projects" ] || continue
-    [ -z "$rules" ] && continue
+    [ -z "$globs" ] && continue
 
     for variant in "$tool_dir"/projects/*/; do
       [ -d "$variant" ] || continue
@@ -206,9 +228,11 @@ hub_gc_tool_variants() {
         continue
       fi
 
-      # Verify synced content matches hub using the adapter's rules.
+      # Verify synced content matches hub using the adapter's globs
+      # (which files are synced) and rules (how they map to hub paths).
       local hub_proj="$HIVE_MIND_HUB_DIR/projects/$project_id"
-      if ! _gc_variant_content_matches_hub "${variant%/}" "$hub_proj" "$rules"; then
+      local rules="${HUB_PROJECT_CONTENT_RULES[$i]:-}"
+      if ! _gc_variant_content_matches_hub "${variant%/}" "$hub_proj" "$globs" "$rules"; then
         echo "$TS gc: skipped orphan variant (unharvested content for $project_id): $variant_name" >>"$log"
         continue
       fi
