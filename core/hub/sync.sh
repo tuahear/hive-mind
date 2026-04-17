@@ -264,10 +264,9 @@ fi
 
 # --- phase: marker extraction ---------------------------------------------
 # Walk every file that looks like content (content.md at root, per-project
-# content.md + subfiles, skills). The hub stores everything under the
-# provider-agnostic `content.md` name; projects are flattened (no
-# `memory/` subfolder); skills store their main file as `content.md`.
-HUB_MARKER_TARGETS=$'content.md\nprojects/**/content.md\nprojects/**\nskills/*\nskills/**/*.md\nskills/**/content.md'
+# content.md + markdown subfiles, skills). Only markdown files are
+# eligible for marker extraction — non-markdown assets are left alone.
+HUB_MARKER_TARGETS=$'content.md\nprojects/**/content.md\nprojects/**/*.md\nskills/*\nskills/**/*.md\nskills/**/content.md'
 
 file_is_marker_target() {
   local f="$1" glob

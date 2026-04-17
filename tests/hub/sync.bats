@@ -168,6 +168,22 @@ run_sync() {
   [ "$status" -ne 0 ]
 }
 
+@test "marker extraction skips non-markdown files under projects/" {
+  hub_proj="$HUB/projects/github.com/test/repo"
+  mkdir -p "$hub_proj"
+  mkdir -p "$HOME/.fake-tool/projects/variant-a/memory"
+  printf 'project-id=github.com/test/repo\n' > "$HOME/.fake-tool/projects/variant-a/.hive-mind"
+  echo 'data' > "$HOME/.fake-tool/projects/variant-a/MEMORY.md"
+  # A non-markdown file that happens to contain commit-marker-like text.
+  printf '{"note": "<!-- commit: should not be extracted -->"}\n' \
+    > "$HOME/.fake-tool/projects/variant-a/memory/data.json"
+  run run_sync
+  [ "$status" -eq 0 ]
+  # The JSON file must NOT have its marker-like content stripped.
+  run grep -F 'commit:' "$hub_proj/memory/data.json"
+  [ "$status" -eq 0 ]
+}
+
 # === machine-local hook filtering =========================================
 
 @test "harvest skips machine-local hook entries while preserving tool-side local entries across sync" {
