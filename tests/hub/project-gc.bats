@@ -204,6 +204,51 @@ teardown() {
   [ -f "$TOOL/projects/-variant-unharvested/memory/note.md" ]
 }
 
+@test "tool variant GC ignores non-synced files (jsonl, session dirs) in content comparison" {
+  export HIVE_MIND_HUB_PROJECT_GC_DAYS=1
+  export HIVE_MIND_HUB_PROJECT_GC_AUTO=1
+
+  # Variant has synced content that matches hub, plus large non-synced
+  # artifacts (jsonl, session subdirs) that don't exist in the hub.
+  mkdir -p "$TOOL/projects/-variant-with-artifacts/memory"
+  mkdir -p "$TOOL/projects/-variant-with-artifacts/some-session-uuid"
+  printf '{"cwd":"/no/such/path"}\n' > "$TOOL/projects/-variant-with-artifacts/session.jsonl"
+  printf '{"big":"data"}\n' > "$TOOL/projects/-variant-with-artifacts/another.jsonl"
+  printf 'project-id=github.com/alice/alive\n' > "$TOOL/projects/-variant-with-artifacts/.hive-mind"
+  printf '# project index\n' > "$TOOL/projects/-variant-with-artifacts/MEMORY.md"
+  printf '# a note\n' > "$TOOL/projects/-variant-with-artifacts/memory/note.md"
+  printf 'session data\n' > "$TOOL/projects/-variant-with-artifacts/some-session-uuid/data.txt"
+
+  # Hub has matching synced content (content.md + memory/note.md).
+  mkdir -p "$HIVE_MIND_HUB_DIR/projects/github.com/alice/alive/memory"
+  printf '# project index\n' > "$HIVE_MIND_HUB_DIR/projects/github.com/alice/alive/content.md"
+  printf '# a note\n' > "$HIVE_MIND_HUB_DIR/projects/github.com/alice/alive/memory/note.md"
+
+  hub_gc_tool_variants >/dev/null
+
+  # Must be deleted — synced content matches hub. The jsonl/session
+  # artifacts are tool-local and should NOT block GC.
+  [ ! -d "$TOOL/projects/-variant-with-artifacts" ]
+}
+
+@test "tool variant GC catches differing memory content even when files exist in hub" {
+  export HIVE_MIND_HUB_PROJECT_GC_DAYS=1
+  export HIVE_MIND_HUB_PROJECT_GC_AUTO=1
+
+  mkdir -p "$TOOL/projects/-variant-diff/memory"
+  printf '{"cwd":"/no/such/path"}\n' > "$TOOL/projects/-variant-diff/session.jsonl"
+  printf 'project-id=github.com/alice/alive\n' > "$TOOL/projects/-variant-diff/.hive-mind"
+  printf '# variant version — has local edits\n' > "$TOOL/projects/-variant-diff/MEMORY.md"
+
+  # Hub has the file but with DIFFERENT content.
+  printf '# hub version — older\n' > "$HIVE_MIND_HUB_DIR/projects/github.com/alice/alive/content.md"
+
+  hub_gc_tool_variants >/dev/null
+
+  # Must be kept — MEMORY.md content differs from hub's content.md.
+  [ -d "$TOOL/projects/-variant-diff" ]
+}
+
 @test "tool variant GC is disabled when HIVE_MIND_HUB_PROJECT_GC_DAYS=0" {
   export HIVE_MIND_HUB_PROJECT_GC_DAYS=0
 

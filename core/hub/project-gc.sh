@@ -133,15 +133,14 @@ hub_gc_tool_variants() {
       # session files; if ANY session's cwd still exists, the variant
       # is live.
       local any_cwd_found=0 any_cwd_alive=0
-      for jsonl in "$variant"/*.jsonl; do
-        [ -f "$jsonl" ] || continue
+      while IFS= read -r -d '' jsonl; do
         local cwd
         cwd="$(grep -m1 -oE '"cwd":"[^"]+"' "$jsonl" 2>/dev/null \
                  | sed -e 's/^"cwd":"//' -e 's/"$//')"
         [ -z "$cwd" ] && continue
         any_cwd_found=1
         [ -d "$cwd" ] && { any_cwd_alive=1; break; }
-      done
+      done < <(find "${variant%/}" -maxdepth 1 -name '*.jsonl' -type f -print0 2>/dev/null)
       [ "$any_cwd_found" -eq 0 ] && continue
       [ "$any_cwd_alive" -eq 1 ] && continue
 
@@ -162,22 +161,30 @@ hub_gc_tool_variants() {
         continue
       fi
 
-      # Verify every synced file in the variant has identical content in
-      # the hub. Skip session files, sidecars, and OS metadata.
+      # Verify every synced content file in the variant has identical
+      # content in the hub. Only check what harvest actually syncs:
+      # MEMORY.md (→ hub content.md) and memory/*.md files.
       local hub_proj="$HIVE_MIND_HUB_DIR/projects/$project_id"
       local has_unharvested=0
-      while IFS= read -r -d '' vf; do
-        local rel="${vf#"${variant%/}/"}"
-        # Skip session files, sidecars, and OS metadata at any depth.
-        local basename="${rel##*/}"
-        case "$basename" in *.jsonl|.hive-mind|.DS_Store) continue ;; esac
-        local hub_rel="$rel"
-        case "$rel" in MEMORY.md) hub_rel="content.md" ;; esac
-        if [ ! -f "$hub_proj/$hub_rel" ] || ! cmp -s "$vf" "$hub_proj/$hub_rel"; then
+      local vdir="${variant%/}"
+      # Check root MEMORY.md → hub content.md
+      if [ -f "$vdir/MEMORY.md" ]; then
+        if [ ! -f "$hub_proj/content.md" ] || ! cmp -s "$vdir/MEMORY.md" "$hub_proj/content.md"; then
           has_unharvested=1
-          break
         fi
-      done < <(find "${variant%/}" -type f -print0 2>/dev/null)
+      fi
+      # Check memory/ subdir files → hub memory/
+      if [ "$has_unharvested" -eq 0 ] && [ -d "$vdir/memory" ]; then
+        while IFS= read -r -d '' vf; do
+          local rel="${vf#"$vdir/"}"
+          local basename="${rel##*/}"
+          case "$basename" in .hive-mind|.DS_Store) continue ;; esac
+          if [ ! -f "$hub_proj/$rel" ] || ! cmp -s "$vf" "$hub_proj/$rel"; then
+            has_unharvested=1
+            break
+          fi
+        done < <(find "$vdir/memory" -type f -print0 2>/dev/null)
+      fi
       if [ "$has_unharvested" -eq 1 ]; then
         echo "$TS gc: skipped orphan variant (unharvested content for $project_id): $variant_name" >>"$log"
         continue
