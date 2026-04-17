@@ -131,6 +131,9 @@ hub_gc_projects() {
 _gc_variant_content_matches_hub() {
   local vdir="$1" hub_proj="$2" globs="$3" rules="$4"
   [ -d "$hub_proj" ] || return 1
+  # Can't verify without both globs and rules.
+  [ -z "$globs" ] && return 1
+  [ -z "$rules" ] && return 1
 
   # Build the tool→hub path mapping from ADAPTER_PROJECT_CONTENT_RULES.
   # File rules: tool_rel → hub_rel. Dir rules: prefix match.
