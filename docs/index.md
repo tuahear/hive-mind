@@ -22,8 +22,8 @@ features:
     details: Memory lives in a private git repo you control. No vendor lock-in.
   - title: 🌐 Synced everywhere
     details: Global and project memories stay in sync across every machine. macOS, Linux, Windows.
-  - title: 🧬 Conflict-tolerant
-    details: Edit memory from any tool, on any machine, anytime. No problem.
+  - title: 🧭 AI-agnostic
+    details: Not tied to any vendor's API, format, or cloud. Add a tool, swap a tool, try a new one — your memory comes with you.
   - title: 📚 Meaningful git history
     details: Every lesson is auto-committed — git log becomes your AI's learning journal.
 ---
