@@ -323,6 +323,15 @@ mkdir -p "$ADAPTER_DIR"
 # shellcheck source=/dev/null
 source "$HIVE_MIND_SRC/core/hub/harvest-fanout.sh"
 
+# Bootstrap project-id sidecars before harvest — same pre-pass the hub
+# sync engine runs (core/hub/sync.sh). Without this, a fresh install
+# with existing per-project memory has no sidecars → harvest skips
+# every project → zero per-project content reaches the hub.
+if [ "${ADAPTER_MEMORY_MODEL:-}" = "flat" ] && [ -x "$HIVE_MIND_SRC/core/mirror-projects.sh" ]; then
+    log "  bootstrapping per-project sidecars"
+    ADAPTER_DIR="$ADAPTER_DIR" "$HIVE_MIND_SRC/core/mirror-projects.sh" || true
+fi
+
 log "  harvesting existing tool content -> hub"
 hub_harvest "$ADAPTER_DIR" "$HIVE_MIND_HUB_DIR"
 
