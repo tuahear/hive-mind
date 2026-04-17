@@ -174,7 +174,7 @@ EOF
 
 # === JSON subkey — hooks directory split ===================================
 
-@test "harvest splits settings.json#hooks into per-event/<id>.json files" {
+@test "harvest splits settings.json#hooks into per-event/<slug>.json files" {
   cat > "$TOOL/settings.json" <<'EOF'
 {
   "hooks": {
@@ -196,6 +196,9 @@ EOF
   [ "$(find "$HUB/config/hooks/PostToolUse" -name '*.json' | wc -l | tr -d ' ')" = "1" ]
   # Stop entry's command survived verbatim.
   jq -e '.hooks[0].command == "$HOME/.hive-mind/bin/sync"' "$HUB/config/hooks/Stop"/*.json >/dev/null
+  # Filenames are human-readable command slugs (not content hashes).
+  [ -f "$HUB/config/hooks/Stop/sync.json" ]
+  [ -f "$HUB/config/hooks/PostToolUse/echo.json" ]
 }
 
 @test "harvest filters out hooks whose command references a machine-local path" {
@@ -222,7 +225,7 @@ EOF
   # Hub has one Stop entry.
   mkdir -p "$HUB/config/hooks/Stop"
   printf '{"hooks":[{"type":"command","command":"$HOME/.hive-mind/bin/sync"}]}\n' \
-    > "$HUB/config/hooks/Stop/abcdef.json"
+    > "$HUB/config/hooks/Stop/sync.json"
 
   # Tool already has a machine-local Stop entry (fan-out must keep it).
   cat > "$TOOL/settings.json" <<'EOF'
