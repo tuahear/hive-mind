@@ -62,36 +62,17 @@ export HIVE_MIND_HUB_LOG
 TS="$(date -u +%FT%TZ)"
 
 # --- locking ----------------------------------------------------------------
-# mkdir is atomic on all platforms. The lock dir holds a timestamp so
-# concurrent/subsequent invocations can detect stale locks and reclaim.
-# Release is unconditional (no PID check) — on Windows/MSYS, PIDs don't
-# survive across shell invocations reliably, and a conditional release
-# silently leaks locks when the owning shell exits abnormally.
-STALE_AGE_SEC=120
-
+# mkdir is atomic on all platforms. trap EXIT removes the lock
+# unconditionally — no PID checks, no stale-age heuristics. If another
+# sync is already running, we exit cleanly (it will handle the work).
 acquire_lock() {
-  if mkdir "$LOCK_DIR" 2>/dev/null; then
-    date +%s > "$LOCK_DIR/created-at" 2>/dev/null
-    return 0
-  fi
-  return 1
+  mkdir "$LOCK_DIR" 2>/dev/null
 }
 release_lock() {
   rm -rf "$LOCK_DIR" 2>/dev/null
 }
 
-if ! acquire_lock; then
-  lock_ts=""
-  [ -f "$LOCK_DIR/created-at" ] && lock_ts="$(cat "$LOCK_DIR/created-at" 2>/dev/null)"
-  case "$lock_ts" in ''|*[!0-9]*) lock_ts=0 ;; esac
-  now_ts="$(date +%s)"
-  if [ "$lock_ts" -eq 0 ] || [ "$((now_ts - lock_ts))" -gt "$STALE_AGE_SEC" ]; then
-    rm -rf "$LOCK_DIR" 2>/dev/null
-    acquire_lock || exit 0
-  else
-    exit 0
-  fi
-fi
+acquire_lock || exit 0
 trap 'release_lock' EXIT
 
 # --- hub existence check ---------------------------------------------------
