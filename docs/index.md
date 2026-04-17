@@ -15,7 +15,7 @@ hero:
 
 features:
   - title: 🧭 AI-agnostic
-    details: "One memory across Claude Code, Codex, Qwen, and Kimi. Swap tools, add tools, or try new ones — your memory moves with you."
+    details: Claude Code today. The same memory flows to every AI tool you add later.
   - title: 🪶 Ultralight
     details: ~175 tokens fully loaded, ~85 tokens idle. Almost zero context overhead.
   - title: 🔒 Your data, your repo
