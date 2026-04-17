@@ -61,36 +61,30 @@ HIVE_MIND_HUB_LOG="$LOG"
 export HIVE_MIND_HUB_LOG
 TS="$(date -u +%FT%TZ)"
 
-# --- locking (mirrors core/sync.sh semantics) ------------------------------
+# --- locking ----------------------------------------------------------------
+# mkdir is atomic on all platforms. The lock dir holds a timestamp so
+# concurrent/subsequent invocations can detect stale locks and reclaim.
+# Release is unconditional (no PID check) — on Windows/MSYS, PIDs don't
+# survive across shell invocations reliably, and a conditional release
+# silently leaks locks when the owning shell exits abnormally.
+STALE_AGE_SEC=120
+
 acquire_lock() {
   if mkdir "$LOCK_DIR" 2>/dev/null; then
     date +%s > "$LOCK_DIR/created-at" 2>/dev/null
-    echo "$$" > "$LOCK_DIR/owner-pid" 2>/dev/null
     return 0
   fi
   return 1
 }
 release_lock() {
-  local lock_owner=""
-  [ -f "$LOCK_DIR/owner-pid" ] && lock_owner="$(cat "$LOCK_DIR/owner-pid" 2>/dev/null)"
-  if [ "$lock_owner" = "$$" ]; then
-    rm -rf "$LOCK_DIR" 2>/dev/null
-  fi
+  rm -rf "$LOCK_DIR" 2>/dev/null
 }
-STALE_AGE_SEC=300
 
 if ! acquire_lock; then
-  if [ ! -f "$LOCK_DIR/created-at" ]; then sleep 2; fi
-  lock_ts=""; [ -f "$LOCK_DIR/created-at" ] && lock_ts="$(cat "$LOCK_DIR/created-at" 2>/dev/null)"
+  lock_ts=""
+  [ -f "$LOCK_DIR/created-at" ] && lock_ts="$(cat "$LOCK_DIR/created-at" 2>/dev/null)"
   case "$lock_ts" in ''|*[!0-9]*) lock_ts=0 ;; esac
   now_ts="$(date +%s)"
-  owner_pid=""; [ -f "$LOCK_DIR/owner-pid" ] && owner_pid="$(cat "$LOCK_DIR/owner-pid" 2>/dev/null)"
-  owner_alive=0
-  case "$owner_pid" in
-    ''|*[!0-9]*) owner_alive=0 ;;
-    *) kill -0 "$owner_pid" 2>/dev/null && owner_alive=1 ;;
-  esac
-  if [ "$owner_alive" -eq 1 ]; then exit 0; fi
   if [ "$lock_ts" -eq 0 ] || [ "$((now_ts - lock_ts))" -gt "$STALE_AGE_SEC" ]; then
     rm -rf "$LOCK_DIR" 2>/dev/null
     acquire_lock || exit 0

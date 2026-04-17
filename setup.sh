@@ -423,6 +423,7 @@ if [ -x "$HIVE_MIND_HUB_DIR/bin/sync" ]; then
     HIVE_MIND_HUB_DIR="$HIVE_MIND_HUB_DIR" \
     HIVE_MIND_FORCE_PUSH=1 \
         "$HIVE_MIND_HUB_DIR/bin/sync" || true
+    rm -rf "$HIVE_MIND_HUB_DIR/.hive-mind-state/sync.lock" 2>/dev/null
     if [ -s "$HIVE_MIND_HUB_DIR/.sync-error.log" ]; then
         echo
         echo "WARNING: sync produced errors:"
