@@ -44,6 +44,67 @@ seed_older_remote() {
   git clone -q --bare "$HOME/seed" "$HOME/remote.git"
 }
 
+@test "second-machine install preserves remote hub content instead of overwriting with stale tool files" {
+  # Regression: on a second-machine install, the hub remote already has
+  # content from machine 1. If sidecars aren't bootstrapped before
+  # fan-out, fan-out skips all project variants → the tool keeps its
+  # stale content → harvest pushes old content and destroys memory.
+  #
+  # Simulate: remote has machine-1 project memory; tool dir has older
+  # stale content. After setup, hub must still have machine-1 content.
+
+  # Build a remote with machine-1 project content.
+  git -c init.defaultBranch=main init -q "$HOME/seed"
+  git -C "$HOME/seed" config user.email test@example.com
+  git -C "$HOME/seed" config user.name t
+  cp "$REPO_ROOT/core/hub/gitignore"     "$HOME/seed/.gitignore"
+  cp "$REPO_ROOT/core/hub/gitattributes" "$HOME/seed/.gitattributes"
+  printf 'format-version=1\n' > "$HOME/seed/.hive-mind-format"
+  printf '# machine-1 global memory\n' > "$HOME/seed/content.md"
+  mkdir -p "$HOME/seed/projects/github.com/test/repo/memory"
+  printf '# machine-1 project index — must survive\n' > "$HOME/seed/projects/github.com/test/repo/content.md"
+  printf '# machine-1 feedback — must survive\n' > "$HOME/seed/projects/github.com/test/repo/memory/feedback.md"
+  git -C "$HOME/seed" add .
+  git -C "$HOME/seed" commit -q -m "machine-1 content"
+  git clone -q --bare "$HOME/seed" "$HOME/remote.git"
+
+  # Machine-2 tool dir: has a project variant mapping to the same
+  # project-id, but with OLDER/DIFFERENT content.
+  export FAKE_ADAPTER_HOME="$HOME"
+  export HIVE_MIND_ADAPTERS_DIR="$REPO_ROOT/tests/fixtures/adapters"
+  ADAPTER_DIR="$HOME/.fake-tool"
+  mkdir -p "$ADAPTER_DIR/projects/-machine-2-variant/memory"
+  # Fake jsonl so derive_id_from_cwd can find the project-id.
+  # Create a git repo at the fake cwd so sidecar bootstrap can derive remote.
+  mkdir -p "$HOME/repo"
+  git -c init.defaultBranch=main init -q "$HOME/repo"
+  git -C "$HOME/repo" remote add origin "https://github.com/test/repo.git"
+  printf '{"cwd":"%s"}\n' "$HOME/repo" > "$ADAPTER_DIR/projects/-machine-2-variant/session.jsonl"
+  printf '# machine-2 stale project index\n' > "$ADAPTER_DIR/projects/-machine-2-variant/MEMORY.md"
+  printf '# machine-2 stale feedback\n' > "$ADAPTER_DIR/projects/-machine-2-variant/memory/feedback.md"
+
+  # Run the setup flow: source the helpers, pull, bootstrap, fan-out, harvest.
+  source "$REPO_ROOT/core/hub/harvest-fanout.sh"
+  source "$REPO_ROOT/core/adapter-loader.sh"
+  load_adapter "fake"
+  export ADAPTER_DIR
+
+  HUB="$HOME/.hive-mind"
+  export HIVE_MIND_HUB_DIR="$HUB"
+  git clone -q "$HOME/remote.git" "$HUB"
+  git -C "$HUB" config user.email test@example.com
+  git -C "$HUB" config user.name t
+
+  # Simulate setup.sh order: pull → sidecar bootstrap → fan-out → harvest
+  ADAPTER_DIR="$ADAPTER_DIR" "$REPO_ROOT/core/mirror-projects.sh" || true
+  hub_fan_out "$HUB" "$ADAPTER_DIR"
+  hub_harvest "$ADAPTER_DIR" "$HUB"
+
+  # Machine-1 content must survive — not overwritten by machine-2 stale files.
+  grep -q 'machine-1 project index — must survive' "$HUB/projects/github.com/test/repo/content.md"
+  grep -q 'machine-1 feedback — must survive' "$HUB/projects/github.com/test/repo/memory/feedback.md"
+}
+
 @test "hub-clone flow preserves hub .gitignore and .gitattributes against an older remote" {
   # Regression: setup.sh seeds core/hub/{gitignore,gitattributes} into
   # the hub BEFORE cloning the memory repo's contents on top, and the

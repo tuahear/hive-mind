@@ -349,18 +349,20 @@ adapter_install_hooks
     fi
 )
 
+# Bootstrap project-id sidecars BEFORE fan-out — fan-out walks the
+# tool's project variants and needs sidecars to map them to hub
+# project-ids. Without sidecars, fan-out skips all variants and the
+# tool keeps its stale pre-hive-mind content.
+if [ "${ADAPTER_MEMORY_MODEL:-}" = "flat" ] && [ -x "$HIVE_MIND_SRC/core/mirror-projects.sh" ]; then
+    log "  bootstrapping per-project sidecars"
+    ADAPTER_DIR="$ADAPTER_DIR" "$HIVE_MIND_SRC/core/mirror-projects.sh" || true
+fi
+
 # Fan-out remote content to the tool dir BEFORE harvest — populates
 # the tool with whatever the hub (from the remote) already has. On
 # a first install this is a no-op (empty hub).
 log "  fanning hub content -> tool dir"
 hub_fan_out "$HIVE_MIND_HUB_DIR" "$ADAPTER_DIR"
-
-# Bootstrap project-id sidecars before harvest — same pre-pass the hub
-# sync engine runs (core/hub/sync.sh).
-if [ "${ADAPTER_MEMORY_MODEL:-}" = "flat" ] && [ -x "$HIVE_MIND_SRC/core/mirror-projects.sh" ]; then
-    log "  bootstrapping per-project sidecars"
-    ADAPTER_DIR="$ADAPTER_DIR" "$HIVE_MIND_SRC/core/mirror-projects.sh" || true
-fi
 
 # Harvest AFTER fan-out: now the tool dir has been populated with hub
 # content, so harvest only picks up genuinely new/changed tool-side
