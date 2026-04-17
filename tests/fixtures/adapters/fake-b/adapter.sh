@@ -68,7 +68,8 @@ ADAPTER_FALLBACK_STRATEGY=""
 ADAPTER_HUB_MAP=$'content.md\tNOTES.md
 config/hooks\ttool.json#hooks'
 ADAPTER_PROJECT_CONTENT_RULES=$'content.md\tNOTES.md
-*\tnotes'
+content.md\tnotes/NOTES.md
+notes\tnotes'
 
 # --- H. Logging ------------------------------------------------------------
 ADAPTER_LOG_PATH="$ADAPTER_DIR/.sync-error.log"

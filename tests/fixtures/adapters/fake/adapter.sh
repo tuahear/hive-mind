@@ -81,7 +81,8 @@ ADAPTER_FALLBACK_STRATEGY=""
 ADAPTER_HUB_MAP=$'content.md\tMEMORY.md
 config/hooks\thooks.json#hooks'
 ADAPTER_PROJECT_CONTENT_RULES=$'content.md\tMEMORY.md
-*\tmemory'
+content.md\tmemory/MEMORY.md
+memory\tmemory'
 
 # --- H. Logging ------------------------------------------------------------
 ADAPTER_LOG_PATH="$ADAPTER_DIR/.sync-error.log"

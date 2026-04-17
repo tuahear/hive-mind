@@ -145,11 +145,11 @@ run_sync() {
   # behavior against a refactor that might switch to pathname-
   # expansion-based matching.
   hub_proj="$HUB/projects/github.com/alice/proj"
-  mkdir -p "$hub_proj"
+  mkdir -p "$hub_proj/memory"
   printf 'baseline\n%s\nafter\n' "$(marker 'project-memory marker survived')" \
     > "$hub_proj/content.md"
   printf 'nested content\n%s\n' "$(marker 'nested memory marker')" \
-    > "$hub_proj/note.md"
+    > "$hub_proj/memory/note.md"
 
   run run_sync
   [ "$status" -eq 0 ]
@@ -164,7 +164,7 @@ run_sync() {
   # is exercised too.
   run grep -F 'commit:' "$hub_proj/content.md"
   [ "$status" -ne 0 ]
-  run grep -F 'commit:' "$hub_proj/note.md"
+  run grep -F 'commit:' "$hub_proj/memory/note.md"
   [ "$status" -ne 0 ]
 }
 

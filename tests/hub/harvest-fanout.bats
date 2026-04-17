@@ -21,7 +21,7 @@ setup() {
   # helpers are adapter-agnostic; using Claude's here keeps the test
   # shape identical to what production hits.
   export ADAPTER_HUB_MAP=$'content.md\tCLAUDE.md\nconfig/hooks\tsettings.json#hooks\nconfig/permissions/allow.txt\tsettings.json#permissions.allow'
-  export ADAPTER_PROJECT_CONTENT_RULES=$'content.md\tMEMORY.md\n*\tmemory'
+  export ADAPTER_PROJECT_CONTENT_RULES=$'content.md\tMEMORY.md\ncontent.md\tmemory/MEMORY.md\nmemory\tmemory'
   export ADAPTER_SKILL_ROOT="$TOOL/skills"
 
   # shellcheck source=/dev/null
@@ -287,8 +287,8 @@ EOF
   hub_proj="$HUB/projects/github.com/alice/proj"
   [ -f "$hub_proj/content.md" ]
   grep -q '# project memory' "$hub_proj/content.md"
-  [ -f "$hub_proj/note.md" ]
-  grep -q '^note$' "$hub_proj/note.md"
+  [ -f "$hub_proj/memory/note.md" ]
+  grep -q '^note$' "$hub_proj/memory/note.md"
 }
 
 @test "harvest skips project variants without a sidecar (mirror-projects hasn't bootstrapped them)" {
@@ -313,7 +313,7 @@ EOF
   hub_proj="$HUB/projects/github.com/alice/proj"
   mkdir -p "$hub_proj/memory"
   printf '# fresh\n' > "$hub_proj/content.md"
-  printf 'a\n' > "$hub_proj/a.md"
+  printf 'a\n' > "$hub_proj/memory/a.md"
 
   hub_fan_out "$HUB" "$TOOL"
 

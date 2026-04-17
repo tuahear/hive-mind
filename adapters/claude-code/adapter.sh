@@ -199,14 +199,16 @@ config/permissions/deny.txt\tsettings.json#permissions.deny
 config/permissions/ask.txt\tsettings.json#permissions.ask'
 
 # Rules for hub's `projects/<id>/` subtree ↔ Claude's per-project
-# layout. Hub stores everything flat under `projects/<id>/`:
-#   content.md   ← Claude's MEMORY.md
-#   <subfiles>   ← Claude's memory/* (notes, feedback, etc.)
-# The `*` catch-all maps every non-content.md file at the hub project
-# root to/from Claude's memory/ subdirectory (flattening on harvest,
-# un-flattening on fan-out).
+# layout. Hub mirrors the tool's memory/ subdir as-is; only the main
+# memory file gets renamed to content.md. Two explicit rules for
+# content.md because Claude stores MEMORY.md at EITHER the variant
+# root (projects/<encoded-cwd>/MEMORY.md) or inside memory/
+# (projects/<encoded-cwd>/memory/MEMORY.md) depending on version —
+# first match wins on harvest; fan-out populates both so either
+# location works on read.
 ADAPTER_PROJECT_CONTENT_RULES=$'content.md\tMEMORY.md
-*\tmemory'
+content.md\tmemory/MEMORY.md
+memory\tmemory'
 
 # --- H. Logging ------------------------------------------------------------
 ADAPTER_LOG_PATH="${ADAPTER_DIR}/.sync-error.log"

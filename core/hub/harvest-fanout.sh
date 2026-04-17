@@ -361,18 +361,10 @@ _hub_apply_project_rules() {
   local rules="${ADAPTER_PROJECT_CONTENT_RULES:-}"
   [ -n "$rules" ] || return 0
 
-  # Two-pass: explicit rules first (collect matched hub-rels), then
-  # catch-all if declared.
-  local explicit_hub_rels="" catchall_tool_rel=""
   local hub_rel tool_rel src dst
   while IFS=$'\t' read -r hub_rel tool_rel; do
     [ -z "$hub_rel" ] && continue
     [ -z "$tool_rel" ] && continue
-    if [ "$hub_rel" = "*" ]; then
-      catchall_tool_rel="$tool_rel"
-      continue
-    fi
-    explicit_hub_rels="$explicit_hub_rels|$hub_rel|"
     if [ "$direction" = "harvest" ]; then
       src="$tool_variant/$tool_rel"
       dst="$hub_proj/$hub_rel"
@@ -380,48 +372,13 @@ _hub_apply_project_rules() {
       src="$hub_proj/$hub_rel"
       dst="$tool_variant/$tool_rel"
     fi
+
     if _hub_is_filelike "$hub_rel"; then
       _hub_sync_file "$src" "$dst"
     else
       _hub_sync_dir "$src" "$dst"
     fi
   done < <(hub_parse_project_rules "$rules")
-
-  # Catch-all pass: sync files not matched by explicit rules.
-  if [ -n "$catchall_tool_rel" ]; then
-    if [ "$direction" = "harvest" ]; then
-      # Tool's subdir → hub project root (flatten).
-      local tool_subdir="$tool_variant/$catchall_tool_rel"
-      [ -d "$tool_subdir" ] || return 0
-      local f fname
-      for f in "$tool_subdir"/*; do
-        [ -f "$f" ] || continue
-        fname="${f##*/}"
-        # Skip sidecar and files matched by explicit rules.
-        [ "$fname" = ".hive-mind" ] && continue
-        case "$explicit_hub_rels" in *"|$fname|"*) continue ;; esac
-        _hub_sync_file "$f" "$hub_proj/$fname"
-      done
-      # Remove hub files whose tool counterpart was deleted.
-      for f in "$hub_proj"/*; do
-        [ -f "$f" ] || continue
-        fname="${f##*/}"
-        case "$explicit_hub_rels" in *"|$fname|"*) continue ;; esac
-        [ -f "$tool_subdir/$fname" ] || rm -f "$f"
-      done
-    else
-      # Hub project root → tool's subdir (unflatten).
-      local tool_subdir="$tool_variant/$catchall_tool_rel"
-      mkdir -p "$tool_subdir" 2>/dev/null
-      local f fname
-      for f in "$hub_proj"/*; do
-        [ -f "$f" ] || continue
-        fname="${f##*/}"
-        case "$explicit_hub_rels" in *"|$fname|"*) continue ;; esac
-        cp "$f" "$tool_subdir/$fname"
-      done
-    fi
-  fi
 }
 
 # --- entry: skills with content-file rename --------------------------------
