@@ -151,8 +151,8 @@ declare -a HUB_SECRET_LISTS=()
 # --- phase: harvest --------------------------------------------------------
 # Bootstrap project-id sidecars BEFORE hub_harvest runs. mirror-projects
 # walks each flat-layout adapter's projects/<encoded-cwd>/ tree and
-# writes the <variant>/memory/.hive-mind sidecar that hub_harvest keys
-# on. Without this pre-pass, a fresh install with existing per-project
+# writes the <variant>/.hive-mind sidecar (at the variant root) that
+# hub_harvest keys on. Without this pre-pass, a fresh install with
 # memory silently no-ops — hub_harvest's per-project loop skips
 # variants whose sidecar is absent, so the hub's projects/<id>/ stays
 # empty and cross-machine per-project sync never materializes.

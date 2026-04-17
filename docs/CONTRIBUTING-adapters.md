@@ -115,7 +115,7 @@ ADAPTER_PROJECT_CONTENT_RULES=$'content.md\tMEMORY.md
 
 ### Per-project mapping
 
-`ADAPTER_PROJECT_CONTENT_RULES` applies under `projects/<project-id>/**`. Variant discovery goes through the sidecar `<variant>/memory/.hive-mind` (written by `core/mirror-projects.sh`) which exposes `project-id=<normalized-remote>`. Variants without a sidecar are skipped by harvest; tools that don't have a per-project concept declare the field empty.
+`ADAPTER_PROJECT_CONTENT_RULES` applies under `projects/<project-id>/**`. Variant discovery goes through the sidecar `<variant>/.hive-mind` at the variant root (written by `core/mirror-projects.sh`, with a legacy fallback to `<variant>/memory/.hive-mind` for pre-root-migration installs) which exposes `project-id=<normalized-remote>`. Variants without a sidecar are skipped by harvest; tools that don't have a per-project concept declare the field empty.
 
 ### Non-JSON config formats
 
