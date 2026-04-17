@@ -244,6 +244,7 @@ _hub_harvest_hooks_dir() {
 
   local event entries_json entry canon id
   while IFS= read -r event; do
+    event="${event%$'\r'}"
     [ -z "$event" ] && continue
     entries_json="$(jq -c --arg jp "$jsonpath" --arg e "$event" '
       (getpath($jp | split(".")) // {})[$e] // [] | .[]
@@ -299,6 +300,7 @@ _hub_fan_out_hooks_dir() {
     [ -d "$event_path" ] || continue
     event_dir="${event_path%/}"
     event="${event_dir##*/}"
+    event="${event%$'\r'}"
 
     # Concatenate all hub entries for this event into a JSON array.
     # Skip empty event dirs (no .json files) — the glob would fail.
