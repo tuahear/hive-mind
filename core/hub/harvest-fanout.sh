@@ -361,22 +361,36 @@ _hub_apply_project_rules() {
   local rules="${ADAPTER_PROJECT_CONTENT_RULES:-}"
   [ -n "$rules" ] || return 0
 
+  # Two-pass processing: dir rules first, file rules second. This
+  # prevents the dir-sync's "delete absent files" logic from wiping a
+  # file that an explicit file rule places inside the synced dir. For
+  # example: `memory\tmemory` dir-syncs the whole memory/ subdir, then
+  # `content.md\tmemory/MEMORY.md` writes MEMORY.md into memory/ — if
+  # we ran the file rule first, the dir-sync would delete MEMORY.md
+  # because it's not present in the hub's memory/ source.
   local hub_rel tool_rel src dst
+
+  # Pass 1: directory rules.
   while IFS=$'\t' read -r hub_rel tool_rel; do
     [ -z "$hub_rel" ] && continue
     [ -z "$tool_rel" ] && continue
+    _hub_is_filelike "$hub_rel" && continue
     if [ "$direction" = "harvest" ]; then
-      src="$tool_variant/$tool_rel"
-      dst="$hub_proj/$hub_rel"
+      _hub_sync_dir "$tool_variant/$tool_rel" "$hub_proj/$hub_rel"
     else
-      src="$hub_proj/$hub_rel"
-      dst="$tool_variant/$tool_rel"
+      _hub_sync_dir "$hub_proj/$hub_rel" "$tool_variant/$tool_rel"
     fi
+  done < <(hub_parse_project_rules "$rules")
 
-    if _hub_is_filelike "$hub_rel"; then
-      _hub_sync_file "$src" "$dst"
+  # Pass 2: file rules (overwrite anything the dir-sync deleted/placed).
+  while IFS=$'\t' read -r hub_rel tool_rel; do
+    [ -z "$hub_rel" ] && continue
+    [ -z "$tool_rel" ] && continue
+    _hub_is_filelike "$hub_rel" || continue
+    if [ "$direction" = "harvest" ]; then
+      _hub_sync_file "$tool_variant/$tool_rel" "$hub_proj/$hub_rel"
     else
-      _hub_sync_dir "$src" "$dst"
+      _hub_sync_file "$hub_proj/$hub_rel" "$tool_variant/$tool_rel"
     fi
   done < <(hub_parse_project_rules "$rules")
 }
@@ -481,15 +495,21 @@ hub_harvest() {
   # bootstrap before this runs).
   local proj_root="$tool_dir/projects"
   [ -d "$proj_root" ] || return 0
-  local variant id
+  local variant id variant_name
   for variant in "$proj_root"/*/; do
     [ -d "$variant" ] || continue
     variant="${variant%/}"
     id="$(_hub_read_project_id "$variant" 2>/dev/null || true)"
     [ -z "$id" ] && continue
+    variant_name="${variant##*/}"
     local hub_proj="$hub_dir/projects/$id"
     mkdir -p "$hub_proj"
     _hub_apply_project_rules harvest "$variant" "$hub_proj"
+    # Persist the sidecar in the hub so fan-out on another machine can
+    # (a) identify which project-id this dir belongs to without needing
+    # the tool-side sidecar, and (b) create the correct tool-side
+    # variant dir via the `path=` key (the encoded-cwd folder name).
+    printf 'project-id=%s\npath=%s\n' "$id" "$variant_name" > "$hub_proj/.hive-mind"
   done
 }
 
@@ -533,26 +553,37 @@ hub_fan_out() {
   local tool_skills="${ADAPTER_SKILL_ROOT:-$tool_dir/skills}"
   _hub_sync_skills fanout "$hub_dir/skills" "$tool_skills"
 
-  # Per-project: walk the tool's variants (not the hub's `projects/<id>/`
-  # tree) — project-id contains slashes like `github.com/alice/proj`, so
-  # iterating the hub's top-level `*/` would only see a URL host segment.
-  # Each variant's sidecar maps it to a hub id; look up the hub path
-  # directly. Missing hub dirs are skipped — this machine has the variant
-  # but the hub (or other machines) haven't pushed content for that
-  # project yet. Missing tool variants stay absent until the user opens
-  # the project and Claude writes a session jsonl (mirror-projects
-  # discovers the id on the next sync cycle).
+  # Per-project: walk the HUB's projects tree (not the tool's variants).
+  # Each hub project dir has a `.hive-mind` sidecar with `path=<encoded-
+  # cwd>` written by harvest — this tells fan-out which tool-side variant
+  # dir to create or populate. Walking the hub (not the tool) means a
+  # fresh machine that has never opened the project still gets the
+  # variant dir seeded on the first sync, whereas the old approach
+  # (walking tool variants) required the user to open the project in
+  # Claude first so mirror-projects could bootstrap the sidecar.
+  local hub_proj_root="$hub_dir/projects"
+  [ -d "$hub_proj_root" ] || return 0
   local tool_proj_root="$tool_dir/projects"
-  [ -d "$tool_proj_root" ] || return 0
 
-  local variant id hub_proj
-  for variant in "$tool_proj_root"/*/; do
-    [ -d "$variant" ] || continue
-    variant="${variant%/}"
-    id="$(_hub_read_project_id "$variant" 2>/dev/null || true)"
-    [ -z "$id" ] && continue
-    hub_proj="$hub_dir/projects/$id"
-    [ -d "$hub_proj" ] || continue
+  # Recursive walk: hub project dirs can be nested (github.com/owner/repo)
+  # so we find leaf dirs that contain a .hive-mind sidecar.
+  while IFS= read -r -d '' sidecar_path; do
+    local hub_proj
+    hub_proj="$(dirname "$sidecar_path")"
+    local variant_name=""
+    variant_name="$(awk -F= '$1=="path"{gsub(/\r/,"",$2); print $2; exit}' "$sidecar_path" 2>/dev/null)"
+    [ -z "$variant_name" ] && continue
+    local variant="$tool_proj_root/$variant_name"
+    mkdir -p "$variant/memory" 2>/dev/null
     _hub_apply_project_rules fanout "$variant" "$hub_proj"
-  done
+    # Seed the tool-side sidecar AFTER project-rules fan-out. The dir-
+    # sync for `memory\tmemory` deletes files in $variant/memory/ that
+    # aren't in $hub_proj/memory/ — if we wrote the sidecar before the
+    # dir-sync, it would get deleted because the hub doesn't store a
+    # sidecar inside memory/ (the hub's sidecar is at the project root).
+    local tool_sidecar="$variant/memory/.hive-mind"
+    local proj_id=""
+    proj_id="$(awk -F= '$1=="project-id"{gsub(/\r/,"",$2); print $2; exit}' "$sidecar_path" 2>/dev/null)"
+    [ -n "$proj_id" ] && printf 'project-id=%s\n' "$proj_id" > "$tool_sidecar"
+  done < <(find "$hub_proj_root" -name ".hive-mind" -type f -print0 2>/dev/null)
 }
