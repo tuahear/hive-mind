@@ -287,10 +287,15 @@ _hub_fan_out_hooks_dir() {
     event="${event_dir##*/}"
 
     # Concatenate all hub entries for this event into a JSON array.
-    entries_json="$(
-      jq -cs . "$event_dir"/*.json 2>/dev/null
-    )"
-    [ -z "$entries_json" ] && entries_json="[]"
+    # Skip empty event dirs (no .json files) — the glob would fail.
+    local json_files
+    json_files="$(find "$event_dir" -maxdepth 1 -name '*.json' -type f 2>/dev/null)"
+    if [ -z "$json_files" ]; then
+      entries_json="[]"
+    else
+      entries_json="$(find "$event_dir" -maxdepth 1 -name '*.json' -type f -print0 | xargs -0 jq -cs . 2>/dev/null)"
+      [ -z "$entries_json" ] && entries_json="[]"
+    fi
 
     # Merge into tool file: keep machine-local tool entries for this
     # event, add hub entries. jq handles the de-machine-local split via
