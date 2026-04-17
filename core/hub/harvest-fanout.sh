@@ -332,14 +332,20 @@ _hub_fan_out_text_list() {
 
 # --- entry: per-project content --------------------------------------------
 
-# Read project-id from a variant's sidecar at <variant>/memory/.hive-mind.
-# Always exits 0 — an absent sidecar emits nothing, not a non-zero status,
-# so a caller's `id="$(...)"` under `set -e` won't abort when the variant
-# hasn't been bootstrapped by mirror-projects yet.
+# Read project-id from a variant's sidecar. Checks two locations:
+#   1. $variant/.hive-mind (new canonical location — variant root)
+#   2. $variant/memory/.hive-mind (legacy location, pre-root-migration)
+# Always exits 0 so callers under `set -e` don't abort on missing sidecars.
 _hub_read_project_id() {
   local variant="$1"
-  local sidecar="$variant/memory/.hive-mind"
-  [ -f "$sidecar" ] || return 0
+  local sidecar=""
+  if [ -f "$variant/.hive-mind" ]; then
+    sidecar="$variant/.hive-mind"
+  elif [ -f "$variant/memory/.hive-mind" ]; then
+    sidecar="$variant/memory/.hive-mind"
+  else
+    return 0
+  fi
   awk -F= '
     /^[[:space:]]*#/ { next }
     $1 == "project-id" { sub(/^[^=]*=/, ""); gsub(/\r/, ""); print; exit }
@@ -505,11 +511,19 @@ hub_harvest() {
     local hub_proj="$hub_dir/projects/$id"
     mkdir -p "$hub_proj"
     _hub_apply_project_rules harvest "$variant" "$hub_proj"
-    # Persist the sidecar in the hub so fan-out on another machine can
-    # (a) identify which project-id this dir belongs to without needing
-    # the tool-side sidecar, and (b) create the correct tool-side
-    # variant dir via the `path=` key (the encoded-cwd folder name).
-    printf 'project-id=%s\npath=%s\n' "$id" "$variant_name" > "$hub_proj/.hive-mind"
+    # Persist project-id in the hub sidecar. No `path=` key — the
+    # encoded-cwd folder name is machine-specific (different machines
+    # have different checkout paths) so a single path value would be
+    # wrong/misleading on every machine except the one that wrote it.
+    printf 'project-id=%s\n' "$id" > "$hub_proj/.hive-mind"
+    # Migrate tool-side sidecar from legacy memory/.hive-mind to the
+    # variant root. The root is the correct location — the sidecar is
+    # metadata about the variant, not memory content.
+    if [ -f "$variant/memory/.hive-mind" ] && [ ! -f "$variant/.hive-mind" ]; then
+      mv "$variant/memory/.hive-mind" "$variant/.hive-mind"
+    elif [ -f "$variant/memory/.hive-mind" ] && [ -f "$variant/.hive-mind" ]; then
+      rm -f "$variant/memory/.hive-mind"
+    fi
   done
 }
 
@@ -553,37 +567,23 @@ hub_fan_out() {
   local tool_skills="${ADAPTER_SKILL_ROOT:-$tool_dir/skills}"
   _hub_sync_skills fanout "$hub_dir/skills" "$tool_skills"
 
-  # Per-project: walk the HUB's projects tree (not the tool's variants).
-  # Each hub project dir has a `.hive-mind` sidecar with `path=<encoded-
-  # cwd>` written by harvest — this tells fan-out which tool-side variant
-  # dir to create or populate. Walking the hub (not the tool) means a
-  # fresh machine that has never opened the project still gets the
-  # variant dir seeded on the first sync, whereas the old approach
-  # (walking tool variants) required the user to open the project in
-  # Claude first so mirror-projects could bootstrap the sidecar.
-  local hub_proj_root="$hub_dir/projects"
-  [ -d "$hub_proj_root" ] || return 0
+  # Per-project: walk the tool's variants. Each variant's sidecar
+  # (at variant root or legacy memory/.hive-mind) maps it to a hub
+  # project-id; look up the hub dir and apply rules. Variant dirs are
+  # created by the tool itself when the user opens a project — fan-out
+  # can't create them because the encoded-cwd folder name is machine-
+  # specific and not stored in the hub.
   local tool_proj_root="$tool_dir/projects"
+  [ -d "$tool_proj_root" ] || return 0
 
-  # Recursive walk: hub project dirs can be nested (github.com/owner/repo)
-  # so we find leaf dirs that contain a .hive-mind sidecar.
-  while IFS= read -r -d '' sidecar_path; do
-    local hub_proj
-    hub_proj="$(dirname "$sidecar_path")"
-    local variant_name=""
-    variant_name="$(awk -F= '$1=="path"{gsub(/\r/,"",$2); print $2; exit}' "$sidecar_path" 2>/dev/null)"
-    [ -z "$variant_name" ] && continue
-    local variant="$tool_proj_root/$variant_name"
-    mkdir -p "$variant/memory" 2>/dev/null
+  local variant id hub_proj
+  for variant in "$tool_proj_root"/*/; do
+    [ -d "$variant" ] || continue
+    variant="${variant%/}"
+    id="$(_hub_read_project_id "$variant" 2>/dev/null || true)"
+    [ -z "$id" ] && continue
+    hub_proj="$hub_dir/projects/$id"
+    [ -d "$hub_proj" ] || continue
     _hub_apply_project_rules fanout "$variant" "$hub_proj"
-    # Seed the tool-side sidecar AFTER project-rules fan-out. The dir-
-    # sync for `memory\tmemory` deletes files in $variant/memory/ that
-    # aren't in $hub_proj/memory/ — if we wrote the sidecar before the
-    # dir-sync, it would get deleted because the hub doesn't store a
-    # sidecar inside memory/ (the hub's sidecar is at the project root).
-    local tool_sidecar="$variant/memory/.hive-mind"
-    local proj_id=""
-    proj_id="$(awk -F= '$1=="project-id"{gsub(/\r/,"",$2); print $2; exit}' "$sidecar_path" 2>/dev/null)"
-    [ -n "$proj_id" ] && printf 'project-id=%s\n' "$proj_id" > "$tool_sidecar"
-  done < <(find "$hub_proj_root" -name ".hive-mind" -type f -print0 2>/dev/null)
+  done
 }

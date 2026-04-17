@@ -278,7 +278,7 @@ EOF
   # Seed a variant with a sidecar (the way mirror-projects writes it).
   variant="$TOOL/projects/-Users-alice-proj"
   mkdir -p "$variant/memory"
-  printf 'project-id=github.com/alice/proj\n' > "$variant/memory/.hive-mind"
+  printf 'project-id=github.com/alice/proj\n' > "$variant/.hive-mind"
   printf '# project memory\n' > "$variant/MEMORY.md"
   printf 'note\n' > "$variant/memory/note.md"
 
@@ -304,19 +304,20 @@ EOF
 }
 
 @test "fanout copies hub/projects/<id>/ content back into the matching tool variant" {
-  # Hub has project content from another machine, with a sidecar that
-  # tells fan-out which tool-side variant dir to create/populate.
+  # Precondition: tool-side variant exists with a sidecar at root.
+  variant="$TOOL/projects/-Users-alice-proj"
+  mkdir -p "$variant/memory"
+  printf 'project-id=github.com/alice/proj\n' > "$variant/.hive-mind"
+
+  # Hub has project content from another machine.
   hub_proj="$HUB/projects/github.com/alice/proj"
   mkdir -p "$hub_proj/memory"
-  printf 'project-id=github.com/alice/proj\npath=-Users-alice-proj\n' > "$hub_proj/.hive-mind"
+  printf 'project-id=github.com/alice/proj\n' > "$hub_proj/.hive-mind"
   printf '# fresh\n' > "$hub_proj/content.md"
   printf 'a\n' > "$hub_proj/memory/a.md"
 
   hub_fan_out "$HUB" "$TOOL"
 
-  variant="$TOOL/projects/-Users-alice-proj"
-  # Fan-out created the variant dir from the sidecar's path= key.
-  [ -d "$variant" ]
   # content.md → MEMORY.md at variant root (first explicit rule).
   [ -f "$variant/MEMORY.md" ]
   grep -q '# fresh' "$variant/MEMORY.md"
@@ -324,31 +325,24 @@ EOF
   [ -f "$variant/memory/MEMORY.md" ]
   # Subfiles synced as-is.
   [ -f "$variant/memory/a.md" ]
-  # Tool-side sidecar seeded so future harvests recognize this variant.
-  [ -f "$variant/memory/.hive-mind" ]
-  grep -Fq "project-id=github.com/alice/proj" "$variant/memory/.hive-mind"
 }
 
-@test "fanout creates a new tool-side variant from hub sidecar on a machine that never opened the project" {
-  # Regression: the old fan-out walked TOOL variants and required a
-  # pre-existing sidecar. A fresh machine that never opened this project
-  # had no variant dir → fan-out skipped → per-project content was
-  # invisible until the user manually started a Claude session in the
-  # project. With hub-side sidecars, fan-out creates the variant dir
-  # from the path= key without user action.
+@test "fanout only populates existing tool variants — cannot create new ones without the machine-specific encoded-cwd" {
+  # The encoded-cwd folder name is machine-specific (different checkout
+  # paths produce different folder names), so the hub can't tell a fresh
+  # machine what folder name to use. Fan-out only populates variant dirs
+  # that already exist with a sidecar. New variants get created when the
+  # user opens the project in Claude (which writes a session jsonl) and
+  # mirror-projects bootstraps the sidecar on the next sync.
   hub_proj="$HUB/projects/github.com/bob/newrepo"
   mkdir -p "$hub_proj/memory"
-  printf 'project-id=github.com/bob/newrepo\npath=-Users-bob-Repo-newrepo\n' > "$hub_proj/.hive-mind"
+  printf 'project-id=github.com/bob/newrepo\n' > "$hub_proj/.hive-mind"
   printf '# from another machine\n' > "$hub_proj/content.md"
 
-  # Tool has NO projects/ at all — truly fresh machine.
   [ ! -d "$TOOL/projects" ]
 
   hub_fan_out "$HUB" "$TOOL"
 
-  variant="$TOOL/projects/-Users-bob-Repo-newrepo"
-  [ -d "$variant" ]
-  [ -f "$variant/MEMORY.md" ]
-  grep -q '# from another machine' "$variant/MEMORY.md"
-  [ -f "$variant/memory/.hive-mind" ]
+  # No variant created — tool has no encoded-cwd for this project.
+  [ ! -d "$TOOL/projects" ]
 }

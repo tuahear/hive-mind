@@ -30,7 +30,7 @@ mkvariant() {
 mark() {
   local variant="$1" id="$2"
   mkdir -p "$HOME/.claude/projects/$variant/memory"
-  printf 'project-id=%s\n' "$id" > "$HOME/.claude/projects/$variant/memory/$MARKER"
+  printf 'project-id=%s\n' "$id" > "$HOME/.claude/projects/$variant/$MARKER"
 }
 
 run_mirror() {
@@ -188,8 +188,8 @@ run_mirror() {
 
   run run_mirror
   [ "$status" -eq 0 ]
-  [ -f "$variant/memory/$MARKER" ]
-  grep -Fq "project-id=github.com/owner/myrepo" "$variant/memory/$MARKER"
+  [ -f "$variant/$MARKER" ]
+  grep -Fq "project-id=github.com/owner/myrepo" "$variant/$MARKER"
 }
 
 @test "content-less variant is left alone — no sidecar is bootstrapped into an empty project dir" {
@@ -209,7 +209,7 @@ run_mirror() {
 
   run run_mirror
   [ "$status" -eq 0 ]
-  [ ! -f "$variant/memory/$MARKER" ]
+  [ ! -f "$variant/$MARKER" ]
   [ ! -d "$variant/memory" ]
 }
 
@@ -229,7 +229,7 @@ run_mirror() {
   # alice's variant (pulled from remote) — has content + sidecar.
   alice="$HOME/.claude/projects/-Users-alice-Repo-adtof"
   mkdir -p "$alice/memory"
-  printf 'project-id=github.com/me/adtof\n' > "$alice/memory/$MARKER"
+  printf 'project-id=github.com/me/adtof\n' > "$alice/$MARKER"
   printf 'alice memory line\n' > "$alice/memory/notes.md"
   printf '# adtof alice\n' > "$alice/MEMORY.md"
 
@@ -242,8 +242,8 @@ run_mirror() {
   [ "$status" -eq 0 ]
 
   # bob's sidecar was bootstrapped because the derived id matched alice's.
-  [ -f "$bob/memory/$MARKER" ]
-  grep -Fq "project-id=github.com/me/adtof" "$bob/memory/$MARKER"
+  [ -f "$bob/$MARKER" ]
+  grep -Fq "project-id=github.com/me/adtof" "$bob/$MARKER"
   # alice's content mirrored into bob's variant.
   [ -f "$bob/memory/notes.md" ]
   grep -Fq "alice memory line" "$bob/memory/notes.md"
@@ -264,8 +264,8 @@ run_mirror() {
 
   run run_mirror
   [ "$status" -eq 0 ]
-  [ -f "$variant/memory/$MARKER" ]
-  grep -Fq "project-id=github.com/me/live-repo" "$variant/memory/$MARKER"
+  [ -f "$variant/$MARKER" ]
+  grep -Fq "project-id=github.com/me/live-repo" "$variant/$MARKER"
 }
 
 @test "user-supplied identity (no git remote) is honored — manual override path" {
@@ -284,7 +284,7 @@ run_mirror() {
   [ -f "$HOME/.claude/projects/C--Users-bob-Repo-no-remote-2/memory/note.md" ]
   # Sidecars unchanged.
   grep -Fq "project-id=user-id/local-project" \
-    "$HOME/.claude/projects/-Users-alice-Repo-no-remote-1/memory/$MARKER"
+    "$HOME/.claude/projects/-Users-alice-Repo-no-remote-1/$MARKER"
 }
 
 @test "discover_id: SSH and HTTPS forms of the same remote normalize to the same id and group" {
@@ -438,8 +438,8 @@ run_mirror() {
 
   run run_mirror
   [ "$status" -eq 0 ]
-  [ -f "$variant/memory/$MARKER" ]
-  grep -Fq "project-id=github.com/me/live-repo" "$variant/memory/$MARKER"
+  [ -f "$variant/$MARKER" ]
+  grep -Fq "project-id=github.com/me/live-repo" "$variant/$MARKER"
 }
 
 @test "n=3 variants, only one edits: edit replaces baseline on the other two (no union)" {
@@ -521,11 +521,11 @@ run_mirror() {
   mkvariant "C--Users-bob-Repo-foo"
   # Same project-id (so they group), but extra per-variant metadata
   # that would be visibly different if the file got cross-mirrored.
-  cat > "$HOME/.claude/projects/-Users-alice-Repo-foo/memory/$MARKER" <<EOF
+  cat > "$HOME/.claude/projects/-Users-alice-Repo-foo/$MARKER" <<EOF
 project-id=github.com/me/foo
 machine=mac
 EOF
-  cat > "$HOME/.claude/projects/C--Users-bob-Repo-foo/memory/$MARKER" <<EOF
+  cat > "$HOME/.claude/projects/C--Users-bob-Repo-foo/$MARKER" <<EOF
 project-id=github.com/me/foo
 machine=windows
 EOF
@@ -536,6 +536,6 @@ EOF
   [ "$status" -eq 0 ]
 
   # Each side keeps its own per-variant metadata (no cross-overwrite).
-  grep -Fq "machine=mac"     "$HOME/.claude/projects/-Users-alice-Repo-foo/memory/$MARKER"
-  grep -Fq "machine=windows" "$HOME/.claude/projects/C--Users-bob-Repo-foo/memory/$MARKER"
+  grep -Fq "machine=mac"     "$HOME/.claude/projects/-Users-alice-Repo-foo/$MARKER"
+  grep -Fq "machine=windows" "$HOME/.claude/projects/C--Users-bob-Repo-foo/$MARKER"
 }

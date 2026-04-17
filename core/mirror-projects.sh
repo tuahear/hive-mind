@@ -83,12 +83,24 @@ derive_id_from_cwd() {
 discover_id() {
   local pdir="$1"
   local known="$2"
-  local meta="$pdir/memory/$MARKER_FILE"
+  # Check for sidecar at variant root (canonical) then legacy memory/ location.
+  local meta=""
+  if [ -f "$pdir/$MARKER_FILE" ]; then
+    meta="$pdir/$MARKER_FILE"
+  elif [ -f "$pdir/memory/$MARKER_FILE" ]; then
+    meta="$pdir/memory/$MARKER_FILE"
+  fi
   local id=""
 
-  if [ -f "$meta" ]; then
+  if [ -n "$meta" ] && [ -f "$meta" ]; then
     id="$(read_meta "$meta" "project-id" | tr -d '\r\n')"
     if [ -n "$id" ]; then
+      # Migrate legacy sidecar to variant root if needed.
+      if [ "$meta" = "$pdir/memory/$MARKER_FILE" ] && [ ! -f "$pdir/$MARKER_FILE" ]; then
+        mv "$meta" "$pdir/$MARKER_FILE"
+      elif [ "$meta" = "$pdir/memory/$MARKER_FILE" ] && [ -f "$pdir/$MARKER_FILE" ]; then
+        rm -f "$meta"
+      fi
       printf '%s' "$id"
       return 0
     fi
@@ -112,8 +124,8 @@ discover_id() {
     fi
   fi
 
-  mkdir -p "$pdir/memory"
-  printf 'project-id=%s\n' "$id" > "$meta"
+  # Write sidecar at variant root (not inside memory/).
+  printf 'project-id=%s\n' "$id" > "$pdir/$MARKER_FILE"
   printf '%s' "$id"
   return 0
 }
@@ -123,8 +135,14 @@ known_ids=""
 for d in projects/*/; do
   [ -d "$d" ] || continue
   pdir="${d%/}"
-  meta="$pdir/memory/$MARKER_FILE"
-  [ -f "$meta" ] || continue
+  # Check variant root first (canonical), then legacy memory/ location.
+  meta=""
+  if [ -f "$pdir/$MARKER_FILE" ]; then
+    meta="$pdir/$MARKER_FILE"
+  elif [ -f "$pdir/memory/$MARKER_FILE" ]; then
+    meta="$pdir/memory/$MARKER_FILE"
+  fi
+  [ -n "$meta" ] || continue
   id="$(read_meta "$meta" "project-id" | tr -d '\r\n')"
   [ -n "$id" ] && known_ids="$known_ids$id"$'\n'
 done

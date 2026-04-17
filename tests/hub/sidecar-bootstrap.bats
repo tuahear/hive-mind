@@ -75,14 +75,14 @@ run_sync() {
   printf '# project notes\n' > "$variant/MEMORY.md"
 
   # Sanity: sidecar doesn't exist yet.
-  [ ! -f "$variant/memory/.hive-mind" ]
+  [ ! -f "$variant/.hive-mind" ]
 
   run run_sync
   [ "$status" -eq 0 ]
 
   # After the sync, the sidecar was bootstrapped...
-  [ -f "$variant/memory/.hive-mind" ]
-  grep -Fq "project-id=github.com/owner/myrepo" "$variant/memory/.hive-mind"
+  [ -f "$variant/.hive-mind" ]
+  grep -Fq "project-id=github.com/owner/myrepo" "$variant/.hive-mind"
 
   # ...AND the per-project memory reached the hub under the normalized
   # remote ID. Without the pre-harvest mirror-projects call, the
