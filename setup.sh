@@ -323,6 +323,20 @@ mkdir -p "$ADAPTER_DIR"
 # shellcheck source=/dev/null
 source "$HIVE_MIND_SRC/core/hub/harvest-fanout.sh"
 
+# Migrate BEFORE harvest so legacy hook commands in the tool's
+# settings.json get rewritten to hub-topology paths. Otherwise
+# harvest captures the old commands (e.g. `cd ~/.claude && git pull
+# ... && ~/.claude/hive-mind/scripts/check-dupes.sh`) and pushes
+# them to the hub — polluting the hub with stale hook entries that
+# reference paths that no longer exist.
+declare -f adapter_migrate >/dev/null 2>&1 && adapter_migrate "$PREV_HIVE_MIND_VERSION"
+
+# Install hooks BEFORE harvest too — an existing pre-hub install
+# may have hooks pointing at old paths; adapter_install_hooks
+# merges the current template on top, giving harvest the new
+# commands to capture.
+adapter_install_hooks
+
 # Bootstrap project-id sidecars before harvest — same pre-pass the hub
 # sync engine runs (core/hub/sync.sh). Without this, a fresh install
 # with existing per-project memory has no sidecars → harvest skips
@@ -357,14 +371,6 @@ hub_harvest "$ADAPTER_DIR" "$HIVE_MIND_HUB_DIR"
 
 log "  fanning hub content -> tool dir"
 hub_fan_out "$HIVE_MIND_HUB_DIR" "$ADAPTER_DIR"
-
-# Run adapter migration against any pre-0.3.0 hook paths in
-# ADAPTER_DIR/settings.json so an upgrade install rewrites them to the
-# hub entry point before adapter_install_hooks checks for presence.
-declare -f adapter_migrate >/dev/null 2>&1 && adapter_migrate "$PREV_HIVE_MIND_VERSION"
-
-# Install the tool's hooks (they now point at the hub's bin/sync).
-adapter_install_hooks
 
 # Record this adapter in the attached-adapters list.
 if ! grep -Fxq "$ADAPTER" "$ATTACHED_FILE"; then
