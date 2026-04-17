@@ -96,10 +96,25 @@ hub_parse_project_rules() {
 
 # --- internal helpers ------------------------------------------------------
 
-# Deterministic short id from stdin. git hash-object is always available
-# (git is a hard dep) and emits stable sha1 regardless of platform.
-_hub_entry_id() {
-  git hash-object --stdin 2>/dev/null | cut -c1-12
+# Derive a human-readable slug from a hook entry's first command.
+# E.g. `"$HOME/.hive-mind/bin/sync"` → `sync`.
+# Falls back to a content hash if no command is found.
+_hub_entry_slug() {
+  local entry_json="$1"
+  local cmd
+  cmd="$(jq -r '.. | objects | .command? // empty' <<<"$entry_json" 2>/dev/null | head -1)"
+  if [ -n "$cmd" ]; then
+    # Extract the basename of the command path, strip quotes/extensions.
+    local slug="${cmd##*/}"
+    slug="${slug%%\"*}"
+    slug="${slug%%.sh}"
+    slug="${slug%%.*}"
+    # Sanitize: keep only alphanum + dash + underscore.
+    slug="$(printf '%s' "$slug" | tr -cd 'a-zA-Z0-9_-')"
+    [ -n "$slug" ] && { printf '%s' "$slug"; return 0; }
+  fi
+  # Fallback: content hash.
+  printf '%s' "$entry_json" | git hash-object --stdin 2>/dev/null | cut -c1-12
 }
 
 # File-like if the last path component has a '.'.
@@ -223,9 +238,17 @@ _hub_harvest_hooks_dir() {
       fi
       canon="$(jq -cS . <<<"$entry" 2>/dev/null)"
       [ -z "$canon" ] && continue
-      id="$(printf '%s' "$canon" | _hub_entry_id)"
-      [ -z "$id" ] && continue
-      printf '%s\n' "$canon" > "$tmp_dir/$id.json"
+      local slug
+      slug="$(_hub_entry_slug "$canon")"
+      [ -z "$slug" ] && continue
+      # Dedup: if two entries produce the same slug (e.g. two hooks
+      # whose command basename is identical), append a counter.
+      if [ -f "$tmp_dir/$slug.json" ]; then
+        local n=2
+        while [ -f "$tmp_dir/${slug}-${n}.json" ]; do n=$((n + 1)); done
+        slug="${slug}-${n}"
+      fi
+      printf '%s\n' "$canon" > "$tmp_dir/$slug.json"
     done <<<"$entries_json"
 
     # Replace event dir atomically-ish: nuke, then move contents.
