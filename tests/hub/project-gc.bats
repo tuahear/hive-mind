@@ -114,6 +114,7 @@ teardown() {
 
 @test "tool variant whose cwd still exists is kept" {
   export HIVE_MIND_HUB_PROJECT_GC_DAYS=1
+  export HIVE_MIND_HUB_PROJECT_GC_AUTO=1
 
   mkdir -p "$HOME/real-repo"
   mkdir -p "$TOOL/projects/-variant-live"
@@ -185,6 +186,7 @@ teardown() {
 
 @test "tool variant whose cwd is gone but has unharvested content is kept" {
   export HIVE_MIND_HUB_PROJECT_GC_DAYS=1
+  export HIVE_MIND_HUB_PROJECT_GC_AUTO=1
 
   mkdir -p "$TOOL/projects/-variant-unharvested/memory"
   printf '{"cwd":"/no/such/path"}\n' > "$TOOL/projects/-variant-unharvested/session.jsonl"
