@@ -42,12 +42,9 @@ _gc_last_touch_days() {
 
   last_ts="$(git -C "$HIVE_MIND_HUB_DIR" log -1 --format=%ct -- "$rel" 2>/dev/null)"
   if [ -z "$last_ts" ] || [ "$last_ts" = "0" ]; then
-    # macOS stat -f %m, then GNU stat -c %Y.
-    last_ts="$(find "$project_dir" -type f -exec stat -f %m {} + 2>/dev/null | sort -rn | head -1)"
-    [ -z "$last_ts" ] && \
-      last_ts="$(find "$project_dir" -type f -exec stat -c %Y {} + 2>/dev/null | sort -rn | head -1)"
+    # No git history for this path — don't delete (age 0 = too recent).
+    echo 0; return
   fi
-  [ -z "$last_ts" ] && { echo 999; return; }
   now_ts="$(date +%s)"
   echo $(( (now_ts - last_ts) / 86400 ))
 }
