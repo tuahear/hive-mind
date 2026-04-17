@@ -2,7 +2,7 @@
 
 ## Hooks registered in `settings.json`
 
-Under the v0.3.0 hub topology every attached AI tool registers the same single entry point in its native hook config. For Claude Code that's `~/.claude/settings.json`:
+Every attached AI tool registers the same single entry point in its native hook config. For Claude Code that's `~/.claude/settings.json`:
 
 | Event | Command | Behavior |
 |---|---|---|
@@ -10,7 +10,7 @@ Under the v0.3.0 hub topology every attached AI tool registers the same single e
 | `Stop` (end of each turn) | `"$HOME/.hive-mind/bin/sync"` | Hub sync entry point. Harvests the tool dir → hub, pull-rebase-pushes the shared memory repo, fans the merged state back out to every attached tool |
 | `PostToolUse` on `Edit|Write|NotebookEdit` | `"$HOME/.hive-mind/hive-mind/core/marker-nudge.sh"` | Reminds the model to drop a `<!-- commit: ... -->` marker when it edits memory so the next sync gets a meaningful commit subject |
 
-Other adapters (Codex, Qwen, Kimi) will wire the same three events to the same three paths in their native hook config formats — see [`docs/adapters.md`](./adapters.md).
+Other adapters (Codex, Qwen, Kimi) will wire the same three events to the same three paths in their native hook config formats — see [Adapters](./adapters/).
 
 ## Commit marker convention
 
@@ -72,6 +72,3 @@ hive-mind/
 └── docs/                          ← docs site
 ```
 
-## Roadmap: AI-agnostic
-
-hive-mind v0.3.0 makes the architecture explicitly multi-provider. The hub's schema is lowercase and canonical; each adapter is a translator between that schema and its tool's native layout. Claude Code is the only shipped adapter today; Codex ([#11](https://github.com/tuahear/hive-mind/issues/11)), Qwen ([#19](https://github.com/tuahear/hive-mind/issues/19)), and Kimi ([#23](https://github.com/tuahear/hive-mind/issues/23)) are on the roadmap. See [docs/CONTRIBUTING-adapters.md](./CONTRIBUTING-adapters.md) for the contract.
