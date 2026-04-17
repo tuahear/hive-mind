@@ -2,7 +2,7 @@
 
 ## Hooks registered in `settings.json`
 
-Under the v0.3.0 hub topology every attached AI tool registers the same single entry point in its native hook config. For Claude Code that's `~/.claude/settings.json`:
+Every attached AI tool registers the same single entry point in its native hook config. For Claude Code that's `~/.claude/settings.json`:
 
 | Event | Command | Behavior |
 |---|---|---|
@@ -72,6 +72,3 @@ hive-mind/
 └── docs/                          ← docs site
 ```
 
-## Roadmap: AI-agnostic
-
-hive-mind v0.3.0 makes the architecture explicitly multi-provider. The hub's schema is lowercase and canonical; each adapter is a translator between that schema and its tool's native layout. Claude Code is the only shipped adapter today; Codex ([#11](https://github.com/tuahear/hive-mind/issues/11)), Qwen ([#19](https://github.com/tuahear/hive-mind/issues/19)), and Kimi ([#23](https://github.com/tuahear/hive-mind/issues/23)) are on the roadmap. See [docs/CONTRIBUTING-adapters.md](./CONTRIBUTING-adapters.md) for the contract.

@@ -2,10 +2,21 @@
 
 Two hooks do everything:
 
-- **Session starts** → `git pull --rebase` from your memory git repo so you're caught up with what another machine wrote since you were last here.
-- **Agent turn ends** → if anything changed, commit + push in ~1 second.
+- **Session starts** → `git pull --rebase` from your memory git repo so you're caught up with what another tool or another machine wrote since you were last here.
+- **Agent turn ends** → if anything changed, harvest into the hub, commit + push, then fan out to every other attached tool on this machine. All in ~1 second.
 
 Between those two moments, no network traffic. Your AI runs at full speed. If the network is down, sync fails silently and retries next turn.
+
+## The cross-provider story
+
+You've attached both Claude Code and Codex to the same hub on one machine.
+
+1. You teach Claude Code something useful. It writes to `~/.claude/CLAUDE.md`.
+2. Claude's Stop hook fires → harvest reads `CLAUDE.md` into `~/.hive-mind/content.md` → commit + push.
+3. Still inside that same Stop hook: fan-out rewrites `~/.codex/AGENTS.md` from the updated hub.
+4. Next time you open Codex, the lesson is already there.
+
+No manual sync, no re-teaching. Same flow applies to per-project memory, skills, permissions, and hooks.
 
 ## The cross-machine story
 
