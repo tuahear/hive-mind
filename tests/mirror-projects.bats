@@ -574,3 +574,39 @@ EOF
   # But the actual content survived.
   grep -Fq 'some content' "$bob/memory/notes.md"
 }
+
+@test "source variant keeps marker even when its content diverges from the union-merged result" {
+  # Regression: when multiple variants share a project-id and their
+  # content has diverged (accumulated union-merge junk from earlier
+  # cycles), the union-merged $merged differs from the source variant's
+  # $dst. The old code used `cmp -s "$dst" "$merged"` to decide whether
+  # to use the stripped copy — divergent content meant the source was
+  # treated as a sibling and got stripped. The fix checks whether $dst
+  # itself has a marker instead of comparing against $merged.
+  proj_dir="$HOME/myrepo"
+  git -c init.defaultBranch=main init -q "$proj_dir"
+  git -C "$proj_dir" remote add origin git@github.com:Owner/MyRepo.git
+
+  alice="$HOME/.claude/projects/-Users-alice-Repo-myrepo"
+  bob="$HOME/.claude/projects/C--Users-bob-Repo-myrepo"
+  mkdir -p "$alice/memory" "$bob/memory"
+  printf 'project-id=github.com/owner/myrepo\n' > "$alice/$MARKER"
+  printf 'project-id=github.com/owner/myrepo\n' > "$bob/$MARKER"
+
+  # Source has SHORT content with a marker.
+  printf '# notes\nnew edit\n<!-- commit: source marker -->\n' \
+    > "$alice/memory/notes.md"
+  # Sibling has DIVERGENT content (longer, accumulated from earlier
+  # union-merges). No marker.
+  printf '# notes\nold content\nextra line from earlier merge\nmore junk\n' \
+    > "$bob/memory/notes.md"
+
+  run run_mirror
+  [ "$status" -eq 0 ]
+
+  # Source MUST keep its marker despite content divergence.
+  grep -Fq '<!-- commit: source marker -->' "$alice/memory/notes.md"
+  # Sibling must NOT have the marker.
+  run grep -F '<!-- commit:' "$bob/memory/notes.md"
+  [ "$status" -ne 0 ]
+}
