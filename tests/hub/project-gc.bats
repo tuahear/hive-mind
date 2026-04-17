@@ -107,15 +107,47 @@ teardown() {
   [ -d "$TOOL/projects/-variant-live" ]
 }
 
-@test "tool variant whose cwd is gone is removed" {
+@test "tool variant whose cwd is gone is removed under auto-delete" {
   export HIVE_MIND_HUB_PROJECT_GC_DAYS=1
+  export HIVE_MIND_HUB_PROJECT_GC_AUTO=1
 
+  # Variant with a sidecar pointing to a project that IS in the hub (fully harvested).
   mkdir -p "$TOOL/projects/-variant-orphan"
   printf '{"cwd":"/no/such/path/repo"}\n' > "$TOOL/projects/-variant-orphan/session.jsonl"
+  printf 'project-id=github.com/alice/alive\n' > "$TOOL/projects/-variant-orphan/.hive-mind"
 
   hub_gc_tool_variants >/dev/null
 
   [ ! -d "$TOOL/projects/-variant-orphan" ]
+}
+
+@test "tool variant whose cwd is gone but has no sidecar is kept" {
+  export HIVE_MIND_HUB_PROJECT_GC_DAYS=1
+  export HIVE_MIND_HUB_PROJECT_GC_AUTO=1
+
+  # No sidecar — harvest would have skipped this, content may be unharvested.
+  mkdir -p "$TOOL/projects/-variant-no-sidecar"
+  printf '{"cwd":"/no/such/path"}\n' > "$TOOL/projects/-variant-no-sidecar/session.jsonl"
+  printf '# local only\n' > "$TOOL/projects/-variant-no-sidecar/MEMORY.md"
+
+  hub_gc_tool_variants >/dev/null
+
+  [ -d "$TOOL/projects/-variant-no-sidecar" ]
+}
+
+@test "tool variant whose cwd is gone is reported but not deleted by default" {
+  export HIVE_MIND_HUB_PROJECT_GC_DAYS=1
+  export HIVE_MIND_HUB_PROJECT_GC_AUTO=0
+
+  mkdir -p "$TOOL/projects/-variant-orphan2"
+  printf '{"cwd":"/no/such/path"}\n' > "$TOOL/projects/-variant-orphan2/session.jsonl"
+  printf 'project-id=github.com/alice/alive\n' > "$TOOL/projects/-variant-orphan2/.hive-mind"
+
+  hub_gc_tool_variants >/dev/null
+
+  # Still exists — report-only.
+  [ -d "$TOOL/projects/-variant-orphan2" ]
+  grep -q 'would remove.*variant-orphan2' "$HIVE_MIND_HUB_DIR/.sync-error.log"
 }
 
 @test "tool variant whose cwd is gone but has unharvested content is kept" {
