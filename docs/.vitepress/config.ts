@@ -32,6 +32,7 @@ export default defineConfig({
         text: 'Adapters',
         items: [
           { text: 'Overview', link: '/adapters' },
+          { text: 'Claude Code', link: '/adapters/claude-code' },
         ],
       },
       {

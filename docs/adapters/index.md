@@ -1,11 +1,11 @@
 # Adapters
 
-hive-mind v0.3.0+ uses a **hub-and-adapter** topology.
+hive-mind uses a **hub-and-adapter** topology.
 
 - One **hub** per machine: `~/.hive-mind/`. Single git repo, single remote, provider-agnostic schema.
 - One **adapter** per AI tool: a bidirectional mapper between the hub's canonical layout and the tool's native config dir. Adapters don't own a git repo — they attach to the hub.
 
-That split lets you run Claude Code and (as adapters ship) Codex, Qwen, Kimi on the same machine against the same memory without clobbering each other, and lets two machines share that memory through a single remote.
+That split lets you run multiple AI coding tools on the same machine against the same memory without clobbering each other, and lets two machines share that memory through a single remote.
 
 ## Hub layout
 
@@ -33,7 +33,7 @@ Lowercase filenames signal "hive-mind canonical"; each adapter maps them to tool
 
 | Adapter | Tool | Status |
 |---|---|---|
-| `claude-code` | [Claude Code](https://claude.com/claude-code) | Shipped |
+| [`claude-code`](/adapters/claude-code) | [Claude Code](https://claude.com/claude-code) | Shipped |
 | `codex` | [OpenAI Codex CLI](https://github.com/openai/codex) | Planned ([#11](https://github.com/tuahear/hive-mind/issues/11)) |
 | `qwen` | [Qwen CLI](https://github.com/QwenLM/qwen-code) | Planned ([#19](https://github.com/tuahear/hive-mind/issues/19)) |
 | `kimi` | [Kimi CLI](https://github.com/MoonshotAI/kimi-cli) | Planned ([#23](https://github.com/tuahear/hive-mind/issues/23)) |
@@ -49,10 +49,6 @@ Each attached tool's Stop hook fires `~/.hive-mind/bin/sync`, which runs a singl
 
 A **machine-local filter** skips harvesting any hook whose command references `/Applications/`, `/opt/homebrew/`, `/tmp/`, Windows drive letters, and similar machine-specific paths. These stay tool-local and are preserved through fan-out too.
 
-## For Claude Code users
-
-Nothing in the day-to-day changes: you still edit `~/.claude/CLAUDE.md`, still run the same tool, still get the same skills. Under the hood the Stop hook now points at `~/.hive-mind/bin/sync` instead of `~/.claude/hive-mind/core/sync.sh`, and the user-level git repo has moved from `~/.claude/.git` to `~/.hive-mind/.git`. Re-running `setup.sh` on an existing pre-0.3 install migrates the hook paths automatically (`adapter_migrate` in `adapters/claude-code/adapter.sh`).
-
 ## Attaching a second adapter
 
 Once another adapter ships (e.g. `codex`), attach it to the same hub with:
@@ -61,8 +57,8 @@ Once another adapter ships (e.g. `codex`), attach it to the same hub with:
 ADAPTER=codex bash setup.sh
 ```
 
-This does *not* touch Claude's install. Both adapters then harvest and fan-out through the same `~/.hive-mind/` — memory edits in one tool appear in the other on the next sync cycle.
+This does *not* touch the first adapter's install. Both adapters then harvest and fan-out through the same `~/.hive-mind/` — memory edits in one tool appear in the other on the next sync cycle.
 
 ## Writing a new adapter
 
-See the [Contributing adapters](./CONTRIBUTING-adapters.md) guide. The short version: declare two mapping strings (`ADAPTER_HUB_MAP`, `ADAPTER_PROJECT_CONTENT_RULES`) plus six contract functions, drop an adapter dir under `adapters/<name>/`, and `ADAPTER=<name> bash setup.sh` does the rest.
+See the [Contributing adapters](/CONTRIBUTING-adapters) guide. The short version: declare two mapping strings (`ADAPTER_HUB_MAP`, `ADAPTER_PROJECT_CONTENT_RULES`) plus six contract functions, drop an adapter dir under `adapters/<name>/`, and `ADAPTER=<name> bash setup.sh` does the rest.
