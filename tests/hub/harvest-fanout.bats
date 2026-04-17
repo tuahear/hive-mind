@@ -132,6 +132,36 @@ teardown() {
   grep -q '^B$' "$TOOL/skills/bar/SKILL.md"
 }
 
+@test "harvest syncs nested skill subdirs and files" {
+  mkdir -p "$TOOL/skills/my-skill/scripts" "$TOOL/skills/my-skill/config"
+  echo "content" > "$TOOL/skills/my-skill/SKILL.md"
+  echo "#!/bin/bash" > "$TOOL/skills/my-skill/scripts/setup.sh"
+  echo "key=val" > "$TOOL/skills/my-skill/config/defaults.ini"
+
+  hub_harvest "$TOOL" "$HUB"
+
+  [ -f "$HUB/skills/my-skill/content.md" ]
+  [ -f "$HUB/skills/my-skill/scripts/setup.sh" ]
+  [ -f "$HUB/skills/my-skill/config/defaults.ini" ]
+  grep -q '#!/bin/bash' "$HUB/skills/my-skill/scripts/setup.sh"
+}
+
+@test "fanout syncs nested skill subdirs and prunes removed files" {
+  mkdir -p "$HUB/skills/my-skill/scripts"
+  echo "B" > "$HUB/skills/my-skill/content.md"
+  echo "helper" > "$HUB/skills/my-skill/scripts/run.sh"
+  # Pre-populate tool with an extra file that hub doesn't have.
+  mkdir -p "$TOOL/skills/my-skill/old"
+  echo "stale" > "$TOOL/skills/my-skill/old/legacy.sh"
+
+  hub_fan_out "$HUB" "$TOOL"
+
+  [ -f "$TOOL/skills/my-skill/SKILL.md" ]
+  [ -f "$TOOL/skills/my-skill/scripts/run.sh" ]
+  # Stale file not in hub must be pruned.
+  [ ! -f "$TOOL/skills/my-skill/old/legacy.sh" ]
+}
+
 @test "harvest does not remove hub skill dirs absent from tool (add-only)" {
   mkdir -p "$HUB/skills/existing"
   echo "hub content" > "$HUB/skills/existing/content.md"

@@ -466,45 +466,46 @@ _hub_apply_project_rules() {
 # --- entry: skills with content-file rename --------------------------------
 
 # Sync skills between tool and hub with the content-file rename:
-# tool's SKILL.md ↔ hub's content.md. Other files in each skill dir
-# pass through unchanged. Replaces the generic dir-mirror that the
-# removed `skills\tskills` ADAPTER_HUB_MAP entry used to trigger.
+# tool's SKILL.md ↔ hub's content.md. All other files and subdirs
+# in each skill folder pass through unchanged — skills are folders
+# specifically to allow helper scripts, configs, and assets alongside
+# the content file.
 _hub_sync_skills() {
   local direction="$1" src_root="$2" dst_root="$3"
   [ -d "$src_root" ] || return 0
   mkdir -p "$dst_root" 2>/dev/null
-  local skill_src skill_name skill_dst f fname dst_name
+  local skill_src skill_name skill_dst
   for skill_src in "$src_root"/*/; do
     [ -d "$skill_src" ] || continue
     skill_name="${skill_src%/}"
     skill_name="${skill_name##*/}"
     skill_dst="$dst_root/$skill_name"
     mkdir -p "$skill_dst" 2>/dev/null
-    # Copy with rename for the content file.
-    for f in "$skill_src"/*; do
-      [ -f "$f" ] || continue
-      fname="${f##*/}"
-      dst_name="$fname"
-      if [ "$direction" = "harvest" ] && [ "$fname" = "SKILL.md" ]; then
+    # Recursive copy: walk all files in the skill tree.
+    while IFS= read -r -d '' f; do
+      local rel="${f#"$skill_src"}"
+      local dst_name="$rel"
+      # Rename only the root content file.
+      if [ "$direction" = "harvest" ] && [ "$rel" = "SKILL.md" ]; then
         dst_name="content.md"
-      elif [ "$direction" = "fanout" ] && [ "$fname" = "content.md" ]; then
+      elif [ "$direction" = "fanout" ] && [ "$rel" = "content.md" ]; then
         dst_name="SKILL.md"
       fi
+      mkdir -p "$(dirname "$skill_dst/$dst_name")" 2>/dev/null
       cp "$f" "$skill_dst/$dst_name"
-    done
-    # Remove dst files not in src (with rename awareness).
-    # Only prune during fan-out — harvest is add-only so a newly
-    # attached adapter with fewer skills can't wipe hub content.
+    done < <(find "$skill_src" -type f -print0 2>/dev/null)
+    # Prune dst files not in src — fan-out only.
     if [ "$direction" = "fanout" ]; then
-      for f in "$skill_dst"/*; do
-        [ -f "$f" ] || continue
-        fname="${f##*/}"
-        local src_name="$fname"
-        if [ "$fname" = "SKILL.md" ]; then
+      while IFS= read -r -d '' f; do
+        local rel="${f#"$skill_dst/"}"
+        local src_name="$rel"
+        if [ "$rel" = "SKILL.md" ]; then
           src_name="content.md"
         fi
         [ -f "$skill_src/$src_name" ] || rm -f "$f"
-      done
+      done < <(find "$skill_dst" -type f -print0 2>/dev/null)
+      # Remove empty subdirs left by pruning.
+      find "$skill_dst" -mindepth 1 -type d -empty -delete 2>/dev/null || true
     fi
   done
   # Remove dst skill dirs not in src — fan-out only.
