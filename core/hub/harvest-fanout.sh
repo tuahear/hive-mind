@@ -104,8 +104,17 @@ _hub_entry_slug() {
   local cmd
   cmd="$(jq -r '.. | objects | .command? // empty' <<<"$entry_json" 2>/dev/null | head -1)"
   if [ -n "$cmd" ]; then
-    # Extract the basename of the command path, strip quotes/extensions.
-    local slug="${cmd##*/}"
+    # Extract the FIRST path-like token from the command. Compound
+    # commands (e.g. `"$HOME/.hive-mind/bin/sync" 2>>... || true;
+    # "$HOME/.hive-mind/hive-mind/core/check-dupes.sh" ...`) have
+    # multiple paths; we want the first one's basename as the slug.
+    # Split on whitespace/semicolons/pipes, take the first token that
+    # contains a `/`, then extract its basename.
+    local first_path
+    first_path="$(printf '%s' "$cmd" | tr ';|' ' ' | awk '{for(i=1;i<=NF;i++) if($i ~ /\//) {print $i; exit}}')"
+    [ -z "$first_path" ] && first_path="$cmd"
+    local slug="${first_path##*/}"
+    # Strip quotes and extensions.
     slug="${slug%%\"*}"
     slug="${slug%%.sh}"
     slug="${slug%%.*}"
@@ -113,8 +122,8 @@ _hub_entry_slug() {
     slug="$(printf '%s' "$slug" | tr -cd 'a-zA-Z0-9_-')"
     [ -n "$slug" ] && { printf '%s' "$slug"; return 0; }
   fi
-  # Fallback: content hash.
-  printf '%s' "$entry_json" | git hash-object --stdin 2>/dev/null | cut -c1-12
+  # Fallback: generic name (no content hash — keep filenames readable).
+  printf 'hook'
 }
 
 # File-like if the last path component has a '.'.
