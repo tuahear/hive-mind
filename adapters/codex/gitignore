@@ -1,0 +1,16 @@
+# Reserved template for a tool-dir git repo. The hub topology does not
+# currently git-init ~/.codex/, but the adapter contract keeps these
+# templates around for future reuse.
+
+/*
+
+!/.gitignore
+!/.gitattributes
+!/config.toml
+!/hooks.json
+!/AGENTS.md
+!/AGENTS.override.md
+
+# User-installed skills live outside ~/.codex/ at ~/.agents/skills.
+
+**/.DS_Store

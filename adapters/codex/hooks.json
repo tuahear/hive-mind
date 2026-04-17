@@ -1,0 +1,26 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$HOME/.hive-mind/bin/sync\" 2>>\"$HOME/.hive-mind/.sync-error.log\" || true; ADAPTER_DIR=\"$HOME/.codex\" ADAPTER_GLOBAL_MEMORY=\"$HOME/.codex/AGENTS.override.md\" \"$HOME/.hive-mind/hive-mind/core/check-dupes.sh\" 2>>\"$HOME/.codex/.sync-error.log\" || true",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$HOME/.hive-mind/bin/sync\"",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}
