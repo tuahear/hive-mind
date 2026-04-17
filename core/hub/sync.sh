@@ -72,7 +72,12 @@ release_lock() {
   rm -rf "$LOCK_DIR" 2>/dev/null
 }
 
-acquire_lock || exit 0
+_lock_retries=0
+while ! acquire_lock; do
+  _lock_retries=$((_lock_retries + 1))
+  [ "$_lock_retries" -ge 5 ] && exit 0
+  sleep 2
+done
 trap 'release_lock' EXIT
 
 # --- hub existence check ---------------------------------------------------
