@@ -258,16 +258,43 @@ while IFS= read -r key; do
       continue
     fi
 
+    # Prepare a marker-stripped version for SIBLING copies. The source
+    # variant keeps its markers so the hub sync's marker-extract can
+    # read them and use them as the commit subject. Only siblings get
+    # the stripped copy — without this, markers leak to every sibling
+    # and get re-committed as stale subjects on the next sync cycle.
+    merged_stripped=""
+    if [ "$is_md" -eq 1 ] && grep -q '<!--[[:space:]]*commit:' "$merged" 2>/dev/null; then
+      merged_stripped="$(mktemp)"
+      awk '
+        BEGIN { fence = 0 }
+        /^[[:space:]]*```/ { fence = 1 - fence; print; next }
+        fence == 1 { print; next }
+        /^[[:space:]]*<!--[[:space:]]*commit:[[:space:]]*[^>]+-->[[:space:]]*$/ { next }
+        { gsub(/[[:space:]]*<!--[[:space:]]*commit:[[:space:]]*[^>]+-->/, ""); print }
+      ' "$merged" > "$merged_stripped"
+    fi
+
     while IFS= read -r v; do
       [ -z "$v" ] && continue
       dst="$v/$rel"
+      # Pick source: use stripped version for siblings, original for
+      # the variant whose content was the merge source (so its markers
+      # survive for hub sync's marker-extract).
+      copy_src="$merged"
+      if [ -n "$merged_stripped" ] && [ -f "$dst" ] && ! cmp -s "$dst" "$merged"; then
+        copy_src="$merged_stripped"
+      elif [ -n "$merged_stripped" ] && [ ! -f "$dst" ]; then
+        copy_src="$merged_stripped"
+      fi
       if [ -f "$dst" ]; then
-        cmp -s "$dst" "$merged" && continue
+        cmp -s "$dst" "$copy_src" && continue
         [ "$is_md" -eq 0 ] && continue
       fi
       mkdir -p "$(dirname "$dst")"
-      cp "$merged" "$dst"
+      cp "$copy_src" "$dst"
     done <<<"$variants"
+    [ -n "$merged_stripped" ] && rm -f "$merged_stripped"
 
     rm -f "$merged"
   done <<<"$all_rels"

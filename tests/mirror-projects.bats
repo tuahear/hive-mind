@@ -540,3 +540,37 @@ EOF
   grep -Fq "machine=mac"     "$HOME/.claude/projects/-Users-alice-Repo-foo/$MARKER"
   grep -Fq "machine=windows" "$HOME/.claude/projects/C--Users-bob-Repo-foo/$MARKER"
 }
+
+@test "commit markers are stripped when copying to sibling variants" {
+  # An agent's Edit tool embeds <!-- commit: ... --> markers in memory
+  # files. mirror-projects must strip them before copying to siblings —
+  # otherwise the marker leaks to every sibling variant and gets
+  # re-committed as a stale subject on the next sync cycle.
+  proj_dir="$HOME/myrepo"
+  git -c init.defaultBranch=main init -q "$proj_dir"
+  git -C "$proj_dir" remote add origin git@github.com:Owner/MyRepo.git
+
+  alice="$HOME/.claude/projects/-Users-alice-Repo-myrepo"
+  bob="$HOME/.claude/projects/C--Users-bob-Repo-myrepo"
+  mkdir -p "$alice/memory" "$bob/memory"
+  printf 'project-id=github.com/owner/myrepo\n' > "$alice/$MARKER"
+  printf 'project-id=github.com/owner/myrepo\n' > "$bob/$MARKER"
+
+  # Alice edits with an embedded commit marker (normal agent behavior).
+  printf '# notes\nsome content\n<!-- commit: add project notes -->\n' \
+    > "$alice/memory/notes.md"
+  # Bob has older content, no marker.
+  printf '# notes\nsome content\n' > "$bob/memory/notes.md"
+
+  run run_mirror
+  [ "$status" -eq 0 ]
+
+  # Alice's file keeps the marker (mirror-projects doesn't strip the source).
+  grep -Fq '<!-- commit:' "$alice/memory/notes.md"
+  # Bob's copy must NOT have the marker — mirror-projects must strip it
+  # before copying to the sibling.
+  run grep -F '<!-- commit:' "$bob/memory/notes.md"
+  [ "$status" -ne 0 ]
+  # But the actual content survived.
+  grep -Fq 'some content' "$bob/memory/notes.md"
+}
