@@ -45,5 +45,5 @@ Type `/hooks` in any session or start a fresh one — the sync hooks activate. T
 ## What's next
 
 - [How it works](/how-it-works) — the sync flow, conflict resolution, how cross-machine project identity is derived.
-- [Adapters](/adapters) — the hub-and-adapter split, adapter matrix, attaching a second tool.
+- [Adapters](/adapters/) — the hub-and-adapter split, adapter matrix, attaching a second tool.
 - [Troubleshooting](/troubleshooting) — SSH auth errors, hooks not firing, `.sync-error.log`.
