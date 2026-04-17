@@ -93,6 +93,8 @@ cd "$HIVE_MIND_HUB_DIR" || exit 0
 source "$CORE_DIR/hub/harvest-fanout.sh"
 # shellcheck source=/dev/null
 source "$CORE_DIR/adapter-loader.sh"
+# shellcheck source=/dev/null
+source "$CORE_DIR/hub/project-gc.sh"
 
 # --- collect attached adapters --------------------------------------------
 ATTACHED=()
@@ -127,6 +129,12 @@ fi
 declare -a HUB_TOOL_DIRS=()
 declare -a HUB_ADAPTER_NAMES=()
 declare -a HUB_SECRET_LISTS=()
+# HUB_FILE_HARVEST_RULES: all synced file globs (global + skills + projects).
+# Not consumed yet — reserved for future use (e.g., user-extensible sync).
+declare -a HUB_FILE_HARVEST_RULES=()
+# HUB_PROJECT_CONTENT_GLOBS + HUB_PROJECT_CONTENT_RULES: used by variant GC.
+declare -a HUB_PROJECT_CONTENT_GLOBS=()
+declare -a HUB_PROJECT_CONTENT_RULES=()
 
 # --- phase: harvest --------------------------------------------------------
 # Bootstrap project-id sidecars BEFORE hub_harvest runs. mirror-projects
@@ -153,6 +161,9 @@ for name in "${ATTACHED[@]}"; do
   HUB_ADAPTER_NAMES+=("$name")
   HUB_TOOL_DIRS+=("$tool_dir")
   HUB_SECRET_LISTS+=("${ADAPTER_SECRET_FILES:-}")
+  HUB_FILE_HARVEST_RULES+=("${ADAPTER_FILE_HARVEST_RULES:-}")
+  HUB_PROJECT_CONTENT_GLOBS+=("${ADAPTER_PROJECT_CONTENT_GLOBS:-}")
+  HUB_PROJECT_CONTENT_RULES+=("${ADAPTER_PROJECT_CONTENT_RULES:-}")
   # Sidecar bootstrap: only for flat-model adapters (the only kind
   # that have a projects/<encoded-cwd>/ layout to mirror).
   if [ "${ADAPTER_MEMORY_MODEL:-}" = "flat" ] && [ -x "$MIRROR_PROJECTS" ]; then
@@ -241,6 +252,13 @@ fi
 if [ ! -f "$FORMAT_FILE" ]; then
   printf 'format-version=%d\n' "$HIVE_MIND_FORMAT_VERSION" > "$FORMAT_FILE"
 fi
+
+# --- phase: project GC ----------------------------------------------------
+# Remove hub project dirs with no live sidecar and stale last-touch,
+# plus tool-side variant dirs whose cwd no longer exists on disk.
+# Runs after harvest so newly discovered projects are not falsely GC'd.
+hub_gc_projects 2>>"$LOG" || true
+hub_gc_tool_variants 2>>"$LOG" || true
 
 # --- phase: marker extraction ---------------------------------------------
 # Walk every file that looks like content (content.md at root, per-project
