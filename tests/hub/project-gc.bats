@@ -175,19 +175,18 @@ teardown() {
   [ -d "$TOOL/projects/-variant-no-sidecar" ]
 }
 
-@test "tool variant whose cwd is gone is reported but not deleted by default" {
+@test "tool variant GC auto-deletes without requiring AUTO=1" {
   export HIVE_MIND_HUB_PROJECT_GC_DAYS=1
-  export HIVE_MIND_HUB_PROJECT_GC_AUTO=0
+  # NOT setting HIVE_MIND_HUB_PROJECT_GC_AUTO — variant GC is always auto.
 
-  mkdir -p "$TOOL/projects/-variant-orphan2"
-  printf '{"cwd":"/no/such/path"}\n' > "$TOOL/projects/-variant-orphan2/session.jsonl"
-  printf 'project-id=github.com/alice/alive\n' > "$TOOL/projects/-variant-orphan2/.hive-mind"
+  mkdir -p "$TOOL/projects/-variant-auto"
+  printf '{"cwd":"/no/such/path"}\n' > "$TOOL/projects/-variant-auto/session.jsonl"
+  printf 'project-id=github.com/alice/alive\n' > "$TOOL/projects/-variant-auto/.hive-mind"
 
   hub_gc_tool_variants >/dev/null
 
-  # Still exists — report-only.
-  [ -d "$TOOL/projects/-variant-orphan2" ]
-  grep -q 'would remove.*variant-orphan2' "$HIVE_MIND_HUB_DIR/.sync-error.log"
+  # Deleted automatically — no opt-in needed.
+  [ ! -d "$TOOL/projects/-variant-auto" ]
 }
 
 @test "tool variant whose cwd is gone but has unharvested content is kept" {

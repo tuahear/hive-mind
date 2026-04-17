@@ -187,13 +187,15 @@ _gc_variant_content_matches_hub() {
 
 hub_gc_tool_variants() {
   : "${HIVE_MIND_HUB_PROJECT_GC_DAYS:=30}"
-  : "${HIVE_MIND_HUB_PROJECT_GC_AUTO:=0}"
   [ "$HIVE_MIND_HUB_PROJECT_GC_DAYS" = "0" ] && return 0
+  # Tool-side variant GC always auto-deletes when safe (cwd gone +
+  # content verified in hub). Unlike hub project GC which is report-only
+  # by default (can't see other machines), variant GC is provably safe.
 
   local TS
   TS="$(date -u +%FT%TZ)"
   local log="${HIVE_MIND_HUB_DIR:=$HOME/.hive-mind}/.sync-error.log"
-  local deleted=0 reported=0 i
+  local deleted=0 i
 
   for i in "${!HUB_TOOL_DIRS[@]}"; do
     local tool_dir="${HUB_TOOL_DIRS[$i]}"
@@ -243,18 +245,12 @@ hub_gc_tool_variants() {
         continue
       fi
 
-      if [ "$HIVE_MIND_HUB_PROJECT_GC_AUTO" = "1" ]; then
-        rm -rf "${variant%/}"
-        deleted=$((deleted + 1))
-        echo "$TS gc: removed orphan tool variant (cwd gone): $variant_name" >>"$log"
-      else
-        reported=$((reported + 1))
-        echo "$TS gc: would remove orphan tool variant (cwd gone): $variant_name" >>"$log"
-      fi
+      rm -rf "${variant%/}"
+      deleted=$((deleted + 1))
+      echo "$TS gc: removed orphan tool variant (cwd gone): $variant_name" >>"$log"
     done
   done
 
-  local total=$((deleted + reported))
-  [ "$total" -gt 0 ] && echo "$TS gc: $total orphan tool variant(s), $deleted removed" >>"$log"
+  [ "$deleted" -gt 0 ] && echo "$TS gc: $deleted orphan tool variant(s) removed" >>"$log"
   return 0
 }
