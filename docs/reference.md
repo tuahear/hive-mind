@@ -6,7 +6,7 @@ Under the v0.3.0 hub topology every attached AI tool registers the same single e
 
 | Event | Command | Behavior |
 |---|---|---|
-| `SessionStart` | `"$HOME/.hive-mind/hive-mind/core/check-dupes.sh"` | Scans tool-side memory files for union-merge duplicates left behind by a prior merge and nudges the model to clean them up on the next turn |
+| `SessionStart` | `"$HOME/.hive-mind/bin/sync"` then `"$HOME/.hive-mind/hive-mind/core/check-dupes.sh"` | Pulls fresh memory from the hub remote (so a new session on a second machine sees cross-machine edits immediately), then scans for union-merge duplicates and nudges the model to clean them up |
 | `Stop` (end of each turn) | `"$HOME/.hive-mind/bin/sync"` | Hub sync entry point. Harvests the tool dir → hub, pull-rebase-pushes the shared memory repo, fans the merged state back out to every attached tool |
 | `PostToolUse` on `Edit|Write|NotebookEdit` | `"$HOME/.hive-mind/hive-mind/core/marker-nudge.sh"` | Reminds the model to drop a `<!-- commit: ... -->` marker when it edits memory so the next sync gets a meaningful commit subject |
 

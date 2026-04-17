@@ -10,11 +10,11 @@
 # Hierarchical-model adapters (Codex, Qwen, Kimi, …) do NOT use this
 # layout — their per-project memory (e.g. tree-walked AGENTS.md) lives
 # inside user project checkouts, versioned by the user's own repo, not
-# in the hive-mind memory repo. For those adapters this script is a
-# clean no-op: it exits at line ~27 when `projects/` is absent.
+# the hub. For those adapters this script is a clean no-op: it exits
+# when `projects/` is absent.
 #
-# Uses ADAPTER_DIR to locate the memory repo; falls back to ~/.claude
-# for backward compat with pre-adapter-contract installs.
+# Uses ADAPTER_DIR to locate the tool's config dir (e.g. ~/.claude);
+# falls back to ~/.claude for backward compat.
 #
 # Identity model:
 #   - Each variant carries a metadata sidecar at the variant root
