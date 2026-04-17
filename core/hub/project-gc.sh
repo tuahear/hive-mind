@@ -160,7 +160,7 @@ hub_gc_tool_variants() {
       local has_unharvested=0
       while IFS= read -r -d '' vf; do
         local rel="${vf#"${variant%/}/"}"
-        case "$rel" in *.jsonl|.hive-mind|.DS_Store) continue ;; esac
+        case "$rel" in *.jsonl|.hive-mind|memory/.hive-mind|.DS_Store) continue ;; esac
         local hub_rel="$rel"
         case "$rel" in MEMORY.md) hub_rel="content.md" ;; esac
         if [ ! -f "$hub_proj/$hub_rel" ] || ! cmp -s "$vf" "$hub_proj/$hub_rel"; then
@@ -174,7 +174,7 @@ hub_gc_tool_variants() {
       fi
 
       if [ "$HIVE_MIND_HUB_PROJECT_GC_AUTO" = "1" ]; then
-        rm -rf "$variant"
+        rm -rf "${variant%/}"
         deleted=$((deleted + 1))
         echo "$TS gc: removed orphan tool variant (cwd gone): $variant_name" >>"$log"
       else
