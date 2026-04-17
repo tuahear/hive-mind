@@ -95,6 +95,24 @@ teardown() {
   [ -d "$HIVE_MIND_HUB_DIR/projects/github.com/bob/stale" ]
 }
 
+@test "nested .hive-mind inside a project subdir does not cause GC of that subdir" {
+  export HIVE_MIND_HUB_PROJECT_GC_DAYS=1
+  export HIVE_MIND_HUB_PROJECT_GC_AUTO=1
+
+  # Simulate a legacy memory/.hive-mind that got harvested into the hub.
+  mkdir -p "$HIVE_MIND_HUB_DIR/projects/github.com/alice/alive/memory"
+  printf 'project-id=github.com/alice/alive\n' > "$HIVE_MIND_HUB_DIR/projects/github.com/alice/alive/memory/.hive-mind"
+  printf '# note\n' > "$HIVE_MIND_HUB_DIR/projects/github.com/alice/alive/memory/note.md"
+  git -C "$HIVE_MIND_HUB_DIR" add -A
+  git -C "$HIVE_MIND_HUB_DIR" commit -q -m "add nested sidecar"
+
+  hub_gc_projects >/dev/null
+
+  # The memory subdir must NOT be deleted — it belongs to an active project.
+  [ -d "$HIVE_MIND_HUB_DIR/projects/github.com/alice/alive/memory" ]
+  [ -f "$HIVE_MIND_HUB_DIR/projects/github.com/alice/alive/memory/note.md" ]
+}
+
 @test "tool variant whose cwd still exists is kept" {
   export HIVE_MIND_HUB_PROJECT_GC_DAYS=1
 

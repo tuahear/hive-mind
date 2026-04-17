@@ -75,6 +75,14 @@ hub_gc_projects() {
     local id="${project_dir#"$hub_projects/"}"
     [ -z "$id" ] && continue
 
+    # Validate: the sidecar's project-id must match the path-derived id.
+    # This prevents matching nested .hive-mind files (e.g., a legacy
+    # memory/.hive-mind that got harvested into the hub) — dirname of
+    # that would be <id>/memory, not the actual project root.
+    local sidecar_id
+    sidecar_id="$(awk -F= '/^project-id=/ { sub(/^project-id=/, ""); gsub(/\r/, ""); print; exit }' "$sidecar" 2>/dev/null)"
+    [ "$sidecar_id" = "$id" ] || continue
+
     # Skip if any live sidecar references this id.
     if printf '%s\n' "$live_ids" | grep -Fxq "$id"; then
       continue
