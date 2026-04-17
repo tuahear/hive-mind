@@ -168,7 +168,9 @@ hub_gc_tool_variants() {
       local has_unharvested=0
       while IFS= read -r -d '' vf; do
         local rel="${vf#"${variant%/}/"}"
-        case "$rel" in *.jsonl|.hive-mind|memory/.hive-mind|.DS_Store) continue ;; esac
+        # Skip session files, sidecars, and OS metadata at any depth.
+        local basename="${rel##*/}"
+        case "$basename" in *.jsonl|.hive-mind|.DS_Store) continue ;; esac
         local hub_rel="$rel"
         case "$rel" in MEMORY.md) hub_rel="content.md" ;; esac
         if [ ! -f "$hub_proj/$hub_rel" ] || ! cmp -s "$vf" "$hub_proj/$hub_rel"; then

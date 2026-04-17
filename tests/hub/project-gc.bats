@@ -36,9 +36,8 @@ setup() {
   GIT_AUTHOR_DATE="@$old_ts" GIT_COMMITTER_DATE="@$old_ts" \
     git -C "$HIVE_MIND_HUB_DIR" commit -q -m "old content"
 
-  # Add the alive project with a recent commit (also backdated to make
-  # the sidecar test isolate correctly — alive survives because of its
-  # sidecar, not because of recency).
+  # Update the alive project (also backdated — alive survives because
+  # of its sidecar, not recency).
   printf '# alive updated\n' > "$HIVE_MIND_HUB_DIR/projects/github.com/alice/alive/content.md"
   git -C "$HIVE_MIND_HUB_DIR" add -A
   GIT_AUTHOR_DATE="@$old_ts" GIT_COMMITTER_DATE="@$old_ts" \
