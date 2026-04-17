@@ -1,10 +1,11 @@
 #!/usr/bin/env bats
 # Tests for core/mirror-projects.sh.
 #
-# The script reads ~/.claude (via `cd ~/.claude`), so each test sandboxes
-# HOME into a temp dir and lays out the projects/ tree before invoking.
-# Identity is established per-variant via .hive-mind sidecars (or by
-# deriving from a local jsonl + git remote, exercised separately).
+# The script reads $ADAPTER_DIR (defaults to ~/.claude) via `cd "$ADAPTER_DIR"`,
+# so each test sandboxes HOME into a temp dir and lays out the projects/
+# tree before invoking. Identity is established per-variant via .hive-mind
+# sidecars at the variant root (or by deriving from a local jsonl + git
+# remote, exercised separately).
 
 SCRIPT="$BATS_TEST_DIRNAME/../core/mirror-projects.sh"
 MARKER=".hive-mind"
