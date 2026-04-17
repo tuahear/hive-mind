@@ -437,8 +437,7 @@ _hub_apply_project_rules() {
         (cd "$s" && find . -type f -print0 2>/dev/null) \
           | while IFS= read -r -d '' rel; do
               rel="${rel#./}"
-              mkdir -p "$d/$(dirname "$rel")" 2>/dev/null
-              cp "$s/$rel" "$d/$rel"
+              _hub_sync_file "$s/$rel" "$d/$rel"
             done
       fi
     else
