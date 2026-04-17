@@ -289,7 +289,7 @@ fi
 # adapter declared as must-never-sync.
 #
 # The contract declares ADAPTER_SECRET_FILES as a list of BASENAMES
-# (docs/CONTRIBUTING-adapters.md: "Space-separated filenames that must
+# (docs/contributing.md: "Space-separated filenames that must
 # never be synced"). A misconfigured adapter or an off-by-one hub map
 # could harvest a secret to a path that isn't the literal basename at
 # the hub root (e.g. `config/auth.json`, `backup/2024/auth.json`).

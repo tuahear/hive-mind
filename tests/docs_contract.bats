@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Pin docs/CONTRIBUTING-adapters.md against the actual contract.
+# Pin docs/contributing.md against the actual contract.
 #
 # The docs table drifts over time as core/adapter-loader.sh and
 # tests/adapter-conformance/conformance.bats add new required
@@ -12,7 +12,7 @@
 # assert each name appears verbatim in the docs file.
 
 REPO_ROOT="$BATS_TEST_DIRNAME/.."
-DOC="$REPO_ROOT/docs/CONTRIBUTING-adapters.md"
+DOC="$REPO_ROOT/docs/contributing.md"
 LOADER="$REPO_ROOT/core/adapter-loader.sh"
 CONFORMANCE="$REPO_ROOT/tests/adapter-conformance/conformance.bats"
 
@@ -58,13 +58,13 @@ CONFORMANCE="$REPO_ROOT/tests/adapter-conformance/conformance.bats"
   done
 }
 
-@test "docs/adapters.md hub-tree uses content.md as the canonical content filename" {
+@test "docs/adapters/index.md hub-tree uses content.md as the canonical content filename" {
   # Pin the hub-tree documentation against the canonical hub filename.
   # The hub stores all provider-agnostic content as `content.md` — both
   # the global memory and the per-skill main file. Docs showing SKILL.md
   # or memory.md in the hub tree would mislead adapter authors into
   # creating files the hub engine doesn't recognize.
-  local tree_doc="$REPO_ROOT/docs/adapters.md"
+  local tree_doc="$REPO_ROOT/docs/adapters/index.md"
   [ -f "$tree_doc" ]
   # Hub tree must show content.md for both global and skills.
   grep -q 'content\.md' "$tree_doc"

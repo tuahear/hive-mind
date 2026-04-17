@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 # The hub sync engine's secret-file gate MUST match declared secrets
 # by basename, not by exact path. ADAPTER_SECRET_FILES is documented
-# as a list of filenames (docs/CONTRIBUTING-adapters.md); an adapter
+# as a list of filenames (docs/contributing.md); an adapter
 # or hub-map misconfiguration that harvests a secret to a nested path
 # (e.g. `config/auth.json`, `backups/auth.json`) must still be caught.
 # A credential leak at a surprising path is exactly the failure mode

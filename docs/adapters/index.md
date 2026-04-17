@@ -61,4 +61,4 @@ This does *not* touch the first adapter's install. Both adapters then harvest an
 
 ## Writing a new adapter
 
-See the [Contributing adapters](/CONTRIBUTING-adapters) guide. The short version: declare two mapping strings (`ADAPTER_HUB_MAP`, `ADAPTER_PROJECT_CONTENT_RULES`) plus six contract functions, drop an adapter dir under `adapters/<name>/`, and `ADAPTER=<name> bash setup.sh` does the rest.
+See the [Contributing adapters](/contributing) guide. The short version: declare two mapping strings (`ADAPTER_HUB_MAP`, `ADAPTER_PROJECT_CONTENT_RULES`) plus six contract functions, drop an adapter dir under `adapters/<name>/`, and `ADAPTER=<name> bash setup.sh` does the rest.

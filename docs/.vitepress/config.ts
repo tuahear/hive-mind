@@ -16,6 +16,7 @@ export default defineConfig({
       { text: 'How it works', link: '/how-it-works' },
       { text: 'Adapters', link: '/adapters' },
       { text: 'Reference', link: '/reference' },
+      { text: 'Contributing', link: '/contributing' },
       { text: 'Troubleshooting', link: '/troubleshooting' },
     ],
 
@@ -40,7 +41,7 @@ export default defineConfig({
         items: [
           { text: 'Reference', link: '/reference' },
           { text: 'Troubleshooting', link: '/troubleshooting' },
-          { text: 'Contributing adapters', link: '/CONTRIBUTING-adapters' },
+          { text: 'Contributing adapters', link: '/contributing' },
         ],
       },
     ],

@@ -48,7 +48,7 @@ No explicit steps required. Re-run `setup.sh` on any pre-0.3 machine: it creates
 - Version management: `ADAPTER_API_VERSION`, memory repo format version (`.hive-mind-format`), install version (`VERSION`).
 - Version compliance test suite (`tests/versioning/`).
 - `CHANGELOG.md` (this file).
-- `docs/CONTRIBUTING-adapters.md` — guide for community adapter authors.
+- `docs/contributing.md` — guide for community adapter authors (renamed from `docs/CONTRIBUTING-adapters.md` in the docs-site restructure).
 
 ### Changed
 - Core scripts moved from `scripts/` to `core/` and made adapter-agnostic (use `ADAPTER_DIR` instead of hardcoded `~/.claude`).
