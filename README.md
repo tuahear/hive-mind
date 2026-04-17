@@ -68,7 +68,7 @@ Type `/hooks` in any session or start a fresh one — the sync hooks activate. T
 
 ## Highlights
 
-- **AI-agnostic** — One memory across Claude, Codex, Qwen, and Kimi. Swap tools, add tools, or try new ones — your memory moves with you.
+- **AI-agnostic** — One memory across Claude, Codex, Qwen, and Kimi. Switch tools without re-teaching.
 - **Ultralight** — ~175 tokens fully loaded, ~85 tokens idle. Almost zero context overhead.
 - **Your data, your repo** — Memory lives in a private git repo you control. No vendor lock-in.
 - **Synced everywhere** — Global and project memories stay in sync across every machine. macOS, Linux, Windows.
