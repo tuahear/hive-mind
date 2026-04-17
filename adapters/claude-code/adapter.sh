@@ -175,8 +175,8 @@ adapter_activation_instructions() {
 
 adapter_disable_instructions() {
   echo "To temporarily disable hive-mind sync, remove the hook entries from"
-  echo "~/.claude/settings.json, or disconnect the git remote:"
-  echo "  cd ~/.claude && git remote remove origin"
+  echo "~/.claude/settings.json. To fully disconnect from the hub:"
+  echo "  rm ~/.hive-mind/.install-state/attached-adapters"
 }
 
 # --- G. Fallback -----------------------------------------------------------
@@ -189,9 +189,8 @@ ADAPTER_FALLBACK_STRATEGY=""  # not needed — Claude Code has hooks
 # newline-separated TAB-delimited pairs `<hub-path>\t<tool-rel-path>`.
 # Tool paths are relative to ADAPTER_DIR ($HOME/.claude).
 #
-# Not yet consumed by any code — landing the contract first so future
-# commits can layer the hub harvest / fan-out logic on top without
-# another contract change.
+# Consumed by core/hub/harvest-fanout.sh during every sync cycle
+# (harvest reads tool → hub; fan-out reads hub → tool).
 ADAPTER_HUB_MAP=$'content.md\tCLAUDE.md
 config/hooks\tsettings.json#hooks
 config/permissions/allow.txt\tsettings.json#permissions.allow
