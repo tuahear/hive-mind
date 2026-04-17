@@ -2,7 +2,7 @@ import { defineConfig } from 'vitepress'
 
 export default defineConfig({
   title: 'hive-mind',
-  description: "Git-backed auto-sync for your AI coding assistant's memory and config across machines.",
+  description: "One memory for every AI coding tool on every machine. Git-backed hub that attaches to Claude Code, Codex, Qwen, Kimi.",
   base: '/hive-mind/',
   cleanUrls: true,
   lastUpdated: true,
@@ -12,8 +12,9 @@ export default defineConfig({
 
   themeConfig: {
     nav: [
-      { text: 'Home', link: '/' },
+      { text: 'Get started', link: '/get-started' },
       { text: 'How it works', link: '/how-it-works' },
+      { text: 'Adapters', link: '/adapters' },
       { text: 'Reference', link: '/reference' },
       { text: 'Troubleshooting', link: '/troubleshooting' },
     ],
@@ -23,8 +24,19 @@ export default defineConfig({
         text: 'Guide',
         items: [
           { text: 'Home', link: '/' },
+          { text: 'Get started', link: '/get-started' },
           { text: 'How it works', link: '/how-it-works' },
-          { text: 'Adapters', link: '/adapters' },
+        ],
+      },
+      {
+        text: 'Adapters',
+        items: [
+          { text: 'Overview', link: '/adapters' },
+        ],
+      },
+      {
+        text: 'Reference',
+        items: [
           { text: 'Reference', link: '/reference' },
           { text: 'Troubleshooting', link: '/troubleshooting' },
           { text: 'Contributing adapters', link: '/CONTRIBUTING-adapters' },
@@ -47,7 +59,7 @@ export default defineConfig({
 
     footer: {
       message: 'Released under the MIT License.',
-      copyright: 'Built for <a href="https://claude.com/claude-code">Claude Code</a>.',
+      copyright: 'Multi-provider memory hub. Built first for <a href="https://claude.com/claude-code">Claude Code</a>.',
     },
   },
 })
