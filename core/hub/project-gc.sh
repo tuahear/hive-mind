@@ -101,3 +101,79 @@ hub_gc_projects() {
   [ "$candidate_count" -gt 0 ] && printf 'gc: %d candidate(s), %d deleted\n' "$candidate_count" "$delete_count"
   return 0
 }
+
+# --- tool-side variant GC ---------------------------------------------------
+# Remove tool variant dirs whose cwd no longer exists on disk. These
+# accumulate when worktrees are deleted, repos are moved, or clones are
+# removed. The variant's cwd is derived from its jsonl session files.
+#
+# Always auto-deletes (no report-only mode) — the variant is provably
+# orphaned if the cwd directory doesn't exist. Gated by the same
+# HIVE_MIND_HUB_PROJECT_GC_DAYS=0 disable flag.
+
+hub_gc_tool_variants() {
+  [ "$HIVE_MIND_HUB_PROJECT_GC_DAYS" = "0" ] && return 0
+
+  local TS
+  TS="$(date -u +%FT%TZ)"
+  local log="${HIVE_MIND_HUB_DIR}/.sync-error.log"
+  local tool_dir variant deleted=0
+
+  for tool_dir in "${HUB_TOOL_DIRS[@]}"; do
+    [ -d "$tool_dir/projects" ] || continue
+    for variant in "$tool_dir"/projects/*/; do
+      [ -d "$variant" ] || continue
+      # Derive cwd from jsonl files.
+      local cwd=""
+      for jsonl in "$variant"/*.jsonl; do
+        [ -f "$jsonl" ] || continue
+        cwd="$(grep -m1 -oE '"cwd":"[^"]+"' "$jsonl" 2>/dev/null \
+                 | sed -e 's/^"cwd":"//' -e 's/"$//')"
+        [ -n "$cwd" ] && break
+      done
+      [ -z "$cwd" ] && continue
+
+      # If the cwd still exists, the variant is live.
+      if [ -d "$cwd" ]; then
+        continue
+      fi
+
+      # Safety: only delete if the variant's content is already in the hub.
+      # Check that every .md file in the variant exists in the hub project.
+      local sidecar="${variant%/}/.hive-mind"
+      local project_id=""
+      if [ -f "$sidecar" ]; then
+        project_id="$(awk -F= '/^project-id=/ { sub(/^project-id=/, ""); print; exit }' "$sidecar" 2>/dev/null)"
+      fi
+      if [ -n "$project_id" ]; then
+        local hub_proj="$HIVE_MIND_HUB_DIR/projects/$project_id"
+        local has_unharvested=0
+        while IFS= read -r -d '' vf; do
+          local rel="${vf#"${variant%/}/"}"
+          # Skip jsonl session files and sidecar — not synced to hub.
+          case "$rel" in *.jsonl|.hive-mind) continue ;; esac
+          # Check if hub has this content (map MEMORY.md → content.md).
+          local hub_rel="$rel"
+          case "$rel" in MEMORY.md) hub_rel="content.md" ;; esac
+          if [ ! -f "$hub_proj/$hub_rel" ]; then
+            has_unharvested=1
+            break
+          fi
+        done < <(find "${variant%/}" -type f -print0 2>/dev/null)
+        if [ "$has_unharvested" -eq 1 ]; then
+          echo "$TS gc: skipped orphan variant (unharvested content for $project_id): ${variant%/##*/}" >>"$log"
+          continue
+        fi
+      fi
+
+      local variant_name="${variant%/}"
+      variant_name="${variant_name##*/}"
+      rm -rf "$variant"
+      deleted=$((deleted + 1))
+      echo "$TS gc: removed orphan tool variant (cwd gone): $variant_name" >>"$log"
+    done
+  done
+
+  [ "$deleted" -gt 0 ] && printf 'gc: %d orphan tool variant(s) removed\n' "$deleted"
+  return 0
+}

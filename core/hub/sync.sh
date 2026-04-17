@@ -245,9 +245,11 @@ if [ ! -f "$FORMAT_FILE" ]; then
 fi
 
 # --- phase: project GC ----------------------------------------------------
-# Remove hub project dirs with no live sidecar and stale last-touch.
+# Remove hub project dirs with no live sidecar and stale last-touch,
+# plus tool-side variant dirs whose cwd no longer exists on disk.
 # Runs after harvest so newly discovered projects are not falsely GC'd.
 hub_gc_projects 2>>"$LOG" || true
+hub_gc_tool_variants 2>>"$LOG" || true
 
 # --- phase: marker extraction ---------------------------------------------
 # Walk every file that looks like content (content.md at root, per-project

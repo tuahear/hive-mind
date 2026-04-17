@@ -90,6 +90,65 @@ teardown() {
   [ -d "$HIVE_MIND_HUB_DIR/projects/github.com/bob/stale" ]
 }
 
+@test "tool variant whose cwd still exists is kept" {
+  export HIVE_MIND_HUB_PROJECT_GC_DAYS=1
+
+  # Variant points to a cwd that exists.
+  mkdir -p "$HOME/real-repo"
+  mkdir -p "$TOOL/projects/-variant-live"
+  printf '{"cwd":"%s"}\n' "$HOME/real-repo" > "$TOOL/projects/-variant-live/session.jsonl"
+
+  hub_gc_tool_variants
+
+  [ -d "$TOOL/projects/-variant-live" ]
+}
+
+@test "tool variant whose cwd is gone is removed" {
+  export HIVE_MIND_HUB_PROJECT_GC_DAYS=1
+
+  # Variant points to a cwd that does NOT exist.
+  mkdir -p "$TOOL/projects/-variant-orphan"
+  printf '{"cwd":"/no/such/path/repo"}\n' > "$TOOL/projects/-variant-orphan/session.jsonl"
+
+  hub_gc_tool_variants
+
+  [ ! -d "$TOOL/projects/-variant-orphan" ]
+}
+
+@test "tool variant whose cwd is gone but has unharvested content is kept" {
+  export HIVE_MIND_HUB_PROJECT_GC_DAYS=1
+
+  # Variant has content not yet in the hub.
+  mkdir -p "$TOOL/projects/-variant-unharvested/memory"
+  printf '{"cwd":"/no/such/path"}\n' > "$TOOL/projects/-variant-unharvested/session.jsonl"
+  printf 'project-id=github.com/carol/unharvested\n' > "$TOOL/projects/-variant-unharvested/.hive-mind"
+  printf '# precious memory\n' > "$TOOL/projects/-variant-unharvested/MEMORY.md"
+  printf '# extra note\n' > "$TOOL/projects/-variant-unharvested/memory/note.md"
+
+  # Hub has the project dir but is missing note.md.
+  mkdir -p "$HIVE_MIND_HUB_DIR/projects/github.com/carol/unharvested"
+  printf '# precious memory\n' > "$HIVE_MIND_HUB_DIR/projects/github.com/carol/unharvested/content.md"
+  # No memory/note.md in hub.
+
+  hub_gc_tool_variants
+
+  # Must be kept — hub is missing memory/note.md.
+  [ -d "$TOOL/projects/-variant-unharvested" ]
+  [ -f "$TOOL/projects/-variant-unharvested/memory/note.md" ]
+}
+
+@test "tool variant GC is disabled when HIVE_MIND_HUB_PROJECT_GC_DAYS=0" {
+  export HIVE_MIND_HUB_PROJECT_GC_DAYS=0
+
+  mkdir -p "$TOOL/projects/-variant-orphan"
+  printf '{"cwd":"/no/such/path"}\n' > "$TOOL/projects/-variant-orphan/session.jsonl"
+
+  hub_gc_tool_variants
+
+  # Orphan still exists — GC disabled.
+  [ -d "$TOOL/projects/-variant-orphan" ]
+}
+
 @test "GC is disabled when HIVE_MIND_HUB_PROJECT_GC_DAYS=0" {
   export HIVE_MIND_HUB_PROJECT_GC_DAYS=0
   export HIVE_MIND_HUB_PROJECT_GC_AUTO=1
