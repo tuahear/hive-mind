@@ -93,6 +93,8 @@ cd "$HIVE_MIND_HUB_DIR" || exit 0
 source "$CORE_DIR/hub/harvest-fanout.sh"
 # shellcheck source=/dev/null
 source "$CORE_DIR/adapter-loader.sh"
+# shellcheck source=/dev/null
+source "$CORE_DIR/hub/project-gc.sh"
 
 # --- collect attached adapters --------------------------------------------
 ATTACHED=()
@@ -241,6 +243,11 @@ fi
 if [ ! -f "$FORMAT_FILE" ]; then
   printf 'format-version=%d\n' "$HIVE_MIND_FORMAT_VERSION" > "$FORMAT_FILE"
 fi
+
+# --- phase: project GC ----------------------------------------------------
+# Remove hub project dirs with no live sidecar and stale last-touch.
+# Runs after harvest so newly discovered projects are not falsely GC'd.
+hub_gc_projects 2>>"$LOG" || true
 
 # --- phase: marker extraction ---------------------------------------------
 # Walk every file that looks like content (content.md at root, per-project
