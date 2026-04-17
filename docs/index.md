@@ -8,7 +8,7 @@ hero:
   actions:
     - theme: brand
       text: Get started
-      link: /#get-started-in-3-steps
+      link: /get-started
     - theme: alt
       text: View on GitHub
       link: https://github.com/tuahear/hive-mind
@@ -57,27 +57,4 @@ hive-mind fixes that. A single `~/.hive-mind/` hub per machine holds one canonic
 
 Only using one AI tool on one computer today? hive-mind still earns its keep: automatic memory backup, a full `git log` of every memory edit, easy rollback if a bad memory gets written, and your memory stays in your own private repo — not a vendor cloud. The day you add a second tool or a second machine, nothing in your workflow changes.
 
-## Get started in 3 steps
-
-### 1. Make an empty private git repo
-
-Any git host works — GitHub, GitLab, Bitbucket, Codeberg, self-hosted, even a local bare repo on another machine. No README, no license, no `.gitignore`. Just an empty box to hold your memory.
-
-### 2. Run the installer
-
-```bash
-MEMORY_REPO=<your-memory-repo-url> \
-  bash -c "$(curl -fsSL https://raw.githubusercontent.com/tuahear/hive-mind/main/setup.sh)"
-```
-
-`MEMORY_REPO` accepts any URL `git` understands — SSH, HTTPS, or a local bare repo. Works on macOS, Linux, and Windows (Git Bash).
-
-To attach a second tool later (once its adapter ships) it's the same installer with a different `ADAPTER=`:
-
-```bash
-ADAPTER=codex bash setup.sh   # same memory, second tool
-```
-
-### 3. Reload Claude Code
-
-Type `/hooks` in any session or start a fresh one — the sync hooks activate. That's it.
+**Ready to install?** Head to [Get started](/get-started) — three steps, covers any git host and OS.
