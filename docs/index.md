@@ -14,18 +14,18 @@ hero:
       link: https://github.com/tuahear/hive-mind
 
 features:
-  - title: 🔌 Cross-provider
-    details: "One hub per machine attaches to multiple AI tools. Claude Code today; Codex, Qwen, and Kimi adapters planned. They all read from the same canonical memory."
+  - title: 🧭 AI-agnostic
+    details: "One memory across Claude Code, Codex, Qwen, and Kimi. Swap tools, add tools, or try new ones — your memory moves with you."
   - title: 🪶 Ultralight
     details: ~175 tokens fully loaded, ~85 tokens idle. Almost zero context overhead.
   - title: 🔒 Your data, your repo
     details: Memory lives in a private git repo you control. No vendor lock-in.
-  - title: 🧭 AI-agnostic
-    details: Not tied to any vendor's API, format, or cloud. Add a tool, swap a tool, try a new one — your memory comes with you.
   - title: 🌐 Synced everywhere
     details: Global and project memories stay in sync across every machine. macOS, Linux, Windows.
   - title: 📚 Meaningful git history
     details: Every lesson is auto-committed — git log becomes your AI's learning journal.
+  - title: 🔁 Works offline
+    details: Sync failures retry next turn. Your AI never blocks on a bad network.
 ---
 
 ## The problem
