@@ -45,6 +45,13 @@ read_meta() {
   ' "$file"
 }
 
+# NOTE: under hub topology ADAPTER_DIR is not necessarily a git repo.
+# When outside a repo, `git status` errors silently (stderr suppressed)
+# and this returns true (empty output = "matches"), causing the
+# single-editor optimization to degrade to union-merge. Acceptable
+# for now — union-merge is the safe fallback. A content-based
+# heuristic (compare file contents across variants) would be more
+# robust but is deferred.
 file_matches_head() {
   local path="$1"
   [ -z "$(git status --porcelain -- "$path" 2>/dev/null)" ]

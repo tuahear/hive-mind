@@ -243,10 +243,10 @@ unset -f adapter_list_memory_files'
 @test "load_adapter clears previous adapter_* functions before sourcing the next adapter" {
   # Same class of bug for functions. adapter_migrate is in the
   # required-function contract; if the second adapter forgets to
-  # define it, the loader must not let the first adapter's definition
-  # leak through. Since _validate_adapter does not currently reject
-  # missing functions (they are checked at call sites by the docs),
-  # assert the absence directly via `declare -f` in a post-load probe.
+  # define it, _validate_adapter rejects the load. This test verifies
+  # the state-clearing step (not the validation) — after loading
+  # second_fn (which unsets adapter_migrate), the first adapter's
+  # definition must not leak through.
   write_adapter "first_fn"  'adapter_migrate() { echo "from-first"; }'
   write_adapter "second_fn" 'unset -f adapter_migrate'
 
