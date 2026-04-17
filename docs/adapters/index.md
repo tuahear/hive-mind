@@ -54,7 +54,7 @@ A **machine-local filter** skips harvesting any hook whose command references `/
 Once another adapter ships (e.g. `codex`), attach it to the same hub with:
 
 ```bash
-ADAPTER=codex bash setup.sh
+ADAPTER=codex bash ~/.hive-mind/hive-mind/setup.sh
 ```
 
 This does *not* touch the first adapter's install. Both adapters then harvest and fan-out through the same `~/.hive-mind/` — memory edits in one tool appear in the other on the next sync cycle.

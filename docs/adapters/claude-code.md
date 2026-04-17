@@ -22,18 +22,19 @@ When you run the installer (the default `ADAPTER=claude-code` is assumed if you 
 
 ## Memory file mapping
 
-The adapter declares two mapping strings (`ADAPTER_HUB_MAP` and `ADAPTER_PROJECT_CONTENT_RULES`) that the hub sync engine reads bidirectionally:
+The adapter declares two mapping strings for the hub root and per-project content (`ADAPTER_HUB_MAP` and `ADAPTER_PROJECT_CONTENT_RULES`) that the hub sync engine reads bidirectionally:
 
 | Hub path | Claude-side path |
 |---|---|
 | `content.md` | `~/.claude/CLAUDE.md` |
 | `config/hooks` | `~/.claude/settings.json#hooks` |
 | `config/permissions/{allow,deny,ask}.txt` | `~/.claude/settings.json#permissions.{allow,deny,ask}` |
-| `skills/<name>/content.md` | `~/.claude/skills/<name>/SKILL.md` |
 | `projects/<id>/content.md` | `~/.claude/projects/<encoded-cwd>/MEMORY.md` |
 | `projects/<id>/memory/` | `~/.claude/projects/<encoded-cwd>/memory/` |
 
-Lowercase filenames on the hub side signal "hive-mind canonical"; the adapter renames during fan-out. Other files in each skill dir pass through unchanged.
+Skills are synced separately — not via `ADAPTER_HUB_MAP`. The engine walks `~/.claude/skills/<name>/` ↔ `~/.hive-mind/skills/<name>/` directly, renaming each skill's main content file (`SKILL.md` ↔ `content.md`); other files in the skill dir pass through unchanged.
+
+Lowercase filenames on the hub side signal "hive-mind canonical".
 
 ## Migration from pre-0.3 installs
 

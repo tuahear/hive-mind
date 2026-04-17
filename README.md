@@ -49,7 +49,7 @@ MEMORY_REPO=<your-memory-repo-url> \
 That attaches Claude Code to your hub. To attach a second tool later (once its adapter ships) it's the same installer, different `ADAPTER=`:
 
 ```bash
-ADAPTER=codex bash setup.sh   # same memory, second tool
+ADAPTER=codex bash ~/.hive-mind/hive-mind/setup.sh   # same memory, second tool
 ```
 
 `MEMORY_REPO` accepts any URL `git` understands:

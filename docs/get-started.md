@@ -33,7 +33,7 @@ Works on macOS, Linux, and Windows (Git Bash). You need: `git` and SSH access (o
 Once another adapter ships, attach it to the same hub with a different `ADAPTER=` value:
 
 ```bash
-ADAPTER=codex bash setup.sh   # same memory, second tool
+ADAPTER=codex bash ~/.hive-mind/hive-mind/setup.sh   # same memory, second tool
 ```
 
 This does not touch the first adapter's install. Both tools then harvest and fan-out through the same `~/.hive-mind/` — memory edits in one tool appear in the other on the next sync cycle.
