@@ -23,7 +23,7 @@ Fallback (no markers found): `update <basename>` or `update <f1>, <f2>, <f3>, +N
 The shared memory git repo's `.gitignore` (written from `core/hub/gitignore`) whitelists only:
 
 - `!/content.md` — canonical global content (maps to CLAUDE.md, AGENTS.md, etc.)
-- `!/projects/<project-id>/content.md` + `!/projects/<project-id>/**` — canonical per-project content (flattened)
+- `!/projects/<project-id>/content.md` + `!/projects/<project-id>/**` — canonical per-project content (subdirs preserved via project rules)
 - `!/skills/**` — provider-agnostic skill definitions
 - `!/config/hooks/<event>/<id>.json` — tool-agnostic hook entries
 - `!/config/permissions/{allow,deny,ask}.txt` — permission rule lists

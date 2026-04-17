@@ -107,10 +107,12 @@ config/permissions/ask.txt\tsettings.json#permissions.ask'
 # No `skills\tskills` — the engine handles skills directly, renaming
 # SKILL.md ↔ content.md per skill subdir.
 
-ADAPTER_PROJECT_CONTENT_RULES=$'content.md\tMEMORY.md
-*\tmemory'
-# The `*` catch-all: every hub project-root file not matched by an
-# explicit rule above maps to/from the tool's memory/ subdir.
+ADAPTER_PROJECT_CONTENT_RULES=$'content.md\tmemory/MEMORY.md
+content.md\tMEMORY.md
+memory\tmemory'
+# Rules are last-writer-wins. Dir rules (memory\tmemory) sync the
+# subdir tree; file rules (content.md\tMEMORY.md) map the main
+# content file. Order matters — later file rules overwrite earlier.
 ```
 
 ### Per-project mapping

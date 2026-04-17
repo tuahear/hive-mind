@@ -132,16 +132,29 @@ teardown() {
   grep -q '^B$' "$TOOL/skills/bar/SKILL.md"
 }
 
-@test "harvest removes hub skill dirs whose tool counterpart was deleted" {
-  mkdir -p "$TOOL/skills/foo"
-  echo "A" > "$TOOL/skills/foo/SKILL.md"
-  hub_harvest "$TOOL" "$HUB"
-  [ -f "$HUB/skills/foo/content.md" ]
+@test "harvest does not remove hub skill dirs absent from tool (add-only)" {
+  mkdir -p "$HUB/skills/existing"
+  echo "hub content" > "$HUB/skills/existing/content.md"
+  mkdir -p "$TOOL/skills/new-skill"
+  echo "A" > "$TOOL/skills/new-skill/SKILL.md"
 
-  rm -rf "$TOOL/skills/foo"
   hub_harvest "$TOOL" "$HUB"
 
-  [ ! -d "$HUB/skills/foo" ]
+  [ -f "$HUB/skills/existing/content.md" ]
+  [ -f "$HUB/skills/new-skill/content.md" ]
+}
+
+@test "fanout removes tool skill dirs absent from hub (prune on fanout only)" {
+  mkdir -p "$HUB/skills/keep"
+  echo "K" > "$HUB/skills/keep/content.md"
+  mkdir -p "$TOOL/skills/keep" "$TOOL/skills/stale"
+  echo "K" > "$TOOL/skills/keep/SKILL.md"
+  echo "S" > "$TOOL/skills/stale/SKILL.md"
+
+  hub_fan_out "$HUB" "$TOOL"
+
+  [ -f "$TOOL/skills/keep/SKILL.md" ]
+  [ ! -d "$TOOL/skills/stale" ]
 }
 
 # === JSON subkey — text list (permissions.allow) ===========================

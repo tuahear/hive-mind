@@ -15,7 +15,7 @@ That split lets you run Claude Code and (as adapters ship) Codex, Qwen, Kimi on 
 ├── content.md                         ← canonical global content (maps to CLAUDE.md, AGENTS.md, etc.)
 ├── projects/<project-id>/             ← project-id = normalized git remote
 │   ├── content.md                     ← per-project content (maps to MEMORY.md, etc.)
-│   └── **                             ← per-project subfiles (flattened; no memory/ subfolder)
+│   └── memory/**                      ← per-project subfiles (subdirs preserved via project rules)
 ├── skills/<name>/content.md           ← skill content (maps to SKILL.md on fan-out)
 ├── config/
 │   ├── hooks/<event>/<id>.json        ← tool-agnostic hook entries

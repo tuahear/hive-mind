@@ -488,25 +488,29 @@ _hub_sync_skills() {
       cp "$f" "$skill_dst/$dst_name"
     done
     # Remove dst files not in src (with rename awareness).
-    for f in "$skill_dst"/*; do
-      [ -f "$f" ] || continue
-      fname="${f##*/}"
-      local src_name="$fname"
-      if [ "$direction" = "harvest" ] && [ "$fname" = "content.md" ]; then
-        src_name="SKILL.md"
-      elif [ "$direction" = "fanout" ] && [ "$fname" = "SKILL.md" ]; then
-        src_name="content.md"
-      fi
-      [ -f "$skill_src/$src_name" ] || rm -f "$f"
+    # Only prune during fan-out — harvest is add-only so a newly
+    # attached adapter with fewer skills can't wipe hub content.
+    if [ "$direction" = "fanout" ]; then
+      for f in "$skill_dst"/*; do
+        [ -f "$f" ] || continue
+        fname="${f##*/}"
+        local src_name="$fname"
+        if [ "$fname" = "SKILL.md" ]; then
+          src_name="content.md"
+        fi
+        [ -f "$skill_src/$src_name" ] || rm -f "$f"
+      done
+    fi
+  done
+  # Remove dst skill dirs not in src — fan-out only.
+  if [ "$direction" = "fanout" ]; then
+    for skill_dst in "$dst_root"/*/; do
+      [ -d "$skill_dst" ] || continue
+      skill_name="${skill_dst%/}"
+      skill_name="${skill_name##*/}"
+      [ -d "$src_root/$skill_name" ] || rm -rf "$skill_dst"
     done
-  done
-  # Remove dst skill dirs not in src.
-  for skill_dst in "$dst_root"/*/; do
-    [ -d "$skill_dst" ] || continue
-    skill_name="${skill_dst%/}"
-    skill_name="${skill_name##*/}"
-    [ -d "$src_root/$skill_name" ] || rm -rf "$skill_dst"
-  done
+  fi
 }
 
 # --- main entry points -----------------------------------------------------
