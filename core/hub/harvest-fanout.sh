@@ -404,22 +404,32 @@ _hub_apply_project_rules() {
   local rules="${ADAPTER_PROJECT_CONTENT_RULES:-}"
   [ -n "$rules" ] || return 0
 
-  # Two-pass processing: dir rules first, file rules second. This
-  # prevents the dir-sync's "delete absent files" logic from wiping a
-  # file that an explicit file rule places inside the synced dir. For
-  # example: `memory\tmemory` dir-syncs the whole memory/ subdir, then
-  # `content.md\tmemory/MEMORY.md` writes MEMORY.md into memory/ — if
-  # we ran the file rule first, the dir-sync would delete MEMORY.md
-  # because it's not present in the hub's memory/ source.
+  # Two-pass processing: dir rules first, file rules second.
   local hub_rel tool_rel src dst
 
   # Pass 1: directory rules.
+  # HARVEST direction uses add-only (no delete from dst). Multiple
+  # tool-side variants can share the same hub project-id; if the last
+  # variant to harvest lacks a file that an earlier variant added, the
+  # dir-sync's delete-absent logic would remove it. Add-only means
+  # every variant's files accumulate in the hub. Fan-out (hub→tool)
+  # still deletes, since the hub is authoritative.
   while IFS=$'\t' read -r hub_rel tool_rel; do
     [ -z "$hub_rel" ] && continue
     [ -z "$tool_rel" ] && continue
     _hub_is_filelike "$hub_rel" && continue
     if [ "$direction" = "harvest" ]; then
-      _hub_sync_dir "$tool_variant/$tool_rel" "$hub_proj/$hub_rel"
+      # Add-only: copy src→dst, skip the delete-absent pass.
+      local s="$tool_variant/$tool_rel" d="$hub_proj/$hub_rel"
+      if [ -d "$s" ]; then
+        mkdir -p "$d"
+        (cd "$s" && find . -type f -print0 2>/dev/null) \
+          | while IFS= read -r -d '' rel; do
+              rel="${rel#./}"
+              mkdir -p "$d/$(dirname "$rel")" 2>/dev/null
+              cp "$s/$rel" "$d/$rel"
+            done
+      fi
     else
       _hub_sync_dir "$hub_proj/$hub_rel" "$tool_variant/$tool_rel"
     fi
