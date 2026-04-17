@@ -71,8 +71,8 @@ Type `/hooks` in any session or start a fresh one — the sync hooks activate. T
 - **Cross-provider** — One hub per machine attaches to multiple AI tools. Claude Code today; Codex, Qwen, and Kimi adapters planned. They all read from the same canonical memory.
 - **Ultralight** — ~175 tokens fully loaded, ~85 tokens idle. Almost zero context overhead.
 - **Your data, your repo** — Memory lives in a private git repo you control. No vendor lock-in.
-- **Synced everywhere** — Global and project memories stay in sync across every machine. macOS, Linux, Windows.
 - **AI-agnostic** — Not tied to any vendor's API, format, or cloud. Add a tool, swap a tool, try a new one — your memory comes with you.
+- **Synced everywhere** — Global and project memories stay in sync across every machine. macOS, Linux, Windows.
 - **Meaningful git history** — Every lesson is auto-committed — git log becomes your AI's learning journal.
 - **Works offline** — Sync failures retry next turn. Your AI never blocks on a bad network.
 
