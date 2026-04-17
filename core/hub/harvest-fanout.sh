@@ -162,9 +162,20 @@ _hub_jsonpath_to_jq() {
 # adapter has the file while others harvest in parallel against the
 # same hub path. Deletions that users do want to propagate can be
 # applied by editing the hub file's content or removing it directly.
+#
+# Marker preservation: if dst already contains a commit marker and src
+# doesn't, skip the overwrite. This prevents a sibling variant's
+# marker-stripped copy from overwriting the source variant's marker-
+# containing copy during multi-variant harvest. The marker needs to
+# survive in the hub until the commit phase's marker-extract reads it.
 _hub_sync_file() {
   local src="$1" dst="$2"
   if [ -f "$src" ]; then
+    if [ -f "$dst" ] \
+       && grep -q '<!--[[:space:]]*commit:' "$dst" 2>/dev/null \
+       && ! grep -q '<!--[[:space:]]*commit:' "$src" 2>/dev/null; then
+      return 0
+    fi
     mkdir -p "$(dirname "$dst")" 2>/dev/null
     cp "$src" "$dst"
   fi
