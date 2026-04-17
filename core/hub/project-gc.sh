@@ -132,18 +132,21 @@ hub_gc_tool_variants() {
     [ -d "$tool_dir/projects" ] || continue
     for variant in "$tool_dir"/projects/*/; do
       [ -d "$variant" ] || continue
-      # Derive cwd from jsonl files.
-      local cwd=""
+      # Derive cwd from ALL jsonl files. A variant can have multiple
+      # session files; if ANY session's cwd still exists, the variant
+      # is live.
+      local any_cwd_found=0 any_cwd_alive=0
       for jsonl in "$variant"/*.jsonl; do
         [ -f "$jsonl" ] || continue
+        local cwd
         cwd="$(grep -m1 -oE '"cwd":"[^"]+"' "$jsonl" 2>/dev/null \
                  | sed -e 's/^"cwd":"//' -e 's/"$//')"
-        [ -n "$cwd" ] && break
+        [ -z "$cwd" ] && continue
+        any_cwd_found=1
+        [ -d "$cwd" ] && { any_cwd_alive=1; break; }
       done
-      [ -z "$cwd" ] && continue
-
-      # If the cwd still exists, the variant is live.
-      [ -d "$cwd" ] && continue
+      [ "$any_cwd_found" -eq 0 ] && continue
+      [ "$any_cwd_alive" -eq 1 ] && continue
 
       local variant_name="${variant%/}"
       variant_name="${variant_name##*/}"

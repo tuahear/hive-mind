@@ -138,6 +138,22 @@ teardown() {
   [ ! -d "$TOOL/projects/-variant-orphan" ]
 }
 
+@test "tool variant with multiple jsonl files: kept if any cwd exists" {
+  export HIVE_MIND_HUB_PROJECT_GC_DAYS=1
+  export HIVE_MIND_HUB_PROJECT_GC_AUTO=1
+
+  mkdir -p "$HOME/live-repo"
+  mkdir -p "$TOOL/projects/-variant-multi"
+  # Old session points to a gone cwd; new session points to a live one.
+  printf '{"cwd":"/no/such/old/path"}\n' > "$TOOL/projects/-variant-multi/old-session.jsonl"
+  printf '{"cwd":"%s"}\n' "$HOME/live-repo" > "$TOOL/projects/-variant-multi/new-session.jsonl"
+
+  hub_gc_tool_variants >/dev/null
+
+  # Must be kept — the newer session's cwd exists.
+  [ -d "$TOOL/projects/-variant-multi" ]
+}
+
 @test "tool variant whose cwd is gone but has no sidecar is kept" {
   export HIVE_MIND_HUB_PROJECT_GC_DAYS=1
   export HIVE_MIND_HUB_PROJECT_GC_AUTO=1
