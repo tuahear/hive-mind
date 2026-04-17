@@ -212,8 +212,9 @@ memory\tmemory'
 
 # --- H. File harvest rules -------------------------------------------------
 # Glob patterns (relative to ADAPTER_DIR) declaring which files this
-# adapter syncs. Used by GC to distinguish synced content from
-# tool-local artifacts. Users can extend this for custom content.
+# adapter syncs. Not consumed by the engine yet — reserved for future
+# user-extensible sync (e.g., custom skill assets). Declared now so
+# the adapter contract is complete.
 ADAPTER_FILE_HARVEST_RULES=$'CLAUDE.md\nskills/**/*.md\nprojects/**/*.md'
 
 # Project-specific subset: globs relative to ADAPTER_DIR that match

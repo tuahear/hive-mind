@@ -129,7 +129,10 @@ fi
 declare -a HUB_TOOL_DIRS=()
 declare -a HUB_ADAPTER_NAMES=()
 declare -a HUB_SECRET_LISTS=()
+# HUB_FILE_HARVEST_RULES: all synced file globs (global + skills + projects).
+# Not consumed yet — reserved for future use (e.g., user-extensible sync).
 declare -a HUB_FILE_HARVEST_RULES=()
+# HUB_PROJECT_CONTENT_GLOBS + HUB_PROJECT_CONTENT_RULES: used by variant GC.
 declare -a HUB_PROJECT_CONTENT_GLOBS=()
 declare -a HUB_PROJECT_CONTENT_RULES=()
 

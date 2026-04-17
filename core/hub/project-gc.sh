@@ -11,7 +11,10 @@
 # Set HIVE_MIND_HUB_PROJECT_GC_DAYS=0 to disable GC entirely.
 #
 # Sourced by core/hub/sync.sh (calls hub_gc_projects after harvest).
-# Expects: HIVE_MIND_HUB_DIR, HUB_TOOL_DIRS[] array.
+# Expects: HIVE_MIND_HUB_DIR, HUB_TOOL_DIRS[], HUB_PROJECT_CONTENT_GLOBS[],
+# HUB_PROJECT_CONTENT_RULES[] parallel arrays (populated by sync.sh
+# from each adapter's ADAPTER_PROJECT_CONTENT_GLOBS and
+# ADAPTER_PROJECT_CONTENT_RULES).
 
 # No top-level set +e — this file is sourced; shell-option changes
 # would leak into the caller. Functions handle errors internally.
