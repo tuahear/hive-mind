@@ -26,10 +26,11 @@ _gc_collect_live_ids() {
     [ -d "$tool_dir/projects" ] || continue
     for variant in "$tool_dir"/projects/*/; do
       [ -d "$variant" ] || continue
-      sidecar="${variant%.}/.hive-mind"
-      [ -f "$sidecar" ] || sidecar="${variant%/}/.hive-mind"
+      # Check variant root (canonical), then legacy memory/ location.
+      sidecar="${variant%/}/.hive-mind"
+      [ -f "$sidecar" ] || sidecar="${variant%/}/memory/.hive-mind"
       [ -f "$sidecar" ] || continue
-      id="$(awk -F= '/^project-id=/ { sub(/^project-id=/, ""); print; exit }' "$sidecar" 2>/dev/null)"
+      id="$(awk -F= '/^project-id=/ { sub(/^project-id=/, ""); gsub(/\r/, ""); print; exit }' "$sidecar" 2>/dev/null)"
       [ -n "$id" ] && printf '%s\n' "$id"
     done
   done | sort -u
@@ -98,7 +99,7 @@ hub_gc_projects() {
     fi
   done < <(find "$hub_projects" -name ".hive-mind" -type f -print0 2>/dev/null)
 
-  [ "$candidate_count" -gt 0 ] && printf 'gc: %d candidate(s), %d deleted\n' "$candidate_count" "$delete_count"
+  [ "$candidate_count" -gt 0 ] && echo "$TS gc: $candidate_count candidate(s), $delete_count deleted" >>"$log"
   return 0
 }
 
@@ -151,11 +152,12 @@ hub_gc_tool_variants() {
         while IFS= read -r -d '' vf; do
           local rel="${vf#"${variant%/}/"}"
           # Skip jsonl session files and sidecar — not synced to hub.
-          case "$rel" in *.jsonl|.hive-mind) continue ;; esac
-          # Check if hub has this content (map MEMORY.md → content.md).
+          case "$rel" in *.jsonl|.hive-mind|.DS_Store) continue ;; esac
+          # Map tool-side names to hub-canonical names.
           local hub_rel="$rel"
           case "$rel" in MEMORY.md) hub_rel="content.md" ;; esac
-          if [ ! -f "$hub_proj/$hub_rel" ]; then
+          # Must exist AND have identical content.
+          if [ ! -f "$hub_proj/$hub_rel" ] || ! cmp -s "$vf" "$hub_proj/$hub_rel"; then
             has_unharvested=1
             break
           fi
@@ -174,6 +176,6 @@ hub_gc_tool_variants() {
     done
   done
 
-  [ "$deleted" -gt 0 ] && printf 'gc: %d orphan tool variant(s) removed\n' "$deleted"
+  [ "$deleted" -gt 0 ] && echo "$TS gc: $deleted orphan tool variant(s) removed" >>"$log"
   return 0
 }
