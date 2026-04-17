@@ -133,7 +133,7 @@ _gc_variant_content_matches_hub() {
   # File rules: tool_rel → hub_rel. Dir rules: prefix match.
   local _file_maps="" _dir_maps=""
   while IFS=$'\t' read -r hub_rel tool_rel; do
-    [ -z "$hub_rel" ] || [ -z "$tool_rel" ] && continue
+    { [ -z "$hub_rel" ] || [ -z "$tool_rel" ]; } && continue
     case "$tool_rel" in
       *.*) _file_maps="${_file_maps}${tool_rel}"$'\t'"${hub_rel}"$'\n' ;;
       *)   _dir_maps="${_dir_maps}${tool_rel}"$'\t'"${hub_rel}"$'\n' ;;

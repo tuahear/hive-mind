@@ -35,16 +35,15 @@ setup() {
   git -C "$HIVE_MIND_HUB_DIR" config user.name test
   git -C "$HIVE_MIND_HUB_DIR" add -A
   # Backdate the stale project's commit using a relative timestamp.
-  local old_ts
-  old_ts="$(( $(date +%s) - 60 * 86400 ))"
-  GIT_AUTHOR_DATE="@$old_ts" GIT_COMMITTER_DATE="@$old_ts" \
+  OLD_TS="$(( $(date +%s) - 60 * 86400 ))"
+  GIT_AUTHOR_DATE="@$OLD_TS" GIT_COMMITTER_DATE="@$OLD_TS" \
     git -C "$HIVE_MIND_HUB_DIR" commit -q -m "old content"
 
   # Update the alive project (also backdated — alive survives because
   # of its sidecar, not recency).
   printf '# alive updated\n' > "$HIVE_MIND_HUB_DIR/projects/github.com/alice/alive/content.md"
   git -C "$HIVE_MIND_HUB_DIR" add -A
-  GIT_AUTHOR_DATE="@$old_ts" GIT_COMMITTER_DATE="@$old_ts" \
+  GIT_AUTHOR_DATE="@$OLD_TS" GIT_COMMITTER_DATE="@$OLD_TS" \
     git -C "$HIVE_MIND_HUB_DIR" commit -q -m "alive update (also old)"
 
   # shellcheck source=/dev/null
@@ -107,7 +106,10 @@ teardown() {
   printf 'project-id=github.com/alice/alive\n' > "$HIVE_MIND_HUB_DIR/projects/github.com/alice/alive/memory/.hive-mind"
   printf '# note\n' > "$HIVE_MIND_HUB_DIR/projects/github.com/alice/alive/memory/note.md"
   git -C "$HIVE_MIND_HUB_DIR" add -A
-  git -C "$HIVE_MIND_HUB_DIR" commit -q -m "add nested sidecar"
+  # Backdate so the project would be old enough to GC — proves the
+  # sidecar validation (not recency) is what prevents deletion.
+  GIT_AUTHOR_DATE="@$OLD_TS" GIT_COMMITTER_DATE="@$OLD_TS" \
+    git -C "$HIVE_MIND_HUB_DIR" commit -q -m "add nested sidecar"
 
   hub_gc_projects >/dev/null
 
