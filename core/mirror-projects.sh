@@ -17,10 +17,12 @@
 # for backward compat with pre-adapter-contract installs.
 #
 # Identity model:
-#   - Each variant carries a metadata sidecar at
-#     <variant>/memory/.hive-mind, a key=value text file.
+#   - Each variant carries a metadata sidecar at the variant root
+#     (<variant>/.hive-mind), a key=value text file. Legacy installs
+#     may still have it at <variant>/memory/.hive-mind — discover_id
+#     checks both and migrates to root on first access.
 #   - If the sidecar isn't there yet, derive from local session jsonl
-#     + git remote, normalize, and persist.
+#     + git remote, normalize, and persist at <variant>/.hive-mind.
 #   - Variants whose project-id matches are treated as the same project.
 #
 # Union strategy: only `.md` files are line-merged via `git merge-file
