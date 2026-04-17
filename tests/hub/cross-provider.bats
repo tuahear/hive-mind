@@ -71,8 +71,8 @@ run_sync() {
   [ "$status" -eq 0 ]
 
   # Hub stores it under the canonical lowercase name.
-  [ -f "$HUB/memory.md" ]
-  grep -q '# shared memory from fake-a' "$HUB/memory.md"
+  [ -f "$HUB/content.md" ]
+  grep -q '# shared memory from fake-a' "$HUB/content.md"
 
   # fake-b's tool dir got it under its B-native name (NOTES.md, NOT
   # MEMORY.md — that's the cross-provider name remap).
@@ -90,7 +90,7 @@ run_sync() {
   [ "$status" -eq 0 ]
 
   # Hub has canonical content...
-  grep -q 'from fake-b' "$HUB/memory.md"
+  grep -q 'from fake-b' "$HUB/content.md"
   # ...and fake-a's MEMORY.md received it via fan-out.
   [ -f "$HOME/.fake-tool/MEMORY.md" ]
   grep -q 'from fake-b' "$HOME/.fake-tool/MEMORY.md"
@@ -109,7 +109,7 @@ EOF
   run run_sync
   [ "$status" -eq 0 ]
 
-  [ -f "$HUB/skills/shared-skill/SKILL.md" ]
+  [ -f "$HUB/skills/shared-skill/content.md" ]
   [ -f "$HOME/.fake-b-tool/skills/shared-skill/SKILL.md" ]
   grep -q 'works for both fakes' "$HOME/.fake-b-tool/skills/shared-skill/SKILL.md"
 }

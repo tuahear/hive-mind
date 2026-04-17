@@ -65,11 +65,10 @@ ADAPTER_FALLBACK_STRATEGY=""
 # That mismatch is what makes the cross-provider round-trip test
 # meaningful — an edit via fake's tool dir must surface under fake-b's
 # tool-native name after the shared hub sync cycle.
-ADAPTER_HUB_MAP=$'memory.md\tNOTES.md
-skills\tskills
+ADAPTER_HUB_MAP=$'content.md\tNOTES.md
 config/hooks\ttool.json#hooks'
-ADAPTER_PROJECT_CONTENT_RULES=$'memory.md\tNOTES.md
-notes\tnotes'
+ADAPTER_PROJECT_CONTENT_RULES=$'content.md\tNOTES.md
+*\tnotes'
 
 # --- H. Logging ------------------------------------------------------------
 ADAPTER_LOG_PATH="$ADAPTER_DIR/.sync-error.log"

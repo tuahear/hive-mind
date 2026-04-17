@@ -89,8 +89,8 @@ run_sync() {
   # harvest loop would skip the sidecar-less variant and this assertion
   # would fail silently.
   hub_proj="$HUB/projects/github.com/owner/myrepo"
-  [ -f "$hub_proj/memory.md" ]
-  grep -q '# project notes' "$hub_proj/memory.md"
+  [ -f "$hub_proj/content.md" ]
+  grep -q '# project notes' "$hub_proj/content.md"
 
   # Actually reach the remote — the hub gitignore's project-whitelist
   # must allow multi-level project-ids (normalized git remotes
@@ -98,7 +98,7 @@ run_sync() {
   # whitelist would leave the file in the hub working tree but skip
   # it on `git add -A`, silently failing to propagate to other
   # machines. This assertion catches that class of bug.
-  run git -C "$HOME/remote.git" show "HEAD:projects/github.com/owner/myrepo/memory.md"
+  run git -C "$HOME/remote.git" show "HEAD:projects/github.com/owner/myrepo/content.md"
   [ "$status" -eq 0 ]
   [[ "$output" == *"# project notes"* ]]
 }
@@ -125,7 +125,7 @@ run_sync() {
   # No projects/ tree got created by accident.
   [ ! -d "$HOME/.fake-tool/projects" ]
   # Top-level harvest still ran.
-  grep -q 'content only in tool dir' "$HUB/memory.md"
+  grep -q 'content only in tool dir' "$HUB/content.md"
 }
 
 @test "sync.sh gates mirror-projects on flat memory model so hierarchical adapters don't invoke it" {

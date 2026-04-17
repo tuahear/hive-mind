@@ -192,19 +192,21 @@ ADAPTER_FALLBACK_STRATEGY=""  # not needed — Claude Code has hooks
 # Not yet consumed by any code — landing the contract first so future
 # commits can layer the hub harvest / fan-out logic on top without
 # another contract change.
-ADAPTER_HUB_MAP=$'memory.md\tCLAUDE.md
-skills\tskills
+ADAPTER_HUB_MAP=$'content.md\tCLAUDE.md
 config/hooks\tsettings.json#hooks
 config/permissions/allow.txt\tsettings.json#permissions.allow
 config/permissions/deny.txt\tsettings.json#permissions.deny
 config/permissions/ask.txt\tsettings.json#permissions.ask'
 
 # Rules for hub's `projects/<id>/` subtree ↔ Claude's per-project
-# layout. Claude uses `projects/<encoded-cwd>/memory/*` + the top-level
-# `projects/<encoded-cwd>/MEMORY.md`. The hub keeps both under
-# `projects/<id>/` with lowercase canonical names.
-ADAPTER_PROJECT_CONTENT_RULES=$'memory.md\tMEMORY.md
-memory\tmemory'
+# layout. Hub stores everything flat under `projects/<id>/`:
+#   content.md   ← Claude's MEMORY.md
+#   <subfiles>   ← Claude's memory/* (notes, feedback, etc.)
+# The `*` catch-all maps every non-content.md file at the hub project
+# root to/from Claude's memory/ subdirectory (flattening on harvest,
+# un-flattening on fan-out).
+ADAPTER_PROJECT_CONTENT_RULES=$'content.md\tMEMORY.md
+*\tmemory'
 
 # --- H. Logging ------------------------------------------------------------
 ADAPTER_LOG_PATH="${ADAPTER_DIR}/.sync-error.log"

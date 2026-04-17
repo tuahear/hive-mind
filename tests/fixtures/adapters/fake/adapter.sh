@@ -78,11 +78,10 @@ adapter_disable_instructions() {
 ADAPTER_FALLBACK_STRATEGY=""
 
 # --- I. Hub mapping (v0.3.0 hub topology) ---------------------------------
-ADAPTER_HUB_MAP=$'memory.md\tMEMORY.md
-skills\tskills
+ADAPTER_HUB_MAP=$'content.md\tMEMORY.md
 config/hooks\thooks.json#hooks'
-ADAPTER_PROJECT_CONTENT_RULES=$'memory.md\tMEMORY.md
-memory\tmemory'
+ADAPTER_PROJECT_CONTENT_RULES=$'content.md\tMEMORY.md
+*\tmemory'
 
 # --- H. Logging ------------------------------------------------------------
 ADAPTER_LOG_PATH="$ADAPTER_DIR/.sync-error.log"

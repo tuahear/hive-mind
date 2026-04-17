@@ -36,9 +36,9 @@ seed_older_remote() {
   git -c init.defaultBranch=main init -q "$HOME/seed"
   git -C "$HOME/seed" config user.email t@t.t
   git -C "$HOME/seed" config user.name t
-  printf '/*\n!/.gitignore\n!/memory.md\n' > "$HOME/seed/.gitignore"
+  printf '/*\n!/.gitignore\n!/content.md\n' > "$HOME/seed/.gitignore"
   printf '*.md merge=union\n' > "$HOME/seed/.gitattributes"
-  printf 'legacy remote\n' > "$HOME/seed/memory.md"
+  printf 'legacy remote\n' > "$HOME/seed/content.md"
   git -C "$HOME/seed" add .
   git -C "$HOME/seed" commit -q -m seed
   git clone -q --bare "$HOME/seed" "$HOME/remote.git"
@@ -79,9 +79,9 @@ seed_older_remote() {
 
   # Hub template entries survive the copy:
   grep -q 'hive-mind-format' "$HIVE_MIND_HUB_DIR/.gitignore"
-  grep -q 'memory.md' "$HIVE_MIND_HUB_DIR/.gitattributes"
+  grep -q 'content.md' "$HIVE_MIND_HUB_DIR/.gitattributes"
   # Non-template remote content still landed.
-  grep -q 'legacy remote' "$HIVE_MIND_HUB_DIR/memory.md"
+  grep -q 'legacy remote' "$HIVE_MIND_HUB_DIR/content.md"
 }
 
 @test "manage_bundled_skills seeds the adapter's bundled skills into \$HIVE_MIND_HUB_DIR/skills/" {
@@ -108,7 +108,7 @@ seed_older_remote() {
   manage_bundled_skills
 
   [ -d "$HIVE_MIND_HUB_DIR/skills/hive-mind" ]
-  [ -f "$HIVE_MIND_HUB_DIR/skills/hive-mind/SKILL.md" ]
+  [ -f "$HIVE_MIND_HUB_DIR/skills/hive-mind/content.md" ]
 }
 
 @test "manage_bundled_skills removes the legacy memory-commit skill under the tool dir" {

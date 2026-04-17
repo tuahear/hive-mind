@@ -12,11 +12,11 @@ That split lets you run Claude Code and (as adapters ship) Codex, Qwen, Kimi on 
 ```
 ~/.hive-mind/
 ├── .git/                              ← single git repo; remote = your memory repo
-├── memory.md                          ← canonical global memory
+├── content.md                         ← canonical global content (maps to CLAUDE.md, AGENTS.md, etc.)
 ├── projects/<project-id>/             ← project-id = normalized git remote
-│   ├── memory.md                      ← canonical per-project memory
-│   └── memory/**                      ← free-form per-project notes
-├── skills/<name>/SKILL.md
+│   ├── content.md                     ← per-project content (maps to MEMORY.md, etc.)
+│   └── **                             ← per-project subfiles (flattened; no memory/ subfolder)
+├── skills/<name>/content.md           ← skill content (maps to SKILL.md on fan-out)
 ├── config/
 │   ├── hooks/<event>/<id>.json        ← tool-agnostic hook entries
 │   ├── permissions/{allow,deny,ask}.txt

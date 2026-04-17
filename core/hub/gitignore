@@ -8,8 +8,8 @@
 !/.gitattributes
 !/.hive-mind-format
 
-# Global canonical memory.
-!/memory.md
+# Global canonical content (provider-agnostic; maps to CLAUDE.md, AGENTS.md, etc.).
+!/content.md
 
 # Per-project canonical memory tree. The whitelist is a catch-all
 # because project-ids are normalized git remotes and ROUTINELY contain

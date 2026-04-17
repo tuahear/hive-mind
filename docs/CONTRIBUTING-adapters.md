@@ -87,25 +87,30 @@ The engine dispatches on the shape of the two paths in each entry.
 
 | Hub path | Tool path | Meaning |
 |---|---|---|
-| `memory.md` | `CLAUDE.md` | File-to-file rename. `_hub_sync_file` copies on harvest; reverse on fan-out. |
-| `skills` | `skills` | Directory tree mirror. Files present in source overwrite destination; files in destination with no counterpart are removed. |
+| `content.md` | `CLAUDE.md` | File-to-file rename. `_hub_sync_file` copies on harvest; reverse on fan-out. |
 | `config/permissions/allow.txt` | `settings.json#permissions.allow` | Tool-side JSON subkey ↔ hub-side text-lines. Harvest extracts the array and writes one entry per line; fan-out reads the lines and replaces the subkey. |
 | `config/hooks` | `settings.json#hooks` | Tool-side JSON subkey that's an event-keyed map of entry arrays ↔ hub-side per-event/per-entry JSON files. Harvest splits each entry into `config/hooks/<event>/<id>.json` where `<id>` is a deterministic content hash; fan-out reconstructs the map. Machine-local entries (commands containing `/Applications/`, `/opt/homebrew/`, Windows drive letters, …) are filtered from harvest and preserved through fan-out. |
+
+Skills are NOT declared in `ADAPTER_HUB_MAP`. The engine syncs `$ADAPTER_SKILL_ROOT/` ↔ `hub/skills/` directly, renaming each skill's main content file: tool's `SKILL.md` → hub's `content.md` on harvest, and the reverse on fan-out. Other files in each skill dir pass through unchanged.
 
 The convention: hub paths with a file extension (`.md`, `.txt`, `.json`) are file-like; paths without an extension are directory-like. The `<file>#<jsonpath>` form on the tool side means "read/write a subkey of that JSON file"; the hub-side shape (file vs. dir) picks between text-lines and per-entry split.
 
 ### Example (the Claude Code adapter)
 
 ```bash
-ADAPTER_HUB_MAP=$'memory.md\tCLAUDE.md
-skills\tskills
+ADAPTER_HUB_MAP=$'content.md\tCLAUDE.md
 config/hooks\tsettings.json#hooks
 config/permissions/allow.txt\tsettings.json#permissions.allow
 config/permissions/deny.txt\tsettings.json#permissions.deny
 config/permissions/ask.txt\tsettings.json#permissions.ask'
 
-ADAPTER_PROJECT_CONTENT_RULES=$'memory.md\tMEMORY.md
-memory\tmemory'
+# No `skills\tskills` — the engine handles skills directly, renaming
+# SKILL.md ↔ content.md per skill subdir.
+
+ADAPTER_PROJECT_CONTENT_RULES=$'content.md\tMEMORY.md
+*\tmemory'
+# The `*` catch-all: every hub project-root file not matched by an
+# explicit rule above maps to/from the tool's memory/ subdir.
 ```
 
 ### Per-project mapping

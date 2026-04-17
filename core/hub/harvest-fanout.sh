@@ -349,15 +349,30 @@ _hub_read_project_id() {
 # Apply ADAPTER_PROJECT_CONTENT_RULES between a single tool variant and a
 # single hub project dir. Rules map hub-rel → tool-rel; direction param
 # is "harvest" (tool→hub) or "fanout" (hub→tool).
+#
+# Special rule: if hub_rel is `*`, it's a catch-all: every file in the
+# hub project dir NOT matched by an explicit rule above gets synced
+# to/from tool_variant/<tool-rel>/ (the tool_rel for `*` is a subdir
+# name). This supports the flattened hub project layout where the hub
+# stores all per-project subfiles at the project root while the tool
+# keeps them in a subdirectory (e.g. Claude's `memory/`).
 _hub_apply_project_rules() {
   local direction="$1" tool_variant="$2" hub_proj="$3"
   local rules="${ADAPTER_PROJECT_CONTENT_RULES:-}"
   [ -n "$rules" ] || return 0
 
-  local pair hub_rel tool_rel src dst
+  # Two-pass: explicit rules first (collect matched hub-rels), then
+  # catch-all if declared.
+  local explicit_hub_rels="" catchall_tool_rel=""
+  local hub_rel tool_rel src dst
   while IFS=$'\t' read -r hub_rel tool_rel; do
     [ -z "$hub_rel" ] && continue
     [ -z "$tool_rel" ] && continue
+    if [ "$hub_rel" = "*" ]; then
+      catchall_tool_rel="$tool_rel"
+      continue
+    fi
+    explicit_hub_rels="$explicit_hub_rels|$hub_rel|"
     if [ "$direction" = "harvest" ]; then
       src="$tool_variant/$tool_rel"
       dst="$hub_proj/$hub_rel"
@@ -365,13 +380,99 @@ _hub_apply_project_rules() {
       src="$hub_proj/$hub_rel"
       dst="$tool_variant/$tool_rel"
     fi
-
     if _hub_is_filelike "$hub_rel"; then
       _hub_sync_file "$src" "$dst"
     else
       _hub_sync_dir "$src" "$dst"
     fi
   done < <(hub_parse_project_rules "$rules")
+
+  # Catch-all pass: sync files not matched by explicit rules.
+  if [ -n "$catchall_tool_rel" ]; then
+    if [ "$direction" = "harvest" ]; then
+      # Tool's subdir → hub project root (flatten).
+      local tool_subdir="$tool_variant/$catchall_tool_rel"
+      [ -d "$tool_subdir" ] || return 0
+      local f fname
+      for f in "$tool_subdir"/*; do
+        [ -f "$f" ] || continue
+        fname="${f##*/}"
+        # Skip sidecar and files matched by explicit rules.
+        [ "$fname" = ".hive-mind" ] && continue
+        case "$explicit_hub_rels" in *"|$fname|"*) continue ;; esac
+        _hub_sync_file "$f" "$hub_proj/$fname"
+      done
+      # Remove hub files whose tool counterpart was deleted.
+      for f in "$hub_proj"/*; do
+        [ -f "$f" ] || continue
+        fname="${f##*/}"
+        case "$explicit_hub_rels" in *"|$fname|"*) continue ;; esac
+        [ -f "$tool_subdir/$fname" ] || rm -f "$f"
+      done
+    else
+      # Hub project root → tool's subdir (unflatten).
+      local tool_subdir="$tool_variant/$catchall_tool_rel"
+      mkdir -p "$tool_subdir" 2>/dev/null
+      local f fname
+      for f in "$hub_proj"/*; do
+        [ -f "$f" ] || continue
+        fname="${f##*/}"
+        case "$explicit_hub_rels" in *"|$fname|"*) continue ;; esac
+        cp "$f" "$tool_subdir/$fname"
+      done
+    fi
+  fi
+}
+
+# --- entry: skills with content-file rename --------------------------------
+
+# Sync skills between tool and hub with the content-file rename:
+# tool's SKILL.md ↔ hub's content.md. Other files in each skill dir
+# pass through unchanged. Replaces the generic dir-mirror that the
+# removed `skills\tskills` ADAPTER_HUB_MAP entry used to trigger.
+_hub_sync_skills() {
+  local direction="$1" src_root="$2" dst_root="$3"
+  [ -d "$src_root" ] || return 0
+  mkdir -p "$dst_root" 2>/dev/null
+  local skill_src skill_name skill_dst f fname dst_name
+  for skill_src in "$src_root"/*/; do
+    [ -d "$skill_src" ] || continue
+    skill_name="${skill_src%/}"
+    skill_name="${skill_name##*/}"
+    skill_dst="$dst_root/$skill_name"
+    mkdir -p "$skill_dst" 2>/dev/null
+    # Copy with rename for the content file.
+    for f in "$skill_src"/*; do
+      [ -f "$f" ] || continue
+      fname="${f##*/}"
+      dst_name="$fname"
+      if [ "$direction" = "harvest" ] && [ "$fname" = "SKILL.md" ]; then
+        dst_name="content.md"
+      elif [ "$direction" = "fanout" ] && [ "$fname" = "content.md" ]; then
+        dst_name="SKILL.md"
+      fi
+      cp "$f" "$skill_dst/$dst_name"
+    done
+    # Remove dst files not in src (with rename awareness).
+    for f in "$skill_dst"/*; do
+      [ -f "$f" ] || continue
+      fname="${f##*/}"
+      local src_name="$fname"
+      if [ "$direction" = "harvest" ] && [ "$fname" = "content.md" ]; then
+        src_name="SKILL.md"
+      elif [ "$direction" = "fanout" ] && [ "$fname" = "SKILL.md" ]; then
+        src_name="content.md"
+      fi
+      [ -f "$skill_src/$src_name" ] || rm -f "$f"
+    done
+  done
+  # Remove dst skill dirs not in src.
+  for skill_dst in "$dst_root"/*/; do
+    [ -d "$skill_dst" ] || continue
+    skill_name="${skill_dst%/}"
+    skill_name="${skill_name##*/}"
+    [ -d "$src_root/$skill_name" ] || rm -rf "$skill_dst"
+  done
 }
 
 # --- main entry points -----------------------------------------------------
@@ -410,6 +511,12 @@ hub_harvest() {
       fi
     fi
   done < <(hub_parse_map "${ADAPTER_HUB_MAP:-}")
+
+  # Skills: content-file rename (SKILL.md ↔ content.md). Handled here
+  # instead of via an ADAPTER_HUB_MAP dir-mirror entry because the
+  # generic _hub_sync_dir has no rename support.
+  local tool_skills="${ADAPTER_SKILL_ROOT:-$tool_dir/skills}"
+  _hub_sync_skills harvest "$tool_skills" "$hub_dir/skills"
 
   # Per-project content. Claude uses projects/<encoded-cwd>/; the sidecar
   # at <variant>/memory/.hive-mind exposes project-id. Skip variants that
@@ -464,6 +571,10 @@ hub_fan_out() {
       fi
     fi
   done < <(hub_parse_map "${ADAPTER_HUB_MAP:-}")
+
+  # Skills: content-file rename (content.md → SKILL.md on fan-out).
+  local tool_skills="${ADAPTER_SKILL_ROOT:-$tool_dir/skills}"
+  _hub_sync_skills fanout "$hub_dir/skills" "$tool_skills"
 
   # Per-project: walk the tool's variants (not the hub's `projects/<id>/`
   # tree) — project-id contains slashes like `github.com/alice/proj`, so

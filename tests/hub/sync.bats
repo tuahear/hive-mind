@@ -91,10 +91,10 @@ run_sync() {
   [ "$status" -eq 0 ]
 
   # Hub stored it under the canonical lowercase name.
-  [ -f "$HUB/memory.md" ]
-  grep -q '# hello from fake tool' "$HUB/memory.md"
+  [ -f "$HUB/content.md" ]
+  grep -q '# hello from fake tool' "$HUB/content.md"
   # And reached the remote.
-  git -C "$HOME/remote.git" show HEAD:memory.md | grep -q '# hello from fake tool'
+  git -C "$HOME/remote.git" show HEAD:content.md | grep -q '# hello from fake tool'
 }
 
 @test "fan-out: remote memory change populates the tool's native file" {
@@ -103,8 +103,8 @@ run_sync() {
   git clone -q "$HOME/remote.git" "$other/w"
   git -C "$other/w" config user.email o@o.o
   git -C "$other/w" config user.name o
-  printf 'remote-machine content\n' > "$other/w/memory.md"
-  git -C "$other/w" add memory.md
+  printf 'remote-machine content\n' > "$other/w/content.md"
+  git -C "$other/w" add content.md
   git -C "$other/w" commit -q -m "remote edit"
   git -C "$other/w" push -q
   rm -rf "$other"
@@ -128,9 +128,9 @@ run_sync() {
 
   [ "$(git -C "$HUB" log -1 --format=%s)" = "note a change" ]
   # After sync the hub-canonical memory.md has the marker stripped.
-  grep -q '^hello$' "$HUB/memory.md"
-  grep -q '^tail$'  "$HUB/memory.md"
-  run grep -q 'commit:' "$HUB/memory.md"
+  grep -q '^hello$' "$HUB/content.md"
+  grep -q '^tail$'  "$HUB/content.md"
+  run grep -q 'commit:' "$HUB/content.md"
   [ "$status" -ne 0 ]
 }
 
@@ -147,9 +147,9 @@ run_sync() {
   hub_proj="$HUB/projects/github.com/alice/proj"
   mkdir -p "$hub_proj/memory"
   printf 'baseline\n%s\nafter\n' "$(marker 'project-memory marker survived')" \
-    > "$hub_proj/memory.md"
+    > "$hub_proj/content.md"
   printf 'nested content\n%s\n' "$(marker 'nested memory marker')" \
-    > "$hub_proj/memory/note.md"
+    > "$hub_proj/note.md"
 
   run run_sync
   [ "$status" -eq 0 ]
@@ -162,9 +162,9 @@ run_sync() {
   # And stripped from the committed content. Probe a layer deeper
   # than the top-level memory.md so the `projects/*/memory/**` glob
   # is exercised too.
-  run grep -F 'commit:' "$hub_proj/memory.md"
+  run grep -F 'commit:' "$hub_proj/content.md"
   [ "$status" -ne 0 ]
-  run grep -F 'commit:' "$hub_proj/memory/note.md"
+  run grep -F 'commit:' "$hub_proj/note.md"
   [ "$status" -ne 0 ]
 }
 
@@ -233,7 +233,7 @@ EOF
   [ "$remote_head1" = "$remote_head2" ]
   # Local commit did land though.
   run git -C "$HUB" log --oneline
-  [[ "$output" == *"update memory.md"* ]]
+  [[ "$output" == *"update content.md"* ]]
 }
 
 @test "HIVE_MIND_FORCE_PUSH overrides debounce" {

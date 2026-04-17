@@ -97,7 +97,7 @@ teardown() {
   [ "$status" -eq 0 ]
 
   # Machine A's hub got the canonical form.
-  grep -q '# note from machine A' "$mA_HUB/memory.md"
+  grep -q '# note from machine A' "$mA_HUB/content.md"
 
   # Machine B runs its sync (no local edits, just pulling from remote).
   run run_sync_on "$mB_HUB"
@@ -156,7 +156,7 @@ EOF
   run run_sync_on "$mA_HUB"
   [ "$status" -eq 0 ]
 
-  [ -f "$mA_HUB/skills/my-skill/SKILL.md" ]
+  [ -f "$mA_HUB/skills/my-skill/content.md" ]
 
   run run_sync_on "$mB_HUB"
   [ "$status" -eq 0 ]

@@ -20,8 +20,9 @@ setup() {
   # Claude-shaped hub map (the only adapter shipping one today). The
   # helpers are adapter-agnostic; using Claude's here keeps the test
   # shape identical to what production hits.
-  export ADAPTER_HUB_MAP=$'memory.md\tCLAUDE.md\nskills\tskills\nconfig/hooks\tsettings.json#hooks\nconfig/permissions/allow.txt\tsettings.json#permissions.allow'
-  export ADAPTER_PROJECT_CONTENT_RULES=$'memory.md\tMEMORY.md\nmemory\tmemory'
+  export ADAPTER_HUB_MAP=$'content.md\tCLAUDE.md\nconfig/hooks\tsettings.json#hooks\nconfig/permissions/allow.txt\tsettings.json#permissions.allow'
+  export ADAPTER_PROJECT_CONTENT_RULES=$'content.md\tMEMORY.md\n*\tmemory'
+  export ADAPTER_SKILL_ROOT="$TOOL/skills"
 
   # shellcheck source=/dev/null
   source "$HARVEST_FANOUT"
@@ -82,12 +83,12 @@ teardown() {
 @test "harvest copies CLAUDE.md -> hub/memory.md" {
   printf '# global\n' > "$TOOL/CLAUDE.md"
   hub_harvest "$TOOL" "$HUB"
-  [ -f "$HUB/memory.md" ]
-  grep -q '# global' "$HUB/memory.md"
+  [ -f "$HUB/content.md" ]
+  grep -q '# global' "$HUB/content.md"
 }
 
 @test "fanout copies hub/memory.md -> tool/CLAUDE.md (renamed)" {
-  printf '# canonical\n' > "$HUB/memory.md"
+  printf '# canonical\n' > "$HUB/content.md"
   hub_fan_out "$HUB" "$TOOL"
   [ -f "$TOOL/CLAUDE.md" ]
   grep -q '# canonical' "$TOOL/CLAUDE.md"
@@ -105,29 +106,42 @@ teardown() {
 
 # === directory-tree mapping (skills ↔ skills) ==============================
 
-@test "harvest mirrors tool/skills/ tree into hub" {
-  mkdir -p "$TOOL/skills/foo" "$TOOL/skills/bar/sub"
+@test "harvest mirrors tool/skills/ tree into hub with SKILL.md → content.md rename" {
+  mkdir -p "$TOOL/skills/foo"
   echo "A" > "$TOOL/skills/foo/SKILL.md"
-  echo "B" > "$TOOL/skills/bar/sub/extra.md"
+  echo "extra" > "$TOOL/skills/foo/helper.sh"
 
   hub_harvest "$TOOL" "$HUB"
 
-  [ -f "$HUB/skills/foo/SKILL.md" ]
-  [ -f "$HUB/skills/bar/sub/extra.md" ]
-  grep -q '^A$' "$HUB/skills/foo/SKILL.md"
+  # Hub stores the content file as content.md (not SKILL.md).
+  [ -f "$HUB/skills/foo/content.md" ]
+  [ ! -f "$HUB/skills/foo/SKILL.md" ]
+  grep -q '^A$' "$HUB/skills/foo/content.md"
+  # Non-content files pass through unchanged.
+  [ -f "$HUB/skills/foo/helper.sh" ]
 }
 
-@test "harvest removes hub files whose tool counterpart was deleted" {
+@test "fanout renames hub content.md back to SKILL.md in tool skill dirs" {
+  mkdir -p "$HUB/skills/bar"
+  echo "B" > "$HUB/skills/bar/content.md"
+
+  hub_fan_out "$HUB" "$TOOL"
+
+  [ -f "$TOOL/skills/bar/SKILL.md" ]
+  [ ! -f "$TOOL/skills/bar/content.md" ]
+  grep -q '^B$' "$TOOL/skills/bar/SKILL.md"
+}
+
+@test "harvest removes hub skill dirs whose tool counterpart was deleted" {
   mkdir -p "$TOOL/skills/foo"
   echo "A" > "$TOOL/skills/foo/SKILL.md"
   hub_harvest "$TOOL" "$HUB"
-  [ -f "$HUB/skills/foo/SKILL.md" ]
+  [ -f "$HUB/skills/foo/content.md" ]
 
-  # User deletes the skill in the tool dir.
   rm -rf "$TOOL/skills/foo"
   hub_harvest "$TOOL" "$HUB"
 
-  [ ! -f "$HUB/skills/foo/SKILL.md" ]
+  [ ! -d "$HUB/skills/foo" ]
 }
 
 # === JSON subkey — text list (permissions.allow) ===========================
@@ -271,10 +285,10 @@ EOF
   hub_harvest "$TOOL" "$HUB"
 
   hub_proj="$HUB/projects/github.com/alice/proj"
-  [ -f "$hub_proj/memory.md" ]
-  grep -q '# project memory' "$hub_proj/memory.md"
-  [ -f "$hub_proj/memory/note.md" ]
-  grep -q '^note$' "$hub_proj/memory/note.md"
+  [ -f "$hub_proj/content.md" ]
+  grep -q '# project memory' "$hub_proj/content.md"
+  [ -f "$hub_proj/note.md" ]
+  grep -q '^note$' "$hub_proj/note.md"
 }
 
 @test "harvest skips project variants without a sidecar (mirror-projects hasn't bootstrapped them)" {
@@ -298,8 +312,8 @@ EOF
   # Hub has project content from another machine.
   hub_proj="$HUB/projects/github.com/alice/proj"
   mkdir -p "$hub_proj/memory"
-  printf '# fresh\n' > "$hub_proj/memory.md"
-  printf 'a\n' > "$hub_proj/memory/a.md"
+  printf '# fresh\n' > "$hub_proj/content.md"
+  printf 'a\n' > "$hub_proj/a.md"
 
   hub_fan_out "$HUB" "$TOOL"
 

@@ -80,7 +80,7 @@ run_sync() {
   # Skip logged with the adapter-declared basename.
   grep -Fq "refused to sync secret 'auth.json'" "$HUB/.sync-error.log"
   # And the sync still functioned for non-secret content.
-  grep -q '^legit$' "$HUB/memory.md"
+  grep -q '^legit$' "$HUB/content.md"
 }
 
 @test "secret smuggled into a whitelisted skills/ subdir is unstaged by basename match" {

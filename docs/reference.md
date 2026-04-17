@@ -22,8 +22,8 @@ Fallback (no markers found): `update <basename>` or `update <f1>, <f2>, <f3>, +N
 
 The shared memory git repo's `.gitignore` (written from `core/hub/gitignore`) whitelists only:
 
-- `!/memory.md` — canonical global memory
-- `!/projects/<project-id>/memory.md` + `!/projects/<project-id>/memory/**` — canonical per-project memory
+- `!/content.md` — canonical global content (maps to CLAUDE.md, AGENTS.md, etc.)
+- `!/projects/<project-id>/content.md` + `!/projects/<project-id>/**` — canonical per-project content (flattened)
 - `!/skills/**` — provider-agnostic skill definitions
 - `!/config/hooks/<event>/<id>.json` — tool-agnostic hook entries
 - `!/config/permissions/{allow,deny,ask}.txt` — permission rule lists
@@ -34,7 +34,7 @@ Machine-local state stays out: `hive-mind/` (source clone), `bin/` (symlinked en
 
 ## Conflict resolution
 
-Text-content conflicts on `memory.md` and `projects/**/*.md` auto-merge with git's built-in `union` driver (concatenates both sides' hunks) — configured in `core/hub/gitattributes`. Duplicates may result; `core/check-dupes.sh` detects union-merged regions from the SessionStart hook and asks the next session to dedupe.
+Text-content conflicts on `content.md` and `projects/**/*.md` auto-merge with git's built-in `union` driver (concatenates both sides' hunks) — configured in `core/hub/gitattributes`. Duplicates may result; `core/check-dupes.sh` detects union-merged regions from the SessionStart hook and asks the next session to dedupe.
 
 Tool-side JSON config conflicts are resolved before they hit the hub: harvest extracts the relevant subkey into the canonical hub shape (text lines for permission arrays, per-event/per-entry files for hooks), the git merge happens on those line-oriented forms, then fan-out rebuilds the JSON. The `jsonmerge`/`tomlmerge` drivers in `core/` remain available for adapters that want to carry a full JSON/TOML config through the hub unchanged.
 
