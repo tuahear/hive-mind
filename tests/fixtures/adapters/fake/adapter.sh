@@ -80,8 +80,8 @@ ADAPTER_FALLBACK_STRATEGY=""
 # --- I. Hub mapping (v0.3.0 hub topology) ---------------------------------
 ADAPTER_HUB_MAP=$'content.md\tMEMORY.md
 config/hooks\thooks.json#hooks'
-ADAPTER_PROJECT_CONTENT_RULES=$'content.md\tMEMORY.md
-content.md\tmemory/MEMORY.md
+ADAPTER_PROJECT_CONTENT_RULES=$'content.md\tmemory/MEMORY.md
+content.md\tMEMORY.md
 memory\tmemory'
 
 # --- H. Logging ------------------------------------------------------------

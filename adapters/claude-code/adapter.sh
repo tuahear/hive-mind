@@ -202,12 +202,13 @@ config/permissions/ask.txt\tsettings.json#permissions.ask'
 # layout. Hub mirrors the tool's memory/ subdir as-is; only the main
 # memory file gets renamed to content.md. Two explicit rules for
 # content.md because Claude stores MEMORY.md at EITHER the variant
-# root (projects/<encoded-cwd>/MEMORY.md) or inside memory/
-# (projects/<encoded-cwd>/memory/MEMORY.md) depending on version —
-# first match wins on harvest; fan-out populates both so either
-# location works on read.
-ADAPTER_PROJECT_CONTENT_RULES=$'content.md\tMEMORY.md
-content.md\tmemory/MEMORY.md
+# root or inside memory/ depending on version. ORDER MATTERS: file
+# rules are last-writer-wins. The subdir rule runs first (fallback);
+# the root rule runs second and overwrites when root MEMORY.md exists
+# — so root content is never lost when both locations are populated.
+# Fan-out writes content.md to BOTH locations.
+ADAPTER_PROJECT_CONTENT_RULES=$'content.md\tmemory/MEMORY.md
+content.md\tMEMORY.md
 memory\tmemory'
 
 # --- H. Logging ------------------------------------------------------------

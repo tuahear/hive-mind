@@ -21,7 +21,7 @@ setup() {
   # helpers are adapter-agnostic; using Claude's here keeps the test
   # shape identical to what production hits.
   export ADAPTER_HUB_MAP=$'content.md\tCLAUDE.md\nconfig/hooks\tsettings.json#hooks\nconfig/permissions/allow.txt\tsettings.json#permissions.allow'
-  export ADAPTER_PROJECT_CONTENT_RULES=$'content.md\tMEMORY.md\ncontent.md\tmemory/MEMORY.md\nmemory\tmemory'
+  export ADAPTER_PROJECT_CONTENT_RULES=$'content.md\tmemory/MEMORY.md\ncontent.md\tMEMORY.md\nmemory\tmemory'
   export ADAPTER_SKILL_ROOT="$TOOL/skills"
 
   # shellcheck source=/dev/null
@@ -289,6 +289,45 @@ EOF
   grep -q '# project memory' "$hub_proj/content.md"
   [ -f "$hub_proj/memory/note.md" ]
   grep -q '^note$' "$hub_proj/memory/note.md"
+}
+
+@test "harvest: root MEMORY.md wins over memory/MEMORY.md when both exist" {
+  # Critical: if both locations have MEMORY.md with DIFFERENT content,
+  # root must win — it's the primary project memory that the user and
+  # the tool see. The subdir copy is a mirror-projects artifact. If
+  # subdir wins, root content is silently lost and fanned out to other
+  # providers with the wrong data.
+  variant="$TOOL/projects/-Users-alice-proj"
+  mkdir -p "$variant/memory"
+  printf 'project-id=github.com/alice/proj\n' > "$variant/.hive-mind"
+  printf '# ROOT content — this must win\n' > "$variant/MEMORY.md"
+  printf '# SUBDIR content — this must NOT win\n' > "$variant/memory/MEMORY.md"
+
+  hub_harvest "$TOOL" "$HUB"
+
+  hub_proj="$HUB/projects/github.com/alice/proj"
+  [ -f "$hub_proj/content.md" ]
+  grep -q '# ROOT content — this must win' "$hub_proj/content.md"
+  # The subdir version must NOT have overwritten content.md.
+  run grep -q '# SUBDIR content' "$hub_proj/content.md"
+  [ "$status" -ne 0 ]
+}
+
+@test "harvest: falls back to memory/MEMORY.md when root MEMORY.md is absent" {
+  # When only memory/MEMORY.md exists (Claude's standard layout for
+  # projects that don't have a root-level MEMORY.md), the subdir file
+  # must still produce content.md in the hub.
+  variant="$TOOL/projects/-Users-bob-proj"
+  mkdir -p "$variant/memory"
+  printf 'project-id=github.com/bob/proj\n' > "$variant/.hive-mind"
+  # NO root MEMORY.md — only subdir.
+  printf '# subdir-only content\n' > "$variant/memory/MEMORY.md"
+
+  hub_harvest "$TOOL" "$HUB"
+
+  hub_proj="$HUB/projects/github.com/bob/proj"
+  [ -f "$hub_proj/content.md" ]
+  grep -q '# subdir-only content' "$hub_proj/content.md"
 }
 
 @test "harvest skips project variants without a sidecar (mirror-projects hasn't bootstrapped them)" {

@@ -67,8 +67,8 @@ ADAPTER_FALLBACK_STRATEGY=""
 # tool-native name after the shared hub sync cycle.
 ADAPTER_HUB_MAP=$'content.md\tNOTES.md
 config/hooks\ttool.json#hooks'
-ADAPTER_PROJECT_CONTENT_RULES=$'content.md\tNOTES.md
-content.md\tnotes/NOTES.md
+ADAPTER_PROJECT_CONTENT_RULES=$'content.md\tnotes/NOTES.md
+content.md\tNOTES.md
 notes\tnotes'
 
 # --- H. Logging ------------------------------------------------------------
