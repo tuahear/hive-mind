@@ -110,10 +110,52 @@ hub_gc_projects() {
 # --- tool-side variant GC ---------------------------------------------------
 # Remove tool variant dirs whose cwd no longer exists on disk. These
 # accumulate when worktrees are deleted, repos are moved, or clones are
-# removed. The variant's cwd is derived from its jsonl session files.
+# removed.
+#
+# Uses ADAPTER_PROJECT_CONTENT_RULES (via HUB_FILE_HARVEST_RULES[] parallel
+# array) to know which files are synced content vs tool-local artifacts.
+# Only synced files are compared against the hub for the safety check.
 #
 # Gated by HIVE_MIND_HUB_PROJECT_GC_AUTO=1 (report-only by default)
 # and HIVE_MIND_HUB_PROJECT_GC_DAYS=0 to disable entirely.
+
+# Check if a variant's synced content matches the hub, using the
+# adapter's project content rules. Returns 0 if all synced content
+# is identical to the hub (safe to delete), 1 if any differs.
+_gc_variant_content_matches_hub() {
+  local vdir="$1" hub_proj="$2" rules="$3"
+  [ -d "$hub_proj" ] || return 1
+
+  # Parse rules: each line is hub_rel<TAB>tool_rel.
+  # File rules (both sides are files) compare directly.
+  # Dir rules (tool_rel has no extension) compare recursively.
+  while IFS=$'\t' read -r hub_rel tool_rel; do
+    [ -z "$hub_rel" ] || [ -z "$tool_rel" ] && continue
+    local tool_path="$vdir/$tool_rel"
+    local hub_path="$hub_proj/$hub_rel"
+
+    # Determine if this is a file rule or dir rule.
+    case "$tool_rel" in
+      *.*) # File rule: direct comparison.
+        if [ -f "$tool_path" ]; then
+          [ -f "$hub_path" ] && cmp -s "$tool_path" "$hub_path" || return 1
+        fi
+        ;;
+      *)   # Dir rule: compare all files recursively.
+        if [ -d "$tool_path" ]; then
+          while IFS= read -r -d '' vf; do
+            local rel="${vf#"$tool_path/"}"
+            local bn="${rel##*/}"
+            case "$bn" in .hive-mind|.DS_Store) continue ;; esac
+            local hf="$hub_path/$rel"
+            [ -f "$hf" ] && cmp -s "$vf" "$hf" || return 1
+          done < <(find "$tool_path" -type f -print0 2>/dev/null)
+        fi
+        ;;
+    esac
+  done <<< "$rules"
+  return 0
+}
 
 hub_gc_tool_variants() {
   : "${HIVE_MIND_HUB_PROJECT_GC_DAYS:=30}"
@@ -123,33 +165,36 @@ hub_gc_tool_variants() {
   local TS
   TS="$(date -u +%FT%TZ)"
   local log="${HIVE_MIND_HUB_DIR:=$HOME/.hive-mind}/.sync-error.log"
-  local tool_dir variant deleted=0 reported=0
+  local deleted=0 reported=0 i
 
-  for tool_dir in "${HUB_TOOL_DIRS[@]}"; do
+  for i in "${!HUB_TOOL_DIRS[@]}"; do
+    local tool_dir="${HUB_TOOL_DIRS[$i]}"
+    local rules="${HUB_FILE_HARVEST_RULES[$i]:-}"
     [ -d "$tool_dir/projects" ] || continue
+    [ -z "$rules" ] && continue
+
     for variant in "$tool_dir"/projects/*/; do
       [ -d "$variant" ] || continue
-      # Derive cwd from ALL jsonl files. A variant can have multiple
-      # session files; if ANY session's cwd still exists, the variant
-      # is live.
+
+      # Derive cwd from session files. If ANY session's cwd still
+      # exists on disk, the variant is live — skip it.
       local any_cwd_found=0 any_cwd_alive=0
-      while IFS= read -r -d '' jsonl; do
+      while IFS= read -r -d '' sf; do
         local cwd
-        cwd="$(grep -m1 -oE '"cwd":"[^"]+"' "$jsonl" 2>/dev/null \
+        cwd="$(grep -m1 -oE '"cwd":"[^"]+"' "$sf" 2>/dev/null \
                  | sed -e 's/^"cwd":"//' -e 's/"$//')"
         [ -z "$cwd" ] && continue
         any_cwd_found=1
         [ -d "$cwd" ] && { any_cwd_alive=1; break; }
-      done < <(find "${variant%/}" -maxdepth 1 -name '*.jsonl' -type f -print0 2>/dev/null)
+      done < <(find "${variant%/}" -maxdepth 1 -type f \( -name '*.jsonl' -o -name '*.json' \) -print0 2>/dev/null)
       [ "$any_cwd_found" -eq 0 ] && continue
       [ "$any_cwd_alive" -eq 1 ] && continue
 
       local variant_name="${variant%/}"
       variant_name="${variant_name##*/}"
 
-      # Safety: require a sidecar so we can verify the hub has the content.
-      # Without a sidecar, harvest would have skipped this variant — its
-      # content may never have reached the hub. Keep it.
+      # Require a sidecar — without one, harvest skipped this variant
+      # and its content may never have reached the hub.
       local sidecar="${variant%/}/.hive-mind"
       [ -f "$sidecar" ] || sidecar="${variant%/}/memory/.hive-mind"
       local project_id=""
@@ -161,31 +206,9 @@ hub_gc_tool_variants() {
         continue
       fi
 
-      # Verify every synced content file in the variant has identical
-      # content in the hub. Only check what harvest actually syncs:
-      # MEMORY.md (→ hub content.md) and memory/*.md files.
+      # Verify synced content matches hub using the adapter's rules.
       local hub_proj="$HIVE_MIND_HUB_DIR/projects/$project_id"
-      local has_unharvested=0
-      local vdir="${variant%/}"
-      # Check root MEMORY.md → hub content.md
-      if [ -f "$vdir/MEMORY.md" ]; then
-        if [ ! -f "$hub_proj/content.md" ] || ! cmp -s "$vdir/MEMORY.md" "$hub_proj/content.md"; then
-          has_unharvested=1
-        fi
-      fi
-      # Check memory/ subdir files → hub memory/
-      if [ "$has_unharvested" -eq 0 ] && [ -d "$vdir/memory" ]; then
-        while IFS= read -r -d '' vf; do
-          local rel="${vf#"$vdir/"}"
-          local basename="${rel##*/}"
-          case "$basename" in .hive-mind|.DS_Store) continue ;; esac
-          if [ ! -f "$hub_proj/$rel" ] || ! cmp -s "$vf" "$hub_proj/$rel"; then
-            has_unharvested=1
-            break
-          fi
-        done < <(find "$vdir/memory" -type f -print0 2>/dev/null)
-      fi
-      if [ "$has_unharvested" -eq 1 ]; then
+      if ! _gc_variant_content_matches_hub "${variant%/}" "$hub_proj" "$rules"; then
         echo "$TS gc: skipped orphan variant (unharvested content for $project_id): $variant_name" >>"$log"
         continue
       fi
