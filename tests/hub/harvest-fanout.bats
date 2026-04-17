@@ -78,16 +78,16 @@ teardown() {
   [ "$status" -eq 1 ]
 }
 
-# === direct file-copy mapping (memory.md ↔ CLAUDE.md) ======================
+# === direct file-copy mapping (content.md ↔ CLAUDE.md) ======================
 
-@test "harvest copies CLAUDE.md -> hub/memory.md" {
+@test "harvest copies CLAUDE.md -> hub/content.md" {
   printf '# global\n' > "$TOOL/CLAUDE.md"
   hub_harvest "$TOOL" "$HUB"
   [ -f "$HUB/content.md" ]
   grep -q '# global' "$HUB/content.md"
 }
 
-@test "fanout copies hub/memory.md -> tool/CLAUDE.md (renamed)" {
+@test "fanout copies hub/content.md -> tool/CLAUDE.md (renamed)" {
   printf '# canonical\n' > "$HUB/content.md"
   hub_fan_out "$HUB" "$TOOL"
   [ -f "$TOOL/CLAUDE.md" ]
@@ -300,7 +300,7 @@ EOF
   hub_harvest "$TOOL" "$HUB"
 
   [ ! -d "$HUB/projects/-Users-bob-proj" ]
-  [ ! -e "$HUB/projects/memory.md" ]
+  [ ! -e "$HUB/projects/content.md" ]
 }
 
 @test "fanout copies hub/projects/<id>/ content back into the matching tool variant" {

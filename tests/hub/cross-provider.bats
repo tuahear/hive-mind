@@ -3,7 +3,7 @@
 # Simulates the v0.3.0 cross-provider value prop: edit memory via
 # adapter A's tool dir, run the hub sync, adapter B's tool dir picks
 # up the same content under its native name. The two fake adapters
-# map the canonical `memory.md` to different tool-native filenames
+# map the canonical `content.md` to different tool-native filenames
 # (`MEMORY.md` vs `NOTES.md`) so a round-trip failure is observable
 # at the tool-dir level, not just the hub level.
 

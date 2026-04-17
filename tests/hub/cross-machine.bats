@@ -121,7 +121,7 @@ teardown() {
   grep -q '^alpha$' "$mB_TOOL/MEMORY.md"
 
   # Both machines edit concurrently (add different lines to the
-  # same file). The union merge driver on memory.md (declared in
+  # same file). The union merge driver on content.md (declared in
   # core/hub/gitattributes) concatenates both sides on conflict.
   printf 'alpha\ndelta-A\n' > "$mA_TOOL/MEMORY.md"
   printf 'alpha\nbeta-B\n'  > "$mB_TOOL/MEMORY.md"

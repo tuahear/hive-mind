@@ -127,7 +127,7 @@ run_sync() {
   [ "$status" -eq 0 ]
 
   [ "$(git -C "$HUB" log -1 --format=%s)" = "note a change" ]
-  # After sync the hub-canonical memory.md has the marker stripped.
+  # After sync the hub-canonical content.md has the marker stripped.
   grep -q '^hello$' "$HUB/content.md"
   grep -q '^tail$'  "$HUB/content.md"
   run grep -q 'commit:' "$HUB/content.md"
@@ -137,7 +137,7 @@ run_sync() {
 @test "marker extraction: multi-level project-ids are scanned (projects/*/... glob is slash-tolerant)" {
   # Regression guard: project-ids are normalized git remotes and
   # routinely contain multiple slashes (e.g. `github.com/owner/repo`).
-  # The HUB_MARKER_TARGETS glob `projects/*/memory.md` / `projects/
+  # The HUB_MARKER_TARGETS glob `projects/*/content.md` / `projects/
   # */memory/**` must reach into multi-level project-ids so commit
   # markers on per-project memory edits get extracted. Bash's `case`
   # pattern matching already handles `*` across slashes (unlike
@@ -145,7 +145,7 @@ run_sync() {
   # behavior against a refactor that might switch to pathname-
   # expansion-based matching.
   hub_proj="$HUB/projects/github.com/alice/proj"
-  mkdir -p "$hub_proj/memory"
+  mkdir -p "$hub_proj"
   printf 'baseline\n%s\nafter\n' "$(marker 'project-memory marker survived')" \
     > "$hub_proj/content.md"
   printf 'nested content\n%s\n' "$(marker 'nested memory marker')" \
@@ -160,7 +160,7 @@ run_sync() {
   [[ "$subject" == *"project-memory marker survived"* ]]
   [[ "$subject" == *"nested memory marker"* ]]
   # And stripped from the committed content. Probe a layer deeper
-  # than the top-level memory.md so the `projects/*/memory/**` glob
+  # than the top-level content.md so the `projects/**` glob
   # is exercised too.
   run grep -F 'commit:' "$hub_proj/content.md"
   [ "$status" -ne 0 ]
