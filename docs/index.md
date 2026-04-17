@@ -4,7 +4,7 @@ layout: home
 hero:
   name: "hive-mind"
   text: "One memory. Every AI coding tool. Every machine."
-  tagline: Attach Claude Code, Codex, Qwen, or Kimi to one hub. Sync through your own private git repo. Teach it once — everywhere.
+  tagline: Attach Claude, Codex, Qwen, or Kimi to one hub. Sync through your own private git repo. Teach it once — everywhere.
   actions:
     - theme: brand
       text: Get started
