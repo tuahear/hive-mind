@@ -266,7 +266,7 @@ fi
 # Walk every file that looks like content (content.md at root, per-project
 # content.md + markdown subfiles, skills). Only markdown files are
 # eligible for marker extraction — non-markdown assets are left alone.
-HUB_MARKER_TARGETS=$'content.md\nprojects/**/content.md\nprojects/**/*.md\nskills/*\nskills/**/*.md\nskills/**/content.md'
+HUB_MARKER_TARGETS=$'content.md\nprojects/**/content.md\nprojects/**/*.md\nskills/**/*.md\nskills/**/content.md'
 
 file_is_marker_target() {
   local f="$1" glob
