@@ -128,6 +128,40 @@ run_sync() {
   grep -q 'content only in tool dir' "$HUB/content.md"
 }
 
+@test "empty variant gets sidecar when hub already has that project-id" {
+  # Scenario: machine B creates a project variant (first session), but
+  # the variant is empty — no MEMORY.md, no memory/ files. The hub
+  # already has content for this project-id from machine A. Mirror-
+  # projects must still create the sidecar so fan-out can populate it.
+  variant="$HOME/.fake-tool/projects/-machine-b-variant"
+  mkdir -p "$variant/memory"
+  # Create a git repo at the cwd so derive_id_from_cwd works.
+  mkdir -p "$HOME/myrepo"
+  git -c init.defaultBranch=main init -q "$HOME/myrepo"
+  git -C "$HOME/myrepo" remote add origin "https://github.com/test/myrepo.git"
+  printf '{"cwd":"%s"}\n' "$HOME/myrepo" > "$variant/session.jsonl"
+  # NO content in variant — empty.
+
+  # Hub already has content for this project-id (from machine A).
+  hub_proj="$HUB/projects/github.com/test/myrepo"
+  mkdir -p "$hub_proj/memory"
+  printf '# from machine A\n' > "$hub_proj/content.md"
+  printf '# machine A feedback\n' > "$hub_proj/memory/note.md"
+  printf 'project-id=github.com/test/myrepo\n' > "$hub_proj/.hive-mind"
+  git -C "$HUB" add -A && git -C "$HUB" commit -q -m "machine A content"
+  git -C "$HUB" push -q
+
+  run run_sync
+  [ "$status" -eq 0 ]
+
+  # Sidecar must have been created despite empty variant.
+  [ -f "$variant/.hive-mind" ]
+  grep -q 'github.com/test/myrepo' "$variant/.hive-mind"
+  # Fan-out must have populated the variant.
+  [ -f "$variant/MEMORY.md" ]
+  grep -q 'from machine A' "$variant/MEMORY.md"
+}
+
 @test "sync.sh gates mirror-projects on flat memory model so hierarchical adapters don't invoke it" {
   # Implementation-level pin: the conditional in core/hub/sync.sh must
   # key off ADAPTER_MEMORY_MODEL="flat" before running mirror-projects.

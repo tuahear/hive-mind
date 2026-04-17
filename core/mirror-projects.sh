@@ -128,9 +128,16 @@ discover_id() {
   fi
 
   if [ "$has_content" -eq 0 ]; then
-    if ! printf '%s\n' "$known" | grep -Fxq "$id"; then
-      return 1
+    # Check sibling variants' known ids first, then fall back to the
+    # hub — a variant may be empty on this machine but the hub already
+    # has content for this project-id from another machine.
+    local id_known=0
+    printf '%s\n' "$known" | grep -Fxq "$id" && id_known=1
+    if [ "$id_known" -eq 0 ] && [ -n "${HIVE_MIND_HUB_DIR:-}" ] \
+       && [ -d "$HIVE_MIND_HUB_DIR/projects/$id" ]; then
+      id_known=1
     fi
+    [ "$id_known" -eq 0 ] && return 1
   fi
 
   # Write sidecar at variant root (not inside memory/).
