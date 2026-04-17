@@ -34,7 +34,7 @@ _gc_collect_live_ids() {
 }
 
 # Days since git last touched any file under a hub project dir.
-# Falls back to filesystem mtime if git log fails.
+# Returns 0 (too recent to delete) if git log has no history.
 _gc_last_touch_days() {
   local project_dir="$1"
   local rel="${project_dir#"$HIVE_MIND_HUB_DIR/"}"
