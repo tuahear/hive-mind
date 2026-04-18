@@ -261,27 +261,45 @@ adapter_install_hooks() {
   # resolves via PATH to C:\Windows\System32\bash.exe (the WSL launcher),
   # which fails with "Access is denied" long before Git Bash is reached.
   #
-  # Resolve the current shell's bash (the one running setup.sh — Git Bash
-  # on Windows) to an absolute Windows path via cygpath. Prefer the
-  # `.exe` form so PowerShell can dispatch the call operator without
-  # relying on PATHEXT auto-resolution. Verify the file exists on disk
-  # before committing to it — a dangling path is worse than bare `bash`.
+  # Candidate priority on Windows (most to least reliable when spawned
+  # from a non-MSYS parent process like PowerShell):
+  #   1. $EXEPATH/bin/bash.exe — the Git Bash "wrapper" binary. Sets up
+  #      MSYS signal handling + pipe plumbing correctly even when the
+  #      parent is cmd/PowerShell. $EXEPATH is set by Git Bash itself.
+  #   2. $EXEPATH/usr/bin/bash.exe — the raw msys2 bash. Fails with
+  #      "couldn't create signal pipe, Win32 error 5" when spawned cold
+  #      from PowerShell/cmd, but works if (1) is absent.
+  #   3. Whatever `$BASH` or `command -v bash` points at, .exe-suffixed
+  #      then bare. Fallback for non-standard Git installs.
+  # Every candidate must pass [ -f ] before we commit to it — a dangling
+  # path embedded in hooks.json would reproduce the exact regression
+  # we're fixing.
   #
   # On Unix: cygpath is absent, bare `bash` is the correct dispatcher.
   bash_cmd=""
   if command -v cygpath >/dev/null 2>&1; then
-    local _unix_bash _candidate
+    local _unix_bash _candidate _candidates
     _unix_bash="${BASH:-$(command -v bash 2>/dev/null)}"
-    # Try the explicit .exe form first (so PowerShell dispatches without
-    # needing PATHEXT resolution); fall back to the literal if .exe isn't
-    # present on disk. Both paths must pass a real filesystem check —
-    # silently embedding a broken path in hooks.json would reproduce the
-    # exact regression we're fixing.
-    for _candidate in "${_unix_bash}.exe" "$_unix_bash"; do
+    _candidates=""
+    if [ -n "${EXEPATH:-}" ]; then
+      _candidates+="$EXEPATH/bin/bash.exe"$'\n'
+      _candidates+="$EXEPATH/usr/bin/bash.exe"$'\n'
+    fi
+    if [ -n "$_unix_bash" ]; then
+      _candidates+="${_unix_bash}.exe"$'\n'
+      _candidates+="$_unix_bash"
+    fi
+    while IFS= read -r _candidate; do
       [ -n "$_candidate" ] && [ -f "$_candidate" ] || continue
-      bash_cmd="$(cygpath -m "$_candidate" 2>/dev/null)"
+      # Paths from $EXEPATH are already Windows-style (C:/...); pass
+      # through. Unix-style paths ($BASH / command -v output) need
+      # cygpath conversion to a Windows path PowerShell can dispatch.
+      case "$_candidate" in
+        [A-Za-z]:/*) bash_cmd="$_candidate" ;;
+        *)           bash_cmd="$(cygpath -m "$_candidate" 2>/dev/null)" ;;
+      esac
       [ -n "$bash_cmd" ] && break
-    done
+    done <<< "$_candidates"
     if [ -z "$bash_cmd" ]; then
       # Windows detected (cygpath present) but no resolvable bash path —
       # warn loudly rather than silently shipping a hooks.json that will
