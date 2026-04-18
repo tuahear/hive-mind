@@ -94,6 +94,33 @@ teardown() {
   [ "$ADAPTER_SKILL_ROOT" = "$HOME/.agents/skills" ]
 }
 
+@test "declared ADAPTER_EVENT_* vars match hooks actually installed in hooks.json" {
+  # Contract invariant: an ADAPTER_EVENT_<PHASE> declaration signals that
+  # the adapter installs a hook for that phase. If an event var is set
+  # but no corresponding hook exists in the template, downstream code
+  # (like core/marker-nudge.sh gating on ADAPTER_EVENT_POST_EDIT) runs
+  # against a phantom surface — misleading for any reader trying to
+  # figure out what this adapter actually supports.
+  #
+  # Enumerate the declared-events space vs. the hooks.json template:
+  local template="$ADAPTER_ROOT/hooks.json"
+  [ -f "$template" ]
+
+  # ADAPTER_EVENT_SESSION_START and ADAPTER_EVENT_TURN_END are declared,
+  # so the template MUST install those hooks.
+  [ -n "$ADAPTER_EVENT_SESSION_START" ]
+  [ "$(jq ".hooks.\"$ADAPTER_EVENT_SESSION_START\" | length" "$template")" -gt 0 ]
+
+  [ -n "$ADAPTER_EVENT_TURN_END" ]
+  [ "$(jq ".hooks.\"$ADAPTER_EVENT_TURN_END\" | length" "$template")" -gt 0 ]
+
+  # ADAPTER_EVENT_POST_EDIT must NOT be declared — Codex doesn't install
+  # a PostToolUse-style hook. Declaring it while leaving the hook
+  # uninstalled would falsely imply support.
+  [ -z "${ADAPTER_EVENT_POST_EDIT:-}" ]
+  [ "$(jq '.hooks.PostToolUse // [] | length' "$template")" -eq 0 ]
+}
+
 # === Skill format ==========================================================
 
 @test "bundled hive-mind skill has YAML frontmatter and Codex paths" {

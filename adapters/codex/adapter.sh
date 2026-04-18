@@ -21,10 +21,15 @@ ADAPTER_GITIGNORE_TEMPLATE="${ADAPTER_ROOT}/gitignore"
 ADAPTER_GITATTRIBUTES_TEMPLATE="${ADAPTER_ROOT}/gitattributes"
 ADAPTER_SECRET_FILES="auth.json"
 # --- C. Lifecycle touchpoints ----------------------------------------------
+# ADAPTER_EVENT_POST_EDIT is intentionally omitted: Codex's current hook
+# surface does not install a PostToolUse-style per-edit hook, so the
+# declaration would only mislead future code into assuming support that
+# isn't there. `core/marker-nudge.sh` (the sole consumer) gates its own
+# fallback on the var being unset, so leaving it out is the correct
+# no-op. If Codex adds a post-edit hook later, declare it then, not now.
 ADAPTER_HAS_HOOK_SYSTEM=true
 ADAPTER_EVENT_SESSION_START="SessionStart"
 ADAPTER_EVENT_TURN_END="Stop"
-ADAPTER_EVENT_POST_EDIT="PostToolUse"
 
 _codex_feature_state_file() {
   printf '%s' "$ADAPTER_DIR/.hive-mind-codex-hooks.state"
