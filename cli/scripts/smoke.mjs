@@ -64,6 +64,22 @@ assert(
   `init --yes without memory-repo mentions --memory-repo in error (stderr='${failfast.stderr}')`
 );
 
+// 4b2. --yes must also fail fast when the hub dir is a git repo with NO
+// origin configured — previously passed the `.git exists` check and
+// handed control to setup.sh which would block on `read`.
+{
+  const { rmSync, mkdirSync } = await import("node:fs");
+  const orphanHub = resolve(cliDir, ".smoke-hub-orphan-git");
+  rmSync(orphanHub, { recursive: true, force: true });
+  mkdirSync(orphanHub, { recursive: true });
+  spawnSync("git", ["init", "-q"], { cwd: orphanHub, stdio: "ignore" });
+  const r = node(["dist/cli.js", "init", "--yes", "--adapter", "claude-code"], {
+    env: { ...process.env, HIVE_MIND_HUB_DIR: orphanHub, MEMORY_REPO: "" },
+  });
+  assert(r.status !== 0 && (r.stderr + r.stdout).includes("--memory-repo"),
+    `init --yes fails fast when .git exists but origin is unset (status=${r.status}, stderr='${r.stderr}')`);
+}
+
 // 4c. `status` on a freshly-init-but-never-pushed-looking git repo reports
 // "no upstream" instead of silently saying 0 unpushed commits.
 {

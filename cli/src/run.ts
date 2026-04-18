@@ -27,7 +27,7 @@ export function runBash(scriptPath: string, args: string[] = [], env: NodeJS.Pro
     const e = res.error as NodeJS.ErrnoException;
     if (e.code === "ENOENT") {
       console.error(
-        "error: bash not found on PATH. hive-mind's core is POSIX shell; install Git Bash (Windows), or ensure /bin/bash is available."
+        "error: bash not found on PATH. hive-mind's core requires bash (not generic POSIX sh); install Git Bash on Windows, or ensure /bin/bash is available."
       );
       return 127;
     }

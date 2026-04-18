@@ -2,7 +2,7 @@ import { cpSync, existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
 import { resolve } from "node:path";
 import { bundledAssetsDir, hubDir, hubSrcDir } from "../paths.js";
-import { runBash, which } from "../run.js";
+import { run, runBash, which } from "../run.js";
 import { validateAdapterName } from "./validate.js";
 
 type InitOpts = {
@@ -39,7 +39,11 @@ export async function initCmd(opts: InitOpts): Promise<number> {
     return 1;
   }
 
-  const hubHasOrigin = existsSync(resolve(hub, ".git"));
+  // Must probe the actual remote, not just `.git` presence: an init'd hub
+  // without an origin still prompts inside setup.sh, which would deadlock
+  // a --yes run.
+  const hubHasOrigin = existsSync(resolve(hub, ".git"))
+    && run("git", ["-C", hub, "remote", "get-url", "origin"], { stdio: ["ignore", "pipe", "pipe"] }).status === 0;
   let memoryRepo = opts.memoryRepo || process.env.MEMORY_REPO || "";
   if (!memoryRepo && !opts.yes) {
     if (hubHasOrigin) {
