@@ -156,14 +156,18 @@ _hub_split_subkey() {
 #
 # Section 0 = every line OUTSIDE any START/END block. Section N>0 = content
 # inside that block's markers. Blocks must not nest and must balance.
-# These helpers are adapter-agnostic and have no behavioral wiring yet.
+# Consumed by hub_harvest and hub_fan_out whenever an ADAPTER_HUB_MAP entry
+# carries a bracket selector (see _hub_split_sections).
 
 # Split `<path>[<selector>]` into path + selector on stdout, TAB-delim.
-# Selector grammar:
-#   - CSV of one or more integer section ids (e.g. "0", "1", "0,1")
-#   - or the literal "*" which expands at harvest/fan-out time to every
-#     section the file actually contains (forward-compat for adapters
-#     that want to round-trip any future tier without an adapter update)
+# Selector grammar (equivalent to `^(\*|[0-9]+(,[0-9]+)*)$`):
+#   - "*" — expands at harvest/fan-out time to every section the file
+#     actually contains (forward-compat for adapters that want to
+#     round-trip any future tier without an adapter update).
+#   - a CSV of one or more integer section ids with no empty elements
+#     (e.g. "0", "1", "0,1"). Rejects "0,", ",0", "0,,1", etc. so typos
+#     in ADAPTER_HUB_MAP surface at load time instead of being silently
+#     normalized downstream.
 # Returns 1 if no `[...]` selector is present or the grammar doesn't match.
 _hub_split_sections() {
   local spec="$1"
@@ -174,7 +178,7 @@ _hub_split_sections() {
       local sel="${rest%]}"
       case "$sel" in
         '*') : ;;
-        '' | *[!0-9,]*) return 1 ;;
+        '' | *[!0-9,]* | ,* | *, | *,,*) return 1 ;;
       esac
       printf '%s\t%s' "$path" "$sel"
       ;;

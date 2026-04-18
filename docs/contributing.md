@@ -105,9 +105,9 @@ Append a bracketed selector to the hub path to declare which tiers an entry clai
 | `content.md[0]` | Section 0 only — the default bucket (everything outside any marker block). Whole tool file plain round-trips to/from section 0. |
 | `content.md[1]` | A specific non-zero section. Whole tool file plain round-trips to/from that section's body. |
 | `content.md[0,1]` | Multiple sections. Fan-out writes section 0 plain + each non-zero section wrapped in `<!-- hive-mind:section=N START/END -->` markers (ascending id); harvest parses the tool file by those markers back into each selected section. |
-| `content.md[*]` | All sections currently present in the file. Forward-compatible — an adapter using `[*]` auto-picks-up any new tier a future adapter introduces. Behaves like `[0,1]` when the file has exactly those two tiers. |
+| `content.md[*]` | All sections currently present in the file. Forward-compatible — an adapter using `[*]` auto-picks-up any new tier a future adapter introduces. Goes through the section-aware parser (marker validation, per-section replace), unlike the selector-less form. |
 
-No selector (legacy `content.md\tCLAUDE.md`) = verbatim copy both directions. Equivalent to `content.md[*]` for adapters that want the full hub file exposed with markers intact.
+No selector (legacy `content.md\tCLAUDE.md`) takes the whole-file verbatim copy path (`_hub_sync_file`) in both directions — no marker parsing, no per-section routing, no marker-damage fallback. It's **not** a drop-in equivalent of `[*]`: they share the intent of "expose the full hub file" but differ in validation and failure handling. Prefer `[*]` for any adapter that writes markered content; use the selector-less form only for legacy single-tier setups.
 
 **Marker format** (paired, must balance, must not nest):
 

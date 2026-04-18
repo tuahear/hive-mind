@@ -71,6 +71,30 @@ teardown() {
   [ "$output" = $'content.md\t*' ]
 }
 
+@test "split_sections rejects malformed CSV selectors (empty elements)" {
+  # Structural typos in a CSV selector must fail fast at adapter-load
+  # time rather than being silently normalized by the downstream
+  # `tr ',' '\n' | awk 'NF'` pipeline in _hub_expand_sections (which
+  # would accept all of these as "just 0,1"). Cover every placement of
+  # empty elements — leading, trailing, doubled, standalone comma.
+  local bad
+  for bad in 'content.md[0,]' 'content.md[,0]' 'content.md[0,,1]' 'content.md[,]' 'content.md[,,]'; do
+    run _hub_split_sections "$bad"
+    [ "$status" -ne 0 ] || { echo "should have rejected: $bad"; return 1; }
+  done
+}
+
+@test "split_sections still accepts well-formed multi-element CSVs" {
+  # Regression guard paired with the rejection test above: the tightening
+  # must not false-positive on legitimate CSVs (single id, two ids,
+  # non-adjacent ids, multi-digit ids).
+  local good
+  for good in 'content.md[0]' 'content.md[0,1]' 'content.md[0,2,5]' 'content.md[10,20]'; do
+    run _hub_split_sections "$good"
+    [ "$status" -eq 0 ] || { echo "should have accepted: $good"; return 1; }
+  done
+}
+
 # --- present_sections + expand --------------------------------------------
 
 @test "present_sections: empty file → no ids" {
