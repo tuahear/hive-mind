@@ -145,6 +145,214 @@ _hub_split_subkey() {
   esac
 }
 
+# -- Sectioned content.md helpers ------------------------------------------
+# A "sectioned" file uses paired HTML-comment markers to delimit sections
+# inside a single file:
+#
+#     shared content (section 0, default bucket)
+#     <!-- hive-mind:section=1 START -->
+#     section 1 content
+#     <!-- hive-mind:section=1 END -->
+#
+# Section 0 = every line OUTSIDE any START/END block. Section N>0 = content
+# inside that block's markers. Blocks must not nest and must balance.
+# These helpers are adapter-agnostic and have no behavioral wiring yet.
+
+# Split `<path>[<csv-section-ids>]` into path + CSV on stdout, TAB-delim.
+# Rejects empty selectors or non-digit/comma characters. Returns 1 if no
+# selector is present.
+_hub_split_sections() {
+  local spec="$1"
+  case "$spec" in
+    *'['*']')
+      local path="${spec%\[*}"
+      local rest="${spec#*[}"
+      local sel="${rest%]}"
+      case "$sel" in
+        '' | *[!0-9,]*) return 1 ;;
+      esac
+      printf '%s\t%s' "$path" "$sel"
+      ;;
+    *) return 1 ;;
+  esac
+}
+
+# Exit 0 if the file's section markers balance cleanly (every START has a
+# matching END for the same id, no nesting), non-zero otherwise. Missing
+# file exits 0 (nothing to validate).
+_hub_content_markers_ok() {
+  local file="$1"
+  [ -f "$file" ] || return 0
+  awk '
+    BEGIN { open = 0; cur = -1; bad = 0 }
+    /^<!-- hive-mind:section=[0-9]+ START -->$/ {
+      if (open) { bad = 1; exit }
+      match($0, /[0-9]+/)
+      cur = substr($0, RSTART, RLENGTH) + 0
+      open = 1
+      next
+    }
+    /^<!-- hive-mind:section=[0-9]+ END -->$/ {
+      if (!open) { bad = 1; exit }
+      match($0, /[0-9]+/)
+      n = substr($0, RSTART, RLENGTH) + 0
+      if (n != cur) { bad = 1; exit }
+      open = 0
+      cur = -1
+      next
+    }
+    { next }
+    END { if (open) bad = 1; exit bad }
+  ' "$file"
+}
+
+# Emit section `want` to stdout. want=0 returns everything outside blocks;
+# want>0 returns the block body (markers stripped). Missing file and
+# missing sections emit nothing.
+_hub_content_read_section() {
+  local file="$1" want="$2"
+  [ -f "$file" ] || return 0
+  awk -v want="$want" '
+    BEGIN { in_block = 0; cur = -1 }
+    /^<!-- hive-mind:section=[0-9]+ START -->$/ {
+      match($0, /[0-9]+/)
+      cur = substr($0, RSTART, RLENGTH) + 0
+      in_block = 1
+      next
+    }
+    /^<!-- hive-mind:section=[0-9]+ END -->$/ {
+      if (in_block) {
+        match($0, /[0-9]+/)
+        n = substr($0, RSTART, RLENGTH) + 0
+        if (n == cur) { in_block = 0; cur = -1; next }
+      }
+    }
+    {
+      if (!in_block && want == 0) print
+      else if (in_block && cur == want) print
+    }
+  ' "$file"
+}
+
+# Rewrite `file` so that section `sid`'s content becomes the contents of
+# `new`. Other sections are preserved in their original order. When sid>0
+# and the file has no matching block, the new block is appended at EOF.
+# When sid=0 and `new` is empty, section 0 becomes empty (blocks retained).
+# A fresh (non-existent) file is created with just the requested section.
+_hub_content_replace_section() {
+  local file="$1" sid="$2" new="$3"
+  [ -n "$file" ] || return 1
+  [ -n "$sid" ] || return 1
+  [ -f "$new" ] || return 1
+
+  local tmp outside blocks
+  tmp="$(mktemp)" || return 1
+  outside="$(mktemp)" || { rm -f "$tmp"; return 1; }
+  blocks="$(mktemp)" || { rm -f "$tmp" "$outside"; return 1; }
+
+  if [ -f "$file" ]; then
+    awk -v outside="$outside" -v blocks="$blocks" '
+      BEGIN { in_block = 0; cur = -1 }
+      /^<!-- hive-mind:section=[0-9]+ START -->$/ {
+        match($0, /[0-9]+/)
+        cur = substr($0, RSTART, RLENGTH) + 0
+        in_block = 1
+        print > blocks
+        next
+      }
+      /^<!-- hive-mind:section=[0-9]+ END -->$/ {
+        if (in_block) {
+          match($0, /[0-9]+/)
+          n = substr($0, RSTART, RLENGTH) + 0
+          if (n == cur) {
+            print > blocks
+            in_block = 0
+            cur = -1
+            next
+          }
+        }
+      }
+      {
+        if (in_block) print > blocks
+        else print > outside
+      }
+    ' "$file"
+  else
+    : > "$outside"
+    : > "$blocks"
+  fi
+
+  if [ "$sid" -eq 0 ]; then
+    cat "$new" > "$tmp"
+    cat "$blocks" >> "$tmp"
+  else
+    cat "$outside" > "$tmp"
+    awk -v sid="$sid" -v new="$new" '
+      BEGIN { replaced = 0; skip = 0 }
+      /^<!-- hive-mind:section=[0-9]+ START -->$/ {
+        match($0, /[0-9]+/)
+        n = substr($0, RSTART, RLENGTH) + 0
+        if (n == sid) {
+          printf "<!-- hive-mind:section=%d START -->\n", sid
+          while ((getline line < new) > 0) print line
+          close(new)
+          printf "<!-- hive-mind:section=%d END -->\n", sid
+          skip = 1
+          replaced = 1
+          next
+        }
+        print
+        next
+      }
+      /^<!-- hive-mind:section=[0-9]+ END -->$/ {
+        if (skip) {
+          match($0, /[0-9]+/)
+          n = substr($0, RSTART, RLENGTH) + 0
+          if (n == sid) { skip = 0; next }
+        }
+        print
+        next
+      }
+      {
+        if (skip) next
+        print
+      }
+      END {
+        if (!replaced) {
+          printf "<!-- hive-mind:section=%d START -->\n", sid
+          while ((getline line < new) > 0) print line
+          close(new)
+          printf "<!-- hive-mind:section=%d END -->\n", sid
+        }
+      }
+    ' "$blocks" >> "$tmp"
+  fi
+
+  mv "$tmp" "$file"
+  rm -f "$outside" "$blocks"
+}
+
+# Dedupe non-trivial lines within each section independently (stdin/stdout
+# variant for testability; callers typically wrap a file in <).
+# Uses the same "non-trivial" heuristic as core/check-dupes.sh: length >= 20,
+# skip blanks, comments, rule-like separators, and fenced-code fences.
+# Markers partition the scan so a line appearing in section 0 and section 1
+# is never deduped across the boundary.
+_hub_dedupe_sections() {
+  awk '
+    function reset_seen() { for (k in seen) delete seen[k] }
+    /^<!-- hive-mind:section=[0-9]+ START -->$/ { reset_seen(); print; next }
+    /^<!-- hive-mind:section=[0-9]+ END -->$/   { reset_seen(); print; next }
+    NF && length($0) >= 20 \
+      && !/^[[:space:]]*#/ \
+      && !/^[[:space:]]*[-=*_]{3,}[[:space:]]*$/ \
+      && !/^[[:space:]]*`{3,}/ {
+      if (seen[$0]++) next
+    }
+    { print }
+  '
+}
+
 # Canonicalize an adapter-declared dotted jsonpath to the bare key list
 # (no leading dot) — jq's getpath/setpath take an array of keys, and
 # `split(".")` on ".permissions.allow" produces a spurious empty-string
