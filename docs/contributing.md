@@ -94,6 +94,42 @@ Skills are NOT declared in `ADAPTER_HUB_MAP`. The engine syncs `$ADAPTER_SKILL_R
 
 The convention: hub paths with a file extension (`.md`, `.txt`, `.json`) are file-like; paths without an extension are directory-like. The `<file>#<jsonpath>` form on the tool side means "read/write a subkey of that JSON file"; the hub-side shape (file vs. dir) picks between text-lines and per-entry split.
 
+### Sectioned content files (`path[selector]`)
+
+A hub-side file can carry multiple tiers of content that round-trip into different tool-native files. This exists because some tools have more than one memory file that both need syncing — e.g. Codex natively reads `AGENTS.md` + `AGENTS.override.md` and concatenates them at runtime.
+
+Append a bracketed selector to the hub path to declare which tiers an entry claims:
+
+| Selector | Meaning |
+|---|---|
+| `content.md[0]` | Section 0 only — the default bucket (everything outside any marker block). Whole tool file plain round-trips to/from section 0. |
+| `content.md[1]` | A specific non-zero section. Whole tool file plain round-trips to/from that section's body. |
+| `content.md[0,1]` | Multiple sections. Fan-out writes section 0 plain + each non-zero section wrapped in `<!-- hive-mind:section=N START/END -->` markers (ascending id); harvest parses the tool file by those markers back into each selected section. |
+| `content.md[*]` | All sections currently present in the file. Forward-compatible — an adapter using `[*]` auto-picks-up any new tier a future adapter introduces. Behaves like `[0,1]` when the file has exactly those two tiers. |
+
+No selector (legacy `content.md\tCLAUDE.md`) = verbatim copy both directions. Equivalent to `content.md[*]` for adapters that want the full hub file exposed with markers intact.
+
+**Marker format** (paired, must balance, must not nest):
+
+```
+<!-- hive-mind:section=1 START -->
+body of section 1
+<!-- hive-mind:section=1 END -->
+```
+
+HTML comments so the markers render invisibly in markdown viewers. The `hive-mind:` prefix is distinctive enough that organic content won't collide.
+
+**Section id registry** — ids are shared across all adapters, so coordinate here before claiming a new one:
+
+| Id | Owner | Meaning |
+|---|---|---|
+| `0` | *(implicit, all adapters)* | Shared tier — every adapter reads and writes this. Content outside any marker block. |
+| `1` | codex | Codex-scoped override layer (`AGENTS.override.md`). |
+
+Claim a new id by adding a row and referencing the adapter that introduces it in the same PR.
+
+**Robustness** — harvest treats marker damage in a multi-section tool file (unmatched START/END, nested START, mismatched id) as a skip-this-cycle event: the hub state is preserved and a warning is logged. Content-outside-a-block always lands in section 0, so EOF-appends by an agent that didn't load the adapter's skill still sync to the shared tier.
+
 ### Example (the Claude Code adapter)
 
 ```bash
