@@ -54,11 +54,9 @@ teardown() {
 }
 
 @test "SessionStart hook template dispatches via the native hivemind-hook launcher" {
-  # The inline shell logic that used to live in hooks.json now lives in
-  # core/hub/codex-hook-session-start.sh (see adapter.sh for why: Codex's
-  # Windows hook runner silently strips inner quotes). The template
-  # dispatches the script by path — install_hooks substitutes absolute
-  # paths at render time. This test pins the template-level references.
+  # The template now exposes a single native-launcher entrypoint. The
+  # launcher owns the shell hop internally; hooks.json itself stays free
+  # of direct bash/script-path dispatch details.
   template="$ADAPTER_ROOT/hooks.json"
   cmd="$(jq -r '.hooks.SessionStart[0].hooks[0].command' "$template")"
   [ "$cmd" = '$HIVE_MIND_HOOK session-start $ADAPTER_DIR_ARG' ]
@@ -88,31 +86,22 @@ teardown() {
 }
 
 @test "install_hooks renders an absolute hivemind-hook path" {
-  # On Windows, `bash` resolves via PATH to C:\Windows\System32\bash.exe
-  # (the WSL launcher) when invoked from PowerShell — not Git Bash.
-  # adapter_install_hooks detects the current shell's bash via cygpath
-  # and embeds the absolute path into the rendered hooks.json so
-  # PowerShell dispatches it directly. On Unix (no cygpath), the prefix
-  # stays as the bare word "bash" wrapped in double quotes, which is
-  # valid shell syntax in any POSIX shell.
+  # install_hooks renders a concrete hivemind-hook path into hooks.json
+  # so Codex never has to expand env vars or PATH-dependent launcher
+  # names at hook-dispatch time.
   mkdir -p "$ADAPTER_DIR"
   adapter_install_hooks
 
   local cmd
   cmd="$(jq -r '.hooks.Stop[0].hooks[0].command' "$ADAPTER_DIR/hooks.json")"
 
-  # Must start with a quoted bash invocation — either "bash" on Unix or
-  # "C:/Program Files/Git/.../bash" (or similar absolute Windows path)
-  # on Windows. The leading char is `"` and the first token ends in
-  # `bash` or `bash.exe`.
+  # Must start with a quoted hivemind-hook executable path.
   [[ "$cmd" =~ ^\"[^\"]*hivemind-hook(\.exe)?\"[[:space:]]stop$ ]] || {
     echo "installed hooks.json Stop command must begin with a quoted hivemind-hook executable, got: $cmd" >&2
     return 1
   }
 
-  # On Windows the quoted path must NOT be a bare 'bash' — that would
-  # regress to the WSL-launcher failure mode. Detect Windows by the
-  # presence of cygpath.
+  # On Windows the rendered launcher path should be drive-qualified.
   if command -v cygpath >/dev/null 2>&1; then
     [[ "$cmd" =~ ^\"[A-Za-z]:/ ]] || {
       echo "on Windows, installed hooks.json Stop command must use an absolute path (drive letter), got: $cmd" >&2
@@ -126,9 +115,9 @@ teardown() {
   # JSON-emit) inline in each hooks.json command string. That failed
   # repeatedly on Windows because Codex's hook runner + PowerShell
   # strip or mangle inner quotes before bash sees them. The current
-  # design dispatches a wrapper .sh file by absolute path — one bash
-  # token, one script-path token, optional argv. No inline shell
-  # syntax in the template, no quoting lottery downstream.
+  # design keeps hooks.json down to a single launcher token plus argv.
+  # No inline shell syntax, no direct wrapper-script references, no
+  # quoting lottery downstream.
   template="$ADAPTER_ROOT/hooks.json"
   while IFS= read -r cmd; do
     [[ "$cmd" == '$HIVE_MIND_HOOK '* ]] || {
@@ -154,11 +143,9 @@ teardown() {
 }
 
 @test "hooks.json template references launcher and adapter-dir tokens" {
-  # install_hooks substitutes $HIVE_MIND_ROOT (and $ADAPTER_DIR_ABS for
-  # session-start) with absolute Windows-friendly paths at render time.
-  # The template must use the tokens, not bare $HOME references — $HOME
-  # expansion in a hook command string is unreliable across Codex's
-  # Windows dispatchers.
+  # install_hooks substitutes the launcher path and custom adapter dir at
+  # render time. The template must use those tokens rather than bare
+  # $HOME references, whose expansion depends on Codex's dispatcher.
   template="$ADAPTER_ROOT/hooks.json"
   session_cmd="$(jq -r '.hooks.SessionStart[0].hooks[0].command' "$template")"
   stop_cmd="$(jq -r '.hooks.Stop[0].hooks[0].command' "$template")"

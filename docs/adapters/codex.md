@@ -18,6 +18,8 @@ On every subsequent sync cycle, both `~/.codex/AGENTS.md` and `~/.codex/AGENTS.o
 
 Codex currently loads hook definitions from `~/.codex/hooks.json`, gated by `[features].codex_hooks` in `~/.codex/config.toml`.
 
+If Codex disables hooks on a given platform, hive-mind can still install the launcher-based config locally but Codex itself will not fire those hook events until upstream support returns.
+
 | Event | Command | Purpose |
 |---|---|---|
 | `SessionStart` | `"$HOME/.hive-mind/bin/hivemind-hook[.exe]" session-start "<codex-dir>"` | Launches the bash-backed sync + duplicate-scan flow through a native wrapper so Windows never has to parse a `bash ...` hook command itself. |
@@ -47,5 +49,7 @@ Restart Codex so it reloads `~/.codex/hooks.json`. From then on:
 
 - `SessionStart` pulls any cross-machine updates before the session begins.
 - `Stop` syncs Codex's active memory layer back through the shared hub.
+
+If those events still do not fire, check Codex's current platform support for hooks before debugging the launcher path further.
 
 See [Get started](/get-started) for the install flow and [Technical reference](/reference) for the shared hook and hub details.
