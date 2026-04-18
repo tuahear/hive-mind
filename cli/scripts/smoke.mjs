@@ -117,12 +117,32 @@ assert(
   const hub = resolve(cliDir, ".smoke-hub-comments");
   rmSync(hub, { recursive: true, force: true });
   mkdirSync(resolve(hub, ".install-state"), { recursive: true });
-  writeFileSync(resolve(hub, ".install-state", "attached-adapters"), "# this is a comment\nclaude-code\n\n  # indented\ncodex\n");
+  // Match core/hub/sync.sh's parser: column-1 '#' comments and blank
+  // lines only. Indented '# ...' is treated as (malformed) adapter name
+  // by core, so the CLI MUST NOT hide it — divergence would make the
+  // two disagree on what's installed.
+  writeFileSync(
+    resolve(hub, ".install-state", "attached-adapters"),
+    "# column-1 comment\nclaude-code\n\ncodex\n"
+  );
   const s = node(["dist/cli.js", "version", "--json"], { env: { ...process.env, HIVE_MIND_HUB_DIR: hub } });
   const parsed = JSON.parse(s.stdout);
   assert(
     JSON.stringify(parsed.attached) === JSON.stringify(["claude-code", "codex"]),
-    `attached-adapters parser skips # comments (got=${JSON.stringify(parsed.attached)})`
+    `attached-adapters parser skips column-1 # comments and blanks (got=${JSON.stringify(parsed.attached)})`
+  );
+
+  // Parity guard: an indented '# ...' line is NOT a comment to core, so
+  // the CLI must surface it as a (weird) name, not filter it out.
+  writeFileSync(
+    resolve(hub, ".install-state", "attached-adapters"),
+    "claude-code\n  # indented-not-a-comment\n"
+  );
+  const s2 = node(["dist/cli.js", "version", "--json"], { env: { ...process.env, HIVE_MIND_HUB_DIR: hub } });
+  const parsed2 = JSON.parse(s2.stdout);
+  assert(
+    parsed2.attached.length === 2 && parsed2.attached[1].includes("indented-not-a-comment"),
+    `indented # is NOT treated as a comment (parity with core) — got=${JSON.stringify(parsed2.attached)}`
   );
 }
 

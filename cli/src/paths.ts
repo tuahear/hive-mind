@@ -24,10 +24,15 @@ export function attachedAdaptersFile(): string {
 export function readAttachedAdapters(): string[] {
   const f = attachedAdaptersFile();
   if (!existsSync(f)) return [];
-  // Match core/hub/sync.sh's parser: skip blank lines and `#` comments.
+  // Match core/hub/sync.sh's parser exactly so CLI output can't disagree
+  // with what the sync engine actually iterates: raw lines (only CR from
+  // CRLF is stripped), skip empty, skip column-1 '#' comments. Do not
+  // trim leading whitespace — an indented '#' is NOT a comment to core,
+  // so treating it as one here would make CLI hide an entry core takes
+  // as a (malformed) adapter name.
   return readFileSync(f, "utf8")
-    .split(/\r?\n/)
-    .map((l) => l.trim())
+    .split("\n")
+    .map((l) => (l.endsWith("\r") ? l.slice(0, -1) : l))
     .filter((l) => l.length > 0 && !l.startsWith("#"));
 }
 
