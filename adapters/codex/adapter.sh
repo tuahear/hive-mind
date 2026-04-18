@@ -385,13 +385,13 @@ ADAPTER_MERGE_DRIVER_ENV=""
 # --- F. User education -----------------------------------------------------
 adapter_activation_instructions() {
   echo "Restart Codex so it reloads hooks.json and starts using the synced"
-  echo "global memory layer at ~/.codex/AGENTS.override.md."
+  echo "global memory layer at ${ADAPTER_GLOBAL_MEMORY}."
 }
 
 adapter_disable_instructions() {
   echo "To temporarily disable hive-mind sync, remove the SessionStart +"
-  echo "Stop entries from ~/.codex/hooks.json or set [features].codex_hooks"
-  echo "to false in ~/.codex/config.toml. To fully disconnect from the hub:"
+  echo "Stop entries from ${ADAPTER_DIR}/hooks.json or set [features].codex_hooks"
+  echo "to false in ${ADAPTER_DIR}/config.toml. To fully disconnect from the hub:"
   echo "  rm ~/.hive-mind/.install-state/attached-adapters"
 }
 

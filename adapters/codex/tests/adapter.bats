@@ -291,6 +291,29 @@ EOF
   grep -q '# user comment' "$ADAPTER_DIR/config.toml"
 }
 
+# === instructions ==========================================================
+
+@test "activation_instructions renders ADAPTER_GLOBAL_MEMORY path under override" {
+  custom="$HOME/alt-codex-dir"
+  ADAPTER_DIR="$custom"
+  ADAPTER_GLOBAL_MEMORY="$custom/AGENTS.override.md"
+
+  out="$(adapter_activation_instructions)"
+  [[ "$out" == *"$custom/AGENTS.override.md"* ]]
+  [[ "$out" != *'~/.codex'* ]]
+}
+
+@test "disable_instructions renders ADAPTER_DIR paths under override" {
+  custom="$HOME/alt-codex-dir"
+  ADAPTER_DIR="$custom"
+  ADAPTER_GLOBAL_MEMORY="$custom/AGENTS.override.md"
+
+  out="$(adapter_disable_instructions)"
+  [[ "$out" == *"$custom/hooks.json"* ]]
+  [[ "$out" == *"$custom/config.toml"* ]]
+  [[ "$out" != *'~/.codex'* ]]
+}
+
 # === round-trip mapping ====================================================
 
 @test "hub mapping round-trips AGENTS.override.md and hooks.json#hooks" {
