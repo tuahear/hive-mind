@@ -26,7 +26,6 @@ Every adapter implements the shell contract defined in `core/adapter-loader.sh`.
 | `ADAPTER_MEMORY_MODEL` | `flat` or `hierarchical` |
 | `ADAPTER_GITIGNORE_TEMPLATE` | Path to the adapter's `.gitignore` template |
 | `ADAPTER_GITATTRIBUTES_TEMPLATE` | Path to the adapter's `.gitattributes` template |
-| `ADAPTER_MARKER_TARGETS` | Newline-separated globs of files that can host commit markers |
 | `ADAPTER_HAS_HOOK_SYSTEM` | `true` or `false` |
 | `ADAPTER_LOG_PATH` | Absolute path to the sync-error log |
 

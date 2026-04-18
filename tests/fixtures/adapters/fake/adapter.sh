@@ -27,7 +27,6 @@ adapter_list_memory_files() { :; }
 ADAPTER_GITIGNORE_TEMPLATE="${ADAPTER_ROOT}/gitignore"
 ADAPTER_GITATTRIBUTES_TEMPLATE="${ADAPTER_ROOT}/gitattributes"
 ADAPTER_SECRET_FILES=""
-ADAPTER_MARKER_TARGETS=$'*.md\n**/*.md'
 
 # --- C. Lifecycle touchpoints ----------------------------------------------
 ADAPTER_HAS_HOOK_SYSTEM=true

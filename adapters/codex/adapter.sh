@@ -20,8 +20,6 @@ adapter_list_memory_files() { :; }
 ADAPTER_GITIGNORE_TEMPLATE="${ADAPTER_ROOT}/gitignore"
 ADAPTER_GITATTRIBUTES_TEMPLATE="${ADAPTER_ROOT}/gitattributes"
 ADAPTER_SECRET_FILES="auth.json"
-ADAPTER_MARKER_TARGETS=$'AGENTS.override.md\nskills/**/*.md'
-
 # --- C. Lifecycle touchpoints ----------------------------------------------
 ADAPTER_HAS_HOOK_SYSTEM=true
 ADAPTER_EVENT_SESSION_START="SessionStart"
