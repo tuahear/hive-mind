@@ -72,11 +72,26 @@ assert(
   rmSync(fakeHub, { recursive: true, force: true });
   mkdirSync(fakeHub, { recursive: true });
   const git = (args) => spawnSync("git", args, { cwd: fakeHub, stdio: ["ignore", "pipe", "pipe"], encoding: "utf8" });
-  git(["init", "-q"]);
-  git(["commit", "--allow-empty", "-m", "seed", "-q"]);
+  const gi = git(["init", "-q"]);
+  assert(gi.status === 0, `git init (stderr='${gi.stderr}')`);
+  // CI boxes often have no global identity; set repo-local so `git commit`
+  // doesn't fail with "Please tell me who you are".
+  assert(git(["config", "user.email", "smoke@example.invalid"]).status === 0, "git config user.email");
+  assert(git(["config", "user.name", "Smoke Test"]).status === 0, "git config user.name");
+  const gc = git(["commit", "--allow-empty", "-m", "seed", "-q"]);
+  assert(gc.status === 0, `git commit (stderr='${gc.stderr}')`);
   const s = node(["dist/cli.js", "status", "--json"], { env: { ...process.env, HIVE_MIND_HUB_DIR: fakeHub } });
   assert(s.stdout.includes('"unpushedCommits": null'), `status reports null for unpushed when no upstream (got stdout='${s.stdout}')`);
 }
+
+// 4d. adapter name validation — reject traversal and whitespace.
+for (const bad of ["codex/", "../evil", "bad name", ""]) {
+  const r = node(["dist/cli.js", "attach", bad]);
+  assert(r.status !== 0, `attach rejects '${bad}' (status=${r.status})`);
+}
+const okAttach = node(["dist/cli.js", "attach", "codex"], { env: { ...process.env, HIVE_MIND_HUB_DIR: resolve(cliDir, ".no-such-hub") } });
+// Valid name, but no hub → must fail with the 'hub not initialized' message, not the validator.
+assert(okAttach.status === 1 && okAttach.stderr.includes("hub not initialized"), `attach codex with no hub hits hub-init error, not validator (status=${okAttach.status}, stderr='${okAttach.stderr}')`);
 
 // 5. npm pack stays under 2 MB (CLI spec cap).
 // --ignore-scripts so the prepack build doesn't mix its stdout into the

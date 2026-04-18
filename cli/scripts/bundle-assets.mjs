@@ -12,23 +12,20 @@ const cliRoot = resolve(here, "..");
 const repoRoot = resolve(cliRoot, "..");
 const out = resolve(cliRoot, "assets");
 
-const items = [
-  "core",
-  "adapters",
-  "cmd",
-  "setup.sh",
-  "VERSION",
-  "go.mod",
-];
+// `cmd` + `go.mod` are required too: the shipped claude-code / codex
+// adapters always build the native hivemind-hook launcher during
+// setup.sh, which needs the Go sources. A tarball missing any of these
+// is broken — hard-fail at pack time rather than at user-install time.
+const required = ["core", "adapters", "cmd", "setup.sh", "VERSION", "go.mod"];
 
 rmSync(out, { recursive: true, force: true });
 mkdirSync(out, { recursive: true });
 
-for (const item of items) {
+for (const item of required) {
   const src = resolve(repoRoot, item);
   if (!existsSync(src)) {
-    console.warn(`[bundle-assets] skipping missing: ${item}`);
-    continue;
+    console.error(`[bundle-assets] required asset missing from repo root: ${item}`);
+    process.exit(1);
   }
   const dst = resolve(out, item);
   mkdirSync(dirname(dst), { recursive: true });

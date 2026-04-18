@@ -2,8 +2,14 @@ import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { hubDir, hubSrcDir } from "../paths.js";
 import { runBash } from "../run.js";
+import { validateAdapterName } from "./validate.js";
 
 export function attachCmd(adapter: string): number {
+  const nameErr = validateAdapterName(adapter);
+  if (nameErr) {
+    console.error(`error: ${nameErr}`);
+    return 2;
+  }
   const src = hubSrcDir();
   const setupSh = resolve(src, "setup.sh");
   if (!existsSync(setupSh)) {

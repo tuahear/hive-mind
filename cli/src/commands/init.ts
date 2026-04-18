@@ -3,6 +3,7 @@ import { createInterface } from "node:readline/promises";
 import { resolve } from "node:path";
 import { bundledAssetsDir, hubDir, hubSrcDir } from "../paths.js";
 import { runBash, which } from "../run.js";
+import { validateAdapterName } from "./validate.js";
 
 type InitOpts = {
   adapter?: string;
@@ -21,6 +22,11 @@ async function prompt(question: string): Promise<string> {
 
 export async function initCmd(opts: InitOpts): Promise<number> {
   const adapter = opts.adapter || "claude-code";
+  const nameErr = validateAdapterName(adapter);
+  if (nameErr) {
+    console.error(`error: ${nameErr}`);
+    return 2;
+  }
   const hub = hubDir();
   const src = hubSrcDir();
   const assets = bundledAssetsDir();
@@ -60,21 +66,15 @@ export async function initCmd(opts: InitOpts): Promise<number> {
   // half a core tree. For each root, clear the destination first so
   // upstream file deletions/renames don't leave stale files behind.
   mkdirSync(src, { recursive: true });
-  const required = ["core", "adapters", "setup.sh", "VERSION"];
-  const optional = ["cmd", "go.mod"];
+  // cmd + go.mod are required: setup.sh always builds the native
+  // hivemind-hook launcher for the shipped adapters.
+  const required = ["core", "adapters", "cmd", "setup.sh", "VERSION", "go.mod"];
   for (const item of required) {
     const s = resolve(assets, item);
     if (!existsSync(s)) {
       console.error(`error: bundled asset '${item}' missing from ${assets}. CLI build is incomplete.`);
       return 1;
     }
-    const dst = resolve(src, item);
-    rmSync(dst, { recursive: true, force: true });
-    cpSync(s, dst, { recursive: true });
-  }
-  for (const item of optional) {
-    const s = resolve(assets, item);
-    if (!existsSync(s)) continue;
     const dst = resolve(src, item);
     rmSync(dst, { recursive: true, force: true });
     cpSync(s, dst, { recursive: true });

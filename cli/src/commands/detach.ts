@@ -1,7 +1,8 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { attachedAdaptersFile, hubDir, hubSrcDir, readAttachedAdapters } from "../paths.js";
-import { run } from "../run.js";
+import { run, which } from "../run.js";
+import { validateAdapterName } from "./validate.js";
 
 // detach is a small shell wrapper: source the adapter contract, invoke
 // adapter_uninstall_hooks, then strike the adapter's row from the
@@ -25,6 +26,11 @@ const DETACH_SH = [
 ].join("\n");
 
 export function detachCmd(adapter: string): number {
+  const nameErr = validateAdapterName(adapter);
+  if (nameErr) {
+    console.error(`error: ${nameErr}`);
+    return 2;
+  }
   const src = hubSrcDir();
   if (!existsSync(resolve(src, "core", "adapter-loader.sh"))) {
     console.error("error: hub not initialized. Run `hivemind init` first.");
@@ -35,6 +41,13 @@ export function detachCmd(adapter: string): number {
   if (!attached.includes(adapter)) {
     console.error(`error: adapter '${adapter}' is not attached. Attached: ${attached.join(", ") || "(none)"}`);
     return 1;
+  }
+
+  if (!which("bash")) {
+    console.error(
+      "error: bash not found on PATH. On Windows install Git Bash (https://gitforwindows.org) and rerun."
+    );
+    return 127;
   }
 
   const res = run("bash", ["-c", DETACH_SH], {
