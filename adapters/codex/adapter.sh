@@ -105,7 +105,7 @@ _codex_strip_empty_features_section() {
       }
       has_content = 0
       for (i = 2; i <= n; i++) {
-        if (buf[i] !~ /^[[:space:]]*$/ && buf[i] !~ /^[[:space:]]*#/) {
+        if (buf[i] !~ /^[[:space:]]*$/) {
           has_content = 1
           break
         }
@@ -248,7 +248,7 @@ _codex_restore_feature_state() {
 }
 
 adapter_install_hooks() {
-  local hooks template config
+  local hooks template config rendered
 
   hooks="$(_codex_hooks_file)"
   template="${ADAPTER_ROOT}/hooks.json"
@@ -261,8 +261,13 @@ adapter_install_hooks() {
   _codex_record_feature_state "$config"
   _codex_set_feature_flag "$config" true
 
+  rendered="$(mktemp)"
+  jq --arg dir "$ADAPTER_DIR" --arg mem "$ADAPTER_GLOBAL_MEMORY" \
+    'walk(if type == "string" then gsub("[$]HOME/[.]codex/AGENTS[.]override[.]md"; $mem) | gsub("[$]HOME/[.]codex"; $dir) else . end)' \
+    "$template" > "$rendered"
+
   if [ ! -f "$hooks" ]; then
-    cp "$template" "$hooks"
+    mv "$rendered" "$hooks"
     return 0
   fi
 
@@ -282,6 +287,7 @@ adapter_install_hooks() {
     | map(.hooks[]? | select((.command // "") | test("\\.hive-mind/bin/sync")))
     | length > 0
   ' "$hooks" >/dev/null 2>&1; then
+    rm -f "$rendered"
     return 0
   fi
 
@@ -317,10 +323,11 @@ adapter_install_hooks() {
             })
           | add
       )
-  ' "$hooks" "$template" > "$tmp" 2>/dev/null; then
+  ' "$hooks" "$rendered" > "$tmp" 2>/dev/null; then
     mv "$tmp" "$hooks"
+    rm -f "$rendered"
   else
-    rm -f "$tmp"
+    rm -f "$tmp" "$rendered"
     return 1
   fi
 }

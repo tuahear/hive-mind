@@ -217,6 +217,35 @@ EOF
   [ ! -f "$ADAPTER_DIR/.hive-mind-codex-hooks.state" ]
 }
 
+@test "install_hooks renders ADAPTER_DIR into hooks.json for custom install path" {
+  custom="$HOME/alt-codex-dir"
+  ADAPTER_DIR="$custom"
+  ADAPTER_GLOBAL_MEMORY="$custom/AGENTS.override.md"
+  mkdir -p "$custom"
+
+  adapter_install_hooks
+
+  cmd="$(jq -r '.hooks.SessionStart[0].hooks[0].command' "$custom/hooks.json")"
+  [[ "$cmd" == *"ADAPTER_DIR=\"$custom\""* ]]
+  [[ "$cmd" == *"ADAPTER_GLOBAL_MEMORY=\"$custom/AGENTS.override.md\""* ]]
+  [[ "$cmd" != *'$HOME/.codex'* ]]
+}
+
+@test "install_hooks renders ADAPTER_DIR into hooks.json when merging into existing file" {
+  custom="$HOME/alt-codex-dir"
+  ADAPTER_DIR="$custom"
+  ADAPTER_GLOBAL_MEMORY="$custom/AGENTS.override.md"
+  mkdir -p "$custom"
+  printf '{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"echo user"}]}]}}\n' \
+    > "$custom/hooks.json"
+
+  adapter_install_hooks
+
+  cmd="$(jq -r '.hooks.SessionStart[0].hooks[0].command' "$custom/hooks.json")"
+  [[ "$cmd" == *"ADAPTER_DIR=\"$custom\""* ]]
+  [[ "$cmd" != *'$HOME/.codex'* ]]
+}
+
 @test "uninstall_hooks preserves user hooks and restores codex_hooks=false" {
   mkdir -p "$ADAPTER_DIR"
   cat > "$ADAPTER_DIR/hooks.json" <<'EOF'
@@ -250,6 +279,16 @@ EOF
   [ "$status" -ne 0 ]
   grep -q '^model = "gpt-5.4"$' "$ADAPTER_DIR/config.toml"
   grep -q '^codex_hooks = false$' "$ADAPTER_DIR/config.toml"
+}
+
+@test "uninstall_hooks preserves comment-only [features] section" {
+  mkdir -p "$ADAPTER_DIR"
+  printf '[features]\n# user comment\n' > "$ADAPTER_DIR/config.toml"
+
+  adapter_install_hooks
+  adapter_uninstall_hooks
+
+  grep -q '# user comment' "$ADAPTER_DIR/config.toml"
 }
 
 # === round-trip mapping ====================================================
