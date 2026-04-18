@@ -84,7 +84,7 @@ Deeper explanations of each — plus the sync flow, conflict resolution, commit 
 | Adapter | Tool | Status |
 |---|---|---|
 | `claude-code` | [Claude Code](https://claude.com/claude-code) | Shipped |
-| `codex` | [OpenAI Codex CLI](https://github.com/openai/codex) | Planned ([#11](https://github.com/tuahear/hive-mind/issues/11)) |
+| `codex` | [OpenAI Codex CLI](https://github.com/openai/codex) | Shipped ([#11](https://github.com/tuahear/hive-mind/issues/11)) |
 | `qwen` | [Qwen CLI](https://github.com/QwenLM/qwen-code) | Planned ([#19](https://github.com/tuahear/hive-mind/issues/19)) |
 | `kimi` | [Kimi CLI](https://github.com/MoonshotAI/kimi-cli) | Planned ([#23](https://github.com/tuahear/hive-mind/issues/23)) |
 
