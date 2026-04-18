@@ -65,6 +65,66 @@ teardown() {
   [ "$status" -ne 0 ]
 }
 
+@test "split_sections parses wildcard selector" {
+  run _hub_split_sections 'content.md[*]'
+  [ "$status" -eq 0 ]
+  [ "$output" = $'content.md\t*' ]
+}
+
+# --- present_sections + expand --------------------------------------------
+
+@test "present_sections: empty file → no ids" {
+  : > "$WORK/empty.md"
+  run _hub_content_present_sections "$WORK/empty.md"
+  [ -z "$output" ]
+}
+
+@test "present_sections: plain file → only 0" {
+  printf 'foo\n' > "$WORK/plain.md"
+  run _hub_content_present_sections "$WORK/plain.md"
+  [ "$output" = '0' ]
+}
+
+@test "present_sections: blocks-only file → no 0 (section 0 empty)" {
+  cat > "$WORK/f.md" <<'EOF'
+<!-- hive-mind:section=1 START -->
+x
+<!-- hive-mind:section=1 END -->
+EOF
+  run _hub_content_present_sections "$WORK/f.md"
+  [ "$output" = '1' ]
+}
+
+@test "present_sections: mixed → 0 and block ids, ascending" {
+  cat > "$WORK/f.md" <<'EOF'
+shared
+<!-- hive-mind:section=2 START -->
+two
+<!-- hive-mind:section=2 END -->
+<!-- hive-mind:section=1 START -->
+one
+<!-- hive-mind:section=1 END -->
+EOF
+  run _hub_content_present_sections "$WORK/f.md"
+  [ "$output" = $'0\n1\n2' ]
+}
+
+@test "expand_sections: wildcard pulls ids from src" {
+  cat > "$WORK/f.md" <<'EOF'
+shared
+<!-- hive-mind:section=1 START -->
+s1
+<!-- hive-mind:section=1 END -->
+EOF
+  run _hub_expand_sections '*' "$WORK/f.md"
+  [ "$output" = $'0\n1' ]
+}
+
+@test "expand_sections: numeric csv passes through (sorted, deduped)" {
+  run _hub_expand_sections '2,0,1,0' "$WORK/any.md"
+  [ "$output" = $'0\n1\n2' ]
+}
+
 # --- _hub_content_markers_ok ----------------------------------------------
 
 @test "markers_ok passes on empty file" {

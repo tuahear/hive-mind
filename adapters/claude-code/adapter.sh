@@ -189,7 +189,19 @@ ADAPTER_FALLBACK_STRATEGY=""  # not needed — Claude Code has hooks
 #
 # Consumed by core/hub/harvest-fanout.sh during every sync cycle
 # (harvest reads tool → hub; fan-out reads hub → tool).
-ADAPTER_HUB_MAP=$'content.md\tCLAUDE.md
+# CLAUDE.md uses the [*] wildcard selector so Claude sees every tier of
+# the hub's memory without having to enumerate section ids. When a future
+# adapter introduces a new tier (section 2, 3, ...) Claude picks it up on
+# the next sync — no adapter update needed.
+#
+# Fan-out with [*] writes section 0 plain + each non-zero section wrapped
+# in `<!-- hive-mind:section=N START/END -->` markers (ascending order).
+# Harvest parses the same markers back into their respective sections, so
+# a Claude-side edit to any tagged block propagates to the owning adapter
+# on the next cycle. Content outside any marker block defaults to section
+# 0, which makes blind EOF-appends land in the shared tier without needing
+# skill discipline.
+ADAPTER_HUB_MAP=$'content.md[*]\tCLAUDE.md
 config/hooks\tsettings.json#hooks
 config/permissions/allow.txt\tsettings.json#permissions.allow
 config/permissions/deny.txt\tsettings.json#permissions.deny

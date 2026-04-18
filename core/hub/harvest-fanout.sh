@@ -158,9 +158,13 @@ _hub_split_subkey() {
 # inside that block's markers. Blocks must not nest and must balance.
 # These helpers are adapter-agnostic and have no behavioral wiring yet.
 
-# Split `<path>[<csv-section-ids>]` into path + CSV on stdout, TAB-delim.
-# Rejects empty selectors or non-digit/comma characters. Returns 1 if no
-# selector is present.
+# Split `<path>[<selector>]` into path + selector on stdout, TAB-delim.
+# Selector grammar:
+#   - CSV of one or more integer section ids (e.g. "0", "1", "0,1")
+#   - or the literal "*" which expands at harvest/fan-out time to every
+#     section the file actually contains (forward-compat for adapters
+#     that want to round-trip any future tier without an adapter update)
+# Returns 1 if no `[...]` selector is present or the grammar doesn't match.
 _hub_split_sections() {
   local spec="$1"
   case "$spec" in
@@ -169,12 +173,70 @@ _hub_split_sections() {
       local rest="${spec#*[}"
       local sel="${rest%]}"
       case "$sel" in
+        '*') : ;;
         '' | *[!0-9,]*) return 1 ;;
       esac
       printf '%s\t%s' "$path" "$sel"
       ;;
     *) return 1 ;;
   esac
+}
+
+# Emit every section id present in a sectioned file, sorted ascending.
+# Section 0 is included iff any content exists outside tagged blocks
+# (non-blank outside line) OR the file has no markers at all.
+# Non-zero ids come from the unique set of `<!-- hive-mind:section=N START
+# -->` markers found. Empty file → no ids.
+_hub_content_present_sections() {
+  local file="$1"
+  [ -f "$file" ] || return 0
+  awk '
+    BEGIN { in_block = 0; has_zero = 0; has_any_marker = 0 }
+    /^<!-- hive-mind:section=[0-9]+ START -->$/ {
+      match($0, /[0-9]+/)
+      n = substr($0, RSTART, RLENGTH) + 0
+      ids[n] = 1
+      in_block = 1
+      has_any_marker = 1
+      next
+    }
+    /^<!-- hive-mind:section=[0-9]+ END -->$/ {
+      in_block = 0
+      has_any_marker = 1
+      next
+    }
+    {
+      if (!in_block && NF) has_zero = 1
+    }
+    END {
+      # A file with NO markers at all is section 0 as a whole — report 0
+      # even if every line is blank (empty file stays empty).
+      if (!has_any_marker && NR > 0) has_zero = 1
+      if (has_zero) ids[0] = 1
+      n = 0
+      for (k in ids) out[n++] = k
+      # awk sort: insertion sort on small arrays is fine here.
+      for (i = 1; i < n; i++) {
+        v = out[i]; j = i - 1
+        while (j >= 0 && out[j] > v) { out[j+1] = out[j]; j-- }
+        out[j+1] = v
+      }
+      for (i = 0; i < n; i++) print out[i]
+    }
+  ' "$file"
+}
+
+# Expand a selector CSV (or "*") against a source file, emitting one
+# integer id per line. When selector is "*", expand to every section
+# present in the source. When selector is numeric, just normalize the CSV
+# (sort ascending, dedupe).
+_hub_expand_sections() {
+  local sel="$1" src="$2"
+  if [ "$sel" = '*' ]; then
+    _hub_content_present_sections "$src"
+  else
+    printf '%s\n' "$sel" | tr ',' '\n' | awk 'NF' | sort -u -n
+  fi
 }
 
 # Exit 0 if the file's section markers balance cleanly (every START has a
@@ -333,10 +395,12 @@ _hub_content_replace_section() {
 }
 
 # Fan-out: write selected sections from a hub content file to a tool file.
-# sel: CSV of section ids. Semantics:
+# sel: CSV of section ids, or "*" (every section present in src). Semantics:
 #   - single id: write that section's body plain (markers stripped).
-#   - multiple ids: write section 0 plain (if selected), then each non-zero
-#     section wrapped in its own START/END markers in ascending-id order.
+#   - multiple ids (or "*" expanding to >1 id): write section 0 plain (if
+#     selected), then each non-zero section wrapped in its own START/END
+#     markers in ascending-id order.
+#   - "*" expanding to a single id: treated like that single id.
 # `_hub_content_read_section` emits via awk's `print`, so every line already
 # ends in \n and successive blocks separate cleanly without manual fixups.
 _hub_content_fanout_to_file() {
@@ -345,13 +409,15 @@ _hub_content_fanout_to_file() {
   mkdir -p "$(dirname "$dst")" 2>/dev/null
 
   local ids count
-  ids="$(printf '%s\n' "$sel" | tr ',' '\n' | awk 'NF' | sort -u -n)"
+  ids="$(_hub_expand_sections "$sel" "$src")"
   count="$(printf '%s\n' "$ids" | awk 'NF' | wc -l | tr -d ' ')"
 
   local tmp
   tmp="$(mktemp)"
 
-  if [ "$count" = "1" ]; then
+  if [ "$count" = "0" ]; then
+    : > "$tmp"
+  elif [ "$count" = "1" ]; then
     _hub_content_read_section "$src" "$ids" > "$tmp"
   else
     {
@@ -375,25 +441,39 @@ EOF
 }
 
 # Harvest: replace selected sections in a hub content file from a tool file.
-# Single-id selector: whole tool file becomes that section.
-# Multi-id selector: parse tool file by markers, extract each selected
-# section, replace in hub. Unbalanced markers in tool file → log + skip.
+# sel: CSV of section ids, or "*" (every section present in src).
+#   - Single id (numeric OR "*" expanding to one id): whole tool file
+#     becomes that section.
+#   - Multiple ids (or "*" expanding to >1 ids): parse tool file by markers,
+#     extract each selected section, replace in hub.
+# Unbalanced markers in the tool file → log + skip, hub preserved.
 _hub_content_harvest_from_file() {
   local src="$1" sel="$2" dst="$3"
   [ -f "$src" ] || return 0
   mkdir -p "$(dirname "$dst")" 2>/dev/null
 
-  local ids count
-  ids="$(printf '%s\n' "$sel" | tr ',' '\n' | awk 'NF' | sort -u -n)"
-  count="$(printf '%s\n' "$ids" | awk 'NF' | wc -l | tr -d ' ')"
-
-  if [ "$count" = "1" ]; then
-    _hub_content_replace_section "$dst" "$ids" "$src"
+  # Validate markers up front for any selector that will drive a marker-
+  # based parse (explicit multi-id or "*" — "*" effectively always parses
+  # markers when they exist in the tool file).
+  local needs_valid_markers=0
+  case "$sel" in
+    *',*'|'*,*'|'*') needs_valid_markers=1 ;;
+    *,*) needs_valid_markers=1 ;;
+  esac
+  if [ "$needs_valid_markers" -eq 1 ] && ! _hub_content_markers_ok "$src"; then
+    _hub_log "harvest: skipping sectioned harvest for $src (marker imbalance)"
     return 0
   fi
 
-  if ! _hub_content_markers_ok "$src"; then
-    _hub_log "harvest: skipping sectioned harvest for $src (marker imbalance)"
+  local ids count
+  ids="$(_hub_expand_sections "$sel" "$src")"
+  count="$(printf '%s\n' "$ids" | awk 'NF' | wc -l | tr -d ' ')"
+
+  if [ "$count" = "0" ]; then
+    return 0
+  fi
+  if [ "$count" = "1" ]; then
+    _hub_content_replace_section "$dst" "$ids" "$src"
     return 0
   fi
 
