@@ -67,6 +67,33 @@ teardown() {
   [ "$sync_pos" -lt "$dupes_pos" ]
 }
 
+@test "hooks.json commands are bash-dispatched and emit JSON (cross-shell Codex on Windows)" {
+  # Codex on Windows executes hook commands under PowerShell 5.1, which
+  # cannot dispatch extensionless Unix scripts (`& "$HOME/.hive-mind/bin/sync"`
+  # fails with "Access is denied") AND rejects hooks whose stdout isn't
+  # valid JSON. Both SessionStart and Stop commands must:
+  #   1. Start with a bash invocation so PowerShell hands the whole
+  #      shell snippet off to bash for execution — no direct exec of
+  #      extensionless scripts, no PowerShell parsing of bash syntax.
+  #   2. Emit valid JSON on stdout (the `{}` empty-object fallback at
+  #      minimum, or check-dupes' hookSpecificOutput payload when dupes
+  #      were detected).
+  # Breaking either invariant reproduces the "invalid stop hook JSON
+  # output" + "Access is denied" errors observed on the live Windows
+  # two-adapter install that prompted this fix.
+  template="$ADAPTER_ROOT/hooks.json"
+  while IFS= read -r cmd; do
+    [[ "$cmd" == bash\ * ]] || {
+      echo "hook command must start with 'bash ' for cross-shell dispatch: $cmd" >&2
+      return 1
+    }
+    [[ "$cmd" == *'printf "{}"'* ]] || {
+      echo "hook command must emit JSON on stdout (printf \"{}\" fallback): $cmd" >&2
+      return 1
+    }
+  done < <(jq -r '.hooks | .[] | .[].hooks[] | .command' "$template")
+}
+
 @test "hooks.json commands use quoted \$HOME paths" {
   template="$ADAPTER_ROOT/hooks.json"
   while IFS= read -r cmd; do

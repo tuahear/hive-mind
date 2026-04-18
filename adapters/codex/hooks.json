@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"$HOME/.hive-mind/bin/sync\" 2>>\"$HOME/.hive-mind/.sync-error.log\" || true; ADAPTER_DIR=\"$HOME/.codex\" ADAPTER_GLOBAL_MEMORY=\"$HOME/.codex/AGENTS.override.md\" \"$HOME/.hive-mind/hive-mind/core/check-dupes.sh\" 2>>\"$HOME/.codex/.sync-error.log\" || true",
+            "command": "bash -c '\"$HOME/.hive-mind/bin/sync\" >/dev/null 2>>\"$HOME/.hive-mind/.sync-error.log\" || true; OUT=$(ADAPTER_DIR=\"$HOME/.codex\" ADAPTER_GLOBAL_MEMORY=\"$HOME/.codex/AGENTS.override.md\" \"$HOME/.hive-mind/hive-mind/core/check-dupes.sh\" 2>>\"$HOME/.codex/.sync-error.log\"); [ -n \"$OUT\" ] && printf \"%s\" \"$OUT\" || printf \"{}\"'",
             "timeout": 30
           }
         ]
@@ -16,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"$HOME/.hive-mind/bin/sync\"",
+            "command": "bash -c '\"$HOME/.hive-mind/bin/sync\" >/dev/null 2>>\"$HOME/.hive-mind/.sync-error.log\" || true; printf \"{}\"'",
             "timeout": 30
           }
         ]
