@@ -1,0 +1,46 @@
+{
+  "name": "hive-mind",
+  "version": "0.3.0-prototype.0",
+  "description": "hivemind CLI — install, attach, and sync the hive-mind memory hub for AI coding agents",
+  "bin": {
+    "hivemind": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "assets",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node scripts/shebang.mjs && node scripts/bundle-assets.mjs",
+    "prepack": "npm run build",
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true});require('fs').rmSync('assets',{recursive:true,force:true})\"",
+    "test:smoke": "node scripts/smoke.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "commander": "^12.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "typescript": "^5.4.0"
+  },
+  "keywords": [
+    "claude-code",
+    "codex",
+    "memory",
+    "ai-agents",
+    "hive-mind"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tuahear/hive-mind.git",
+    "directory": "cli"
+  },
+  "homepage": "https://github.com/tuahear/hive-mind#readme",
+  "bugs": {
+    "url": "https://github.com/tuahear/hive-mind/issues"
+  }
+}

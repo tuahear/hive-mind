@@ -46,6 +46,8 @@ MEMORY_REPO=<your-memory-repo-url> \
   bash -c "$(curl -fsSL https://raw.githubusercontent.com/tuahear/hive-mind/main/setup.sh)"
 ```
 
+**Or (prototype, not yet on npm) — via the `hivemind` CLI:** see [`cli/README.md`](cli/README.md). Goal: `npm install -g hive-mind && hivemind init` with no repo clone required. Tracking [#13](https://github.com/tuahear/hive-mind/issues/13).
+
 That attaches Claude Code to your hub. To attach a second tool later (once its adapter ships) it's the same installer, different `ADAPTER=`:
 
 ```bash

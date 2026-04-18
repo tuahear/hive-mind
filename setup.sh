@@ -232,7 +232,12 @@ PREV_HIVE_MIND_VERSION="0.1.0"
 if [ -f "$HIVE_MIND_SRC/VERSION" ]; then
     PREV_HIVE_MIND_VERSION="$(tr -d '[:space:]' < "$HIVE_MIND_SRC/VERSION" 2>/dev/null || echo "0.1.0")"
 fi
-if [ -d "$HIVE_MIND_SRC/.git" ]; then
+if [ "${HIVE_MIND_SKIP_CLONE:-0}" = "1" ] && [ -f "$HIVE_MIND_SRC/setup.sh" ]; then
+    # npm-distributed CLI stages core/adapters into $HIVE_MIND_SRC before
+    # invoking setup.sh, so we skip both the clone and the pull — the CLI
+    # owns upgrading $HIVE_MIND_SRC by dropping newer bundled assets in.
+    log "  source staged by CLI (HIVE_MIND_SKIP_CLONE=1); skipping git clone/pull"
+elif [ -d "$HIVE_MIND_SRC/.git" ]; then
     log "  source already present; pulling latest (previous version: $PREV_HIVE_MIND_VERSION)"
     git -C "$HIVE_MIND_SRC" pull --rebase --autostash --quiet || true
 else
