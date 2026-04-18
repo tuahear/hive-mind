@@ -41,6 +41,12 @@ export function restageCmd(opts: { forceStage?: boolean }): number {
   }
 
   console.log(`[hivemind] restaged bundled assets into ${src}`);
-  console.log(`  Hooks and attached adapters are untouched. Re-run \`hivemind init\` or \`hivemind attach\` if you also need to refresh hook wiring.`);
+  console.log(
+    `  Restage updates the staged hub sources only — it does NOT rebuild the\n` +
+      `  installed bin/hivemind-hook launcher under $HIVE_MIND_HUB_DIR/bin/. Hooks\n` +
+      `  and attached adapters stay wired to whatever launcher was built at the\n` +
+      `  last init/attach. Re-run \`hivemind init\` or \`hivemind attach <adapter>\`\n` +
+      `  to rebuild the launcher and refresh hook wiring.`
+  );
   return 0;
 }
