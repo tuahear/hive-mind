@@ -304,10 +304,14 @@ _hub_content_read_section() {
 }
 
 # Rewrite `file` so that section `sid`'s content becomes the contents of
-# `new`. Other sections are preserved in their original order. When sid>0
-# and the file has no matching block, the new block is appended at EOF.
-# When sid=0 and `new` is empty, section 0 becomes empty (blocks retained).
-# A fresh (non-existent) file is created with just the requested section.
+# `new`. Other sections' contents are preserved, and their order relative
+# to each other is preserved, but the output is canonicalized: all
+# section-0 (outside-block) content first, then every tagged block in
+# the order they appeared. The original physical interleaving of blocks
+# with outside content is NOT preserved. When sid>0 and the file has no
+# matching block, the new block is appended at EOF. When sid=0 and `new`
+# is empty, section 0 becomes empty (blocks retained). A fresh (non-
+# existent) file is created with just the requested section.
 _hub_content_replace_section() {
   local file="$1" sid="$2" new="$3"
   [ -n "$file" ] || return 1

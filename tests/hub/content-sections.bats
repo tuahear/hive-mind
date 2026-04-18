@@ -6,7 +6,9 @@
 #   _hub_content_replace_section — rewrite section N
 #   _hub_dedupe_sections       — per-section dedupe
 #
-# Pure library tests. No harvest/fan-out wiring yet.
+# These tests exercise the section helpers directly. Harvest/fan-out
+# wiring through ADAPTER_HUB_MAP selectors is covered separately in
+# tests/hub/harvest-fanout.bats.
 
 REPO_ROOT="$BATS_TEST_DIRNAME/../.."
 HARVEST_FANOUT="$REPO_ROOT/core/hub/harvest-fanout.sh"
@@ -373,6 +375,45 @@ EOF
 
   run _hub_content_read_section "$WORK/f.md" 1
   [ "$output" = 'new s1' ]
+}
+
+@test "replace_section: canonicalizes layout — outside content first, blocks after" {
+  # Pins the contract the docstring describes: replace_section rebuilds
+  # the file with all outside (section-0) content up top and every tagged
+  # block afterwards in the order they originally appeared. The original
+  # physical interleaving of blocks with outside lines is NOT preserved.
+  # If a future refactor starts preserving interleaving, the docstring
+  # must change together with this test.
+  cat > "$WORK/f.md" <<'EOF'
+outside-before
+<!-- hive-mind:section=1 START -->
+one
+<!-- hive-mind:section=1 END -->
+outside-middle
+<!-- hive-mind:section=2 START -->
+two
+<!-- hive-mind:section=2 END -->
+outside-after
+EOF
+  printf 'replaced-two\n' > "$WORK/new.txt"
+  _hub_content_replace_section "$WORK/f.md" 2 "$WORK/new.txt"
+
+  # Every line of outside content must appear before the first block
+  # marker in the rewritten file.
+  local first_marker_line outside_before_line outside_middle_line outside_after_line
+  first_marker_line="$(grep -n 'hive-mind:section=' "$WORK/f.md" | head -1 | cut -d: -f1)"
+  outside_before_line="$(grep -n '^outside-before$' "$WORK/f.md" | cut -d: -f1)"
+  outside_middle_line="$(grep -n '^outside-middle$' "$WORK/f.md" | cut -d: -f1)"
+  outside_after_line="$(grep -n '^outside-after$' "$WORK/f.md" | cut -d: -f1)"
+  [ "$outside_before_line" -lt "$first_marker_line" ]
+  [ "$outside_middle_line" -lt "$first_marker_line" ]
+  [ "$outside_after_line"  -lt "$first_marker_line" ]
+
+  # Block order among themselves is preserved (section 1 before section 2).
+  local s1_line s2_line
+  s1_line="$(grep -n '^<!-- hive-mind:section=1 START -->$' "$WORK/f.md" | cut -d: -f1)"
+  s2_line="$(grep -n '^<!-- hive-mind:section=2 START -->$' "$WORK/f.md" | cut -d: -f1)"
+  [ "$s1_line" -lt "$s2_line" ]
 }
 
 @test "replace_section: round-trip preserves other blocks unchanged" {

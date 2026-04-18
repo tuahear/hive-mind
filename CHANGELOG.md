@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Codex adapter** (`adapters/codex/`) — attaches [OpenAI Codex CLI](https://github.com/openai/codex) to the hub. Syncs both `~/.codex/AGENTS.md` (shared tier) and `~/.codex/AGENTS.override.md` (Codex-scoped override tier) bidirectionally on every sync cycle. Installs SessionStart + Stop hooks via `~/.codex/hooks.json` gated by `[features].codex_hooks` in `~/.codex/config.toml`. Treats `auth.json` as a secret file so it never reaches the hub remote. (issue #11)
+- **Sectioned `content.md` hub format** — a single hub file can carry multiple memory tiers, delimited by `<!-- hive-mind:section=N START/END -->` paired HTML-comment markers. Unlocks multi-file tool surfaces (Codex's AGENTS.md + AGENTS.override.md split) without leaking adapter-specific filenames into the hub.
+- **`ADAPTER_HUB_MAP` section selectors** — bracket syntax on the hub-path side declares which tiers a tool file round-trips: `content.md[0]` (single section, plain), `content.md[0,1]` (multiple sections with markers), `content.md[*]` (all sections currently present — forward-compat for any future tier without an adapter update). Selector-less entries keep their legacy verbatim-copy semantics.
+- **Section id registry** in `docs/contributing.md` for cross-adapter coordination. Section 0 = shared tier (implicit, all adapters); section 1 = codex override layer.
+- Bundled adapter-scoped skills (`hive-mind-claude`, `hive-mind-codex`) so Claude and Codex can coexist on the same hub without overwriting each other's hub skill content.
+
+### Changed
+- Claude Code adapter's `ADAPTER_HUB_MAP` entry for `CLAUDE.md` migrates from the legacy verbatim form to `content.md[*]\tCLAUDE.md`, so Claude sees every tier of the hub's memory and auto-picks-up any new tier a future adapter introduces.
+
+### Fixed
+- **`ADAPTER_DIR` leak across sequential adapter loads in hub sync.** `core/adapter-loader.sh` preserves `ADAPTER_DIR` across its clear step as a caller-override hook, but sync.sh's sequential multi-adapter loops treated adapter N's tool dir as a caller override for adapter N+1's load — so codex (loaded second) was writing its `hooks.json` and `AGENTS.override.md` under `~/.claude/` instead of `~/.codex/`. Fixed by `unset ADAPTER_DIR` at the top of each loop iteration in both harvest + fan-out phases.
+
+### Removed
+- `ADAPTER_MARKER_TARGETS` from the adapter contract. Declared and validated by the loader but never consumed by core — marker extraction runs from `HUB_MARKER_TARGETS` in `core/hub/sync.sh`. Removed from the loader, docs, fixtures, and both production adapters.
+
 ## [0.3.0] - 2026-04-16
 
 ### Added
