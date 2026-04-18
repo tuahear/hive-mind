@@ -13,7 +13,7 @@ You've attached both Claude Code and Codex to the same hub on one machine.
 
 1. You teach Claude Code something useful. It writes to `~/.claude/CLAUDE.md`.
 2. Claude's Stop hook fires → harvest reads `CLAUDE.md` into `~/.hive-mind/content.md` → commit + push.
-3. Still inside that same Stop hook: fan-out rewrites `~/.codex/AGENTS.md` from the updated hub.
+3. Still inside that same Stop hook: fan-out rewrites every tier of Codex's memory — shared content to `~/.codex/AGENTS.md` (section 0) and any Codex-scoped override into `~/.codex/AGENTS.override.md` (section 1).
 4. Next time you open Codex, the lesson is already there.
 
 No manual sync, no re-teaching. Same flow applies to per-project memory and skills. Hook configs and tool permissions stay machine-local — each adapter installs its own hooks during setup, and permissions live in the tool's native config untouched.

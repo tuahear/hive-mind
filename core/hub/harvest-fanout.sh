@@ -156,7 +156,13 @@ _hub_is_filelike() {
 
 _hub_snapshot_path() {
   local tool_dir="$1" rel="$2"
-  local base="${tool_dir##*/}"
+  # Strip trailing slash before extracting the basename — a caller that
+  # passed "/path/to/.codex/" would otherwise yield base="" and collapse
+  # every adapter's snapshots under fanout-snapshots// with cross-adapter
+  # collisions. Matches the `${X%/}` idiom every glob-loop site in this
+  # file already applies.
+  local normalized="${tool_dir%/}"
+  local base="${normalized##*/}"
   printf '%s/.hive-mind-state/fanout-snapshots/%s/%s' \
     "${HIVE_MIND_HUB_DIR:-$HOME/.hive-mind}" "$base" "$rel"
 }
@@ -484,10 +490,25 @@ _hub_content_fanout_to_file() {
   ids="$(_hub_expand_sections "$sel" "$src")"
   count="$(printf '%s\n' "$ids" | awk 'NF' | wc -l | tr -d ' ')"
 
-  # Nothing to fan out (empty src, or wildcard against a file with no
-  # sections at all). Skip rather than creating an empty dst file that
-  # would stomp whatever the tool already had.
-  [ "$count" = "0" ] && return 0
+  # Handle "src exists but expands to zero sections". A missing src
+  # already returned above; for an existing-but-empty src the semantics
+  # split by selector:
+  #   - Wildcard '*': "present but empty" — cross-machine 'clear all
+  #     memory' edits must propagate, so select section 0 and let the
+  #     empty body overwrite dst.
+  #   - Anything else (single non-zero id, explicit CSV): the user asked
+  #     for specific sections that aren't in src; leave dst untouched.
+  if [ "$count" = "0" ]; then
+    case "$sel" in
+      \*)
+        ids="0"
+        count="1"
+        ;;
+      *)
+        return 0
+        ;;
+    esac
+  fi
 
   # Single-id skip-on-absent check: if the requested non-zero section
   # isn't in src, leave dst untouched. Two intentional exceptions:

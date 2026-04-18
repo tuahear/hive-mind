@@ -629,3 +629,58 @@ EOF
   run _hub_content_read_section "$HUB/content.md" 1
   [ "$output" = 'hub codex' ]
 }
+
+# === snapshot path normalization ===========================================
+
+@test "_hub_snapshot_path strips a trailing slash so adapters never collide" {
+  # Regression: _hub_snapshot_path used ${tool_dir##*/} without stripping
+  # a trailing slash first. A caller-override tool_dir like
+  # "/path/to/.codex/" would yield base="" and every adapter's
+  # snapshots would collapse under fanout-snapshots// — silent
+  # cross-adapter collision risk.
+  export HIVE_MIND_HUB_DIR="$HOME/hub-root"
+  run _hub_snapshot_path "/path/to/.codex/" "content.md"
+  [ "$status" -eq 0 ]
+  # Namespace path must reflect the real basename, not an empty segment.
+  [[ "$output" == *"fanout-snapshots/.codex/content.md" ]]
+  [[ "$output" != *"fanout-snapshots//"* ]]
+
+  # No-trailing-slash form matches the same namespace.
+  run _hub_snapshot_path "/path/to/.codex" "content.md"
+  [[ "$output" == *"fanout-snapshots/.codex/content.md" ]]
+}
+
+# === wildcard empty-hub clear propagation =================================
+
+@test "fan-out: [*] on an existing but empty hub clears the tool file" {
+  # Regression: a user on machine A clears CLAUDE.md to empty, which
+  # harvests an empty hub content.md. On machine B the fan-out must
+  # propagate the clear — otherwise B's stale CLAUDE.md survives the
+  # sync cycle and the two machines drift. [*] selector with an empty
+  # hub file (zero sections) must write an empty dst, not skip.
+  : > "$HUB/content.md"
+  printf 'stale content from before the clear\n' > "$TOOL/CLAUDE.md"
+
+  run _hub_content_fanout_to_file "$HUB/content.md" '*' "$TOOL/CLAUDE.md"
+  [ "$status" -eq 0 ]
+
+  # CLAUDE.md exists and is empty (the clear propagated).
+  [ -f "$TOOL/CLAUDE.md" ]
+  [ ! -s "$TOOL/CLAUDE.md" ]
+}
+
+@test "fan-out: explicit single-id selector still skips when section is absent from empty hub" {
+  # The wildcard fix must NOT change non-wildcard semantics. [1] against
+  # an empty hub file still means "section 1 isn't here; leave dst
+  # alone" — otherwise any adapter that targets a specific non-zero
+  # section would start writing empty files whenever the hub is empty.
+  : > "$HUB/content.md"
+  printf 'existing body\n' > "$TOOL/AGENTS.override.md"
+
+  run _hub_content_fanout_to_file "$HUB/content.md" '1' "$TOOL/AGENTS.override.md"
+  [ "$status" -eq 0 ]
+
+  # Tool file untouched — content preserved.
+  run cat "$TOOL/AGENTS.override.md"
+  [ "$output" = "existing body" ]
+}
