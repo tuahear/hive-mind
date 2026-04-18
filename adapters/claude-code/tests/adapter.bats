@@ -387,32 +387,6 @@ EOF
   [[ "$sess_cmd" = *'"$HOME/.hive-mind/hive-mind/core/check-dupes.sh"'* ]]
 }
 
-# === install_hooks preserves user settings ==================================
-
-@test "install_hooks does not add empty permissions.allow when neither side has one" {
-  # Writing permissions.allow=[] into a user's settings.json that had
-  # no permissions block at all is silent drift the user didn't ask
-  # for. The jq merge guards the union behind a check that at least
-  # one side has a non-null allow list.
-  mkdir -p "$ADAPTER_DIR"
-  echo '{"model":"opus"}' > "$ADAPTER_DIR/settings.json"
-
-  adapter_install_hooks
-
-  # The .permissions key should be ABSENT (neither user nor template had one).
-  run jq -e 'has("permissions")' "$ADAPTER_DIR/settings.json"
-  [ "$status" -ne 0 ]
-}
-
-@test "install_hooks preserves user's permissions.allow when present" {
-  mkdir -p "$ADAPTER_DIR"
-  echo '{"permissions":{"allow":["Bash(npm test)"]}}' > "$ADAPTER_DIR/settings.json"
-
-  adapter_install_hooks
-
-  jq -e '.permissions.allow | index("Bash(npm test)")' "$ADAPTER_DIR/settings.json" >/dev/null
-}
-
 @test "install_hooks replaces legacy direct shell hooks and preserves non-command hook entries" {
   mkdir -p "$ADAPTER_DIR"
   cat > "$ADAPTER_DIR/settings.json" <<'SETTINGS'
@@ -475,4 +449,13 @@ SETTINGS
   adapter_install_hooks
 
   [ "$(jq '.hooks.Stop | length' "$ADAPTER_DIR/settings.json")" -gt 0 ]
+}
+
+# === hub mapping ===========================================================
+
+@test "hub mapping keeps Claude hooks and permissions out of ADAPTER_HUB_MAP" {
+  ! printf '%s\n' "$ADAPTER_HUB_MAP" | grep -Fq 'settings.json#hooks'
+  ! printf '%s\n' "$ADAPTER_HUB_MAP" | grep -Fq 'settings.json#permissions.'
+  ! printf '%s\n' "$ADAPTER_HUB_MAP" | grep -Fq 'config/hooks'
+  ! printf '%s\n' "$ADAPTER_HUB_MAP" | grep -Fq 'config/permissions'
 }

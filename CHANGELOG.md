@@ -16,12 +16,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Claude Code adapter's `ADAPTER_HUB_MAP` entry for `CLAUDE.md` migrates from the legacy verbatim form to `content.md[*]\tCLAUDE.md`, so Claude sees every tier of the hub's memory and auto-picks-up any new tier a future adapter introduces.
+- Claude Code no longer round-trips `settings.json` hooks or permissions through the shared hub. `CLAUDE.md`, project memory, and skills stay synced; hook installation and Claude permissions are now machine-local only.
 
 ### Fixed
 - **Codex and Claude hook configs now enter through a native launcher instead of direct shell commands in their tool config.** `setup.sh` builds a small `hivemind-hook` binary and the adapters render their hook config against that single executable, which then shells into the existing bash scripts internally. This keeps the installed hook command surface down to one native entrypoint instead of fragile direct-bash or inline-shell invocations.
 - **`ADAPTER_DIR` leak across sequential adapter loads in hub sync.** `core/adapter-loader.sh` preserves `ADAPTER_DIR` across its clear step as a caller-override hook, but sync.sh's sequential multi-adapter loops treated adapter N's tool dir as a caller override for adapter N+1's load - so codex (loaded second) was writing its `hooks.json` and `AGENTS.override.md` under `~/.claude/` instead of `~/.codex/`. Fixed by `unset ADAPTER_DIR` at the top of each loop iteration in both harvest + fan-out phases.
 
 ### Removed
+- `config/hooks/**` and `config/permissions/**` from the documented hub schema and hub whitelist. Those paths are no longer a source of truth for shared state.
 - `ADAPTER_MARKER_TARGETS` from the adapter contract. Declared and validated by the loader but never consumed by core — marker extraction runs from `HUB_MARKER_TARGETS` in `core/hub/sync.sh`. Removed from the loader, docs, fixtures, and both production adapters.
 
 ## [0.3.0] - 2026-04-16

@@ -17,10 +17,10 @@ setup() {
   mkdir -p "$TOOL" "$HUB"
   export ADAPTER_LOG_PATH="$HOME/hub.log"
 
-  # Claude-shaped hub map (the only adapter shipping one today). The
-  # helpers are adapter-agnostic; using Claude's here keeps the test
-  # shape identical to what production hits.
-  export ADAPTER_HUB_MAP=$'content.md\tCLAUDE.md\nconfig/hooks\tsettings.json#hooks\nconfig/permissions/allow.txt\tsettings.json#permissions.allow'
+  # Claude-shaped content/project rules. The helpers are adapter-agnostic;
+  # using Claude's current production map keeps the test shape aligned
+  # with a real adapter.
+  export ADAPTER_HUB_MAP=$'content.md\tCLAUDE.md'
   export ADAPTER_PROJECT_CONTENT_RULES=$'content.md\tmemory/MEMORY.md\ncontent.md\tMEMORY.md\nmemory\tmemory'
   export ADAPTER_SKILL_ROOT="$TOOL/skills"
 
@@ -185,137 +185,6 @@ teardown() {
 
   [ -f "$TOOL/skills/keep/SKILL.md" ]
   [ ! -d "$TOOL/skills/stale" ]
-}
-
-# === JSON subkey — text list (permissions.allow) ===========================
-
-@test "harvest extracts permissions.allow to a newline-per-entry text file" {
-  cat > "$TOOL/settings.json" <<'EOF'
-{"permissions":{"allow":["Bash(npm *)","Edit","Read"]}}
-EOF
-  hub_harvest "$TOOL" "$HUB"
-  [ -f "$HUB/config/permissions/allow.txt" ]
-  run cat "$HUB/config/permissions/allow.txt"
-  [[ "$output" == *'Bash(npm *)'* ]]
-  [[ "$output" == *'Edit'* ]]
-  [[ "$output" == *'Read'* ]]
-}
-
-@test "fanout writes hub allow.txt back into settings.json .permissions.allow" {
-  mkdir -p "$HUB/config/permissions"
-  printf 'Bash(git *)\nRead\n' > "$HUB/config/permissions/allow.txt"
-  echo '{"model":"opus"}' > "$TOOL/settings.json"
-
-  hub_fan_out "$HUB" "$TOOL"
-
-  # Array reconstructed with all entries, model preserved.
-  [ "$(jq -r '.model' "$TOOL/settings.json")" = "opus" ]
-  jq -e '.permissions.allow | index("Bash(git *)")' "$TOOL/settings.json" >/dev/null
-  jq -e '.permissions.allow | index("Read")' "$TOOL/settings.json" >/dev/null
-  [ "$(jq '.permissions.allow | length' "$TOOL/settings.json")" = "2" ]
-}
-
-# === JSON subkey — hooks directory split ===================================
-
-@test "harvest splits settings.json#hooks into per-event/<slug>.json files" {
-  cat > "$TOOL/settings.json" <<'EOF'
-{
-  "hooks": {
-    "Stop": [
-      { "hooks": [ { "type": "command", "command": "$HOME/.hive-mind/bin/sync" } ] }
-    ],
-    "PostToolUse": [
-      { "matcher": "Edit|Write", "hooks": [ { "type": "command", "command": "echo" } ] }
-    ]
-  }
-}
-EOF
-  hub_harvest "$TOOL" "$HUB"
-
-  [ -d "$HUB/config/hooks/Stop" ]
-  [ -d "$HUB/config/hooks/PostToolUse" ]
-  # One wrapper per event → one file per event.
-  [ "$(find "$HUB/config/hooks/Stop" -name '*.json' | wc -l | tr -d ' ')" = "1" ]
-  [ "$(find "$HUB/config/hooks/PostToolUse" -name '*.json' | wc -l | tr -d ' ')" = "1" ]
-  # Stop entry's command survived verbatim.
-  jq -e '.hooks[0].command == "$HOME/.hive-mind/bin/sync"' "$HUB/config/hooks/Stop"/*.json >/dev/null
-  # Filenames are human-readable command slugs (not content hashes).
-  [ -f "$HUB/config/hooks/Stop/sync.json" ]
-  [ -f "$HUB/config/hooks/PostToolUse/echo.json" ]
-}
-
-@test "harvest filters out hooks whose command references a machine-local path" {
-  cat > "$TOOL/settings.json" <<'EOF'
-{
-  "hooks": {
-    "SessionStart": [
-      { "hooks": [ { "type": "command", "command": "/Applications/LocalTool.app/foo" } ] },
-      { "hooks": [ { "type": "command", "command": "echo hello" } ] }
-    ]
-  }
-}
-EOF
-  hub_harvest "$TOOL" "$HUB"
-
-  # Only the non-machine-local entry should be harvested.
-  [ "$(find "$HUB/config/hooks/SessionStart" -name '*.json' | wc -l | tr -d ' ')" = "1" ]
-  grep -q 'echo hello' "$HUB/config/hooks/SessionStart"/*.json
-  # Skip was logged.
-  grep -Fq 'skipped machine-local hook' "$ADAPTER_LOG_PATH"
-}
-
-@test "fanout rebuilds settings.json .hooks from hub and preserves tool-side machine-local entries" {
-  # Hub has one Stop entry.
-  mkdir -p "$HUB/config/hooks/Stop"
-  printf '{"hooks":[{"type":"command","command":"$HOME/.hive-mind/bin/sync"}]}\n' \
-    > "$HUB/config/hooks/Stop/sync.json"
-
-  # Tool already has a machine-local Stop entry (fan-out must keep it).
-  cat > "$TOOL/settings.json" <<'EOF'
-{
-  "hooks": {
-    "Stop": [
-      { "hooks": [ { "type": "command", "command": "/Applications/LocalApp.app/notify" } ] }
-    ]
-  },
-  "ui": { "theme": "dark" }
-}
-EOF
-
-  hub_fan_out "$HUB" "$TOOL"
-
-  # Both entries present.
-  [ "$(jq '.hooks.Stop | length' "$TOOL/settings.json")" = "2" ]
-  # Machine-local one retained.
-  jq -e '.hooks.Stop | map(.hooks[0].command) | index("/Applications/LocalApp.app/notify")' "$TOOL/settings.json" >/dev/null
-  # Hub one added.
-  jq -e '.hooks.Stop | map(.hooks[0].command) | index("$HOME/.hive-mind/bin/sync")' "$TOOL/settings.json" >/dev/null
-  # Fields outside the map untouched.
-  [ "$(jq -r '.ui.theme' "$TOOL/settings.json")" = "dark" ]
-}
-
-@test "harvest rewrites stale hub hooks for an event when the tool changes" {
-  # First pass: one Stop entry.
-  cat > "$TOOL/settings.json" <<'EOF'
-{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"cmd-one"}]}]}}
-EOF
-  hub_harvest "$TOOL" "$HUB"
-  first_id="$(basename "$(find "$HUB/config/hooks/Stop" -name '*.json' | head -1)" .json)"
-  [ -n "$first_id" ]
-
-  # User removes the first entry, adds a different one. Harvest must
-  # nuke the old file under Stop/ and write the new one — otherwise
-  # the hub would accumulate ghost hooks forever.
-  cat > "$TOOL/settings.json" <<'EOF'
-{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"cmd-two"}]}]}}
-EOF
-  hub_harvest "$TOOL" "$HUB"
-
-  [ "$(find "$HUB/config/hooks/Stop" -name '*.json' | wc -l | tr -d ' ')" = "1" ]
-  [ ! -f "$HUB/config/hooks/Stop/$first_id.json" ]
-  grep -q 'cmd-two' "$HUB/config/hooks/Stop"/*.json
-  run grep -q 'cmd-one' "$HUB/config/hooks/Stop"/*.json
-  [ "$status" -ne 0 ]
 }
 
 # === per-project content ===================================================

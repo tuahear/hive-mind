@@ -62,7 +62,7 @@ ADAPTER_SKILL_ROOT="$ADAPTER_DIR/skills"
 ADAPTER_SKILL_FORMAT="markdown-frontmatter"
 
 # --- E. Settings merge -----------------------------------------------------
-ADAPTER_SETTINGS_MERGE_BINDINGS=$'hooks.json jsonmerge'
+ADAPTER_SETTINGS_MERGE_BINDINGS=""
 
 # --- F. User education -----------------------------------------------------
 adapter_activation_instructions() {
@@ -77,8 +77,7 @@ adapter_disable_instructions() {
 ADAPTER_FALLBACK_STRATEGY=""
 
 # --- I. Hub mapping (v0.3.0 hub topology) ---------------------------------
-ADAPTER_HUB_MAP=$'content.md\tMEMORY.md
-config/hooks\thooks.json#hooks'
+ADAPTER_HUB_MAP=$'content.md\tMEMORY.md'
 ADAPTER_PROJECT_CONTENT_RULES=$'content.md\tmemory/MEMORY.md
 content.md\tMEMORY.md
 memory\tmemory'

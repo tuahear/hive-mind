@@ -11,7 +11,7 @@ When you run the installer (the default `ADAPTER=claude-code` is assumed if you 
 3. **Seeds bundled skills** — including the `hive-mind` skill that teaches the agent to embed commit markers in memory edits — into `~/.hive-mind/skills/`.
 4. **Builds or refreshes** the native `hivemind-hook` launcher under `~/.hive-mind/bin/`.
 5. **Runs `adapter_migrate`** to bring pre-0.3 installs forward to the hub topology.
-6. **Registers three hooks** in `~/.claude/settings.json` (details below), pointing them at the launcher-backed entrypoint.
+6. **Registers three local hooks** in `~/.claude/settings.json` (details below), pointing them at the launcher-backed entrypoint.
 
 ## Hooks registered in `~/.claude/settings.json`
 
@@ -28,12 +28,12 @@ The adapter declares two mapping strings for the hub root and per-project conten
 | Hub path | Claude-side path |
 |---|---|
 | `content.md` | `~/.claude/CLAUDE.md` |
-| `config/hooks` | `~/.claude/settings.json#hooks` |
-| `config/permissions/{allow,deny,ask}.txt` | `~/.claude/settings.json#permissions.{allow,deny,ask}` |
 | `projects/<id>/content.md` | `~/.claude/projects/<encoded-cwd>/MEMORY.md` |
 | `projects/<id>/memory/` | `~/.claude/projects/<encoded-cwd>/memory/` |
 
 Skills are synced separately — not via `ADAPTER_HUB_MAP`. The engine walks `~/.claude/skills/<name>/` ↔ `~/.hive-mind/skills/<name>/` directly, renaming each skill's main content file (`SKILL.md` ↔ `content.md`); other files in the skill dir pass through unchanged.
+
+`~/.claude/settings.json` is intentionally local-only. hive-mind manages only its own hook entries there during install/upgrade; Claude permissions remain machine-local and do not round-trip through the hub.
 
 Lowercase filenames on the hub side signal "hive-mind canonical".
 

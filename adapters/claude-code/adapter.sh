@@ -127,15 +127,6 @@ adapter_install_hooks() {
                   then empty else $newEntry end
               ))
           )}) | add)
-    # Only union permissions.allow when at least one side actually has
-    # an allow list -- otherwise we would write an empty permissions.allow
-    # array into a user settings.json that previously had no permissions
-    # block at all (drift the user did not ask for).
-    | if ($user.permissions.allow // $new.permissions.allow) != null then
-        .permissions.allow = (
-          (($user.permissions.allow // []) + ($new.permissions.allow // [])) | unique
-        )
-      else . end
   ' "$stripped" "$rendered" > "$tmp" 2>/dev/null; then
     mv "$tmp" "$settings"
     rm -f "$rendered" "$stripped"
@@ -176,15 +167,14 @@ ADAPTER_SKILL_ROOT="${ADAPTER_DIR}/skills"
 ADAPTER_SKILL_FORMAT="markdown-frontmatter"
 
 # --- E. Settings merge -----------------------------------------------------
-ADAPTER_SETTINGS_MERGE_BINDINGS=$'settings.json jsonmerge'
+ADAPTER_SETTINGS_MERGE_BINDINGS=""
 
 # Optional: per-driver env vars to inject when registering merge drivers
 # in the local .git/config. Newline-separated lines of the form
 # "<driver>:<KEY=val KEY2=val2>". setup.sh prepends the env-prefix to
 # the registered driver command. Example for a TOML adapter (Codex):
 #   ADAPTER_MERGE_DRIVER_ENV=$'tomlmerge:TOMLMERGE_UNION_KEYS=permissions.allow,permissions.deny'
-# Claude Code uses jsonmerge which has its union list baked into the
-# script, so no env is needed here.
+# Claude keeps settings.json local-only, so no merge-driver env is needed.
 ADAPTER_MERGE_DRIVER_ENV=""
 
 # --- F. User education -----------------------------------------------------
@@ -223,11 +213,10 @@ ADAPTER_FALLBACK_STRATEGY=""  # not needed — Claude Code has hooks
 # on the next cycle. Content outside any marker block defaults to section
 # 0, which makes blind EOF-appends land in the shared tier without needing
 # skill discipline.
-ADAPTER_HUB_MAP=$'content.md[*]\tCLAUDE.md
-config/hooks\tsettings.json#hooks
-config/permissions/allow.txt\tsettings.json#permissions.allow
-config/permissions/deny.txt\tsettings.json#permissions.deny
-config/permissions/ask.txt\tsettings.json#permissions.ask'
+#
+# Claude's settings.json stays machine-local: adapter_install_hooks manages
+# hive-mind's hook entries directly and user permissions remain local state.
+ADAPTER_HUB_MAP=$'content.md[*]\tCLAUDE.md'
 
 # Rules for hub's `projects/<id>/` subtree ↔ Claude's per-project
 # layout. Hub mirrors the tool's memory/ subdir as-is; only the main

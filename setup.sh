@@ -378,9 +378,10 @@ source "$HIVE_MIND_SRC/core/hub/harvest-fanout.sh"
 # settings.json get rewritten to hub-topology paths.
 declare -f adapter_migrate >/dev/null 2>&1 && adapter_migrate "$PREV_HIVE_MIND_VERSION"
 
-# Install hooks BEFORE harvest — an existing pre-hub install may have
-# hooks pointing at old paths; adapter_install_hooks merges the current
-# template on top, giving harvest the new commands to capture.
+# Install hooks BEFORE sync fan-out/harvest — an existing install may
+# have hooks pointing at old paths, or be missing newly-managed entries.
+# adapter_install_hooks refreshes the adapter's local hook config in
+# place without making that file part of the shared hub schema.
 adapter_install_hooks
 
 # Pull remote content FIRST — the hub may already have content from

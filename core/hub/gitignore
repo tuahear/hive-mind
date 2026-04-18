@@ -30,12 +30,8 @@
 !/skills/
 !/skills/**
 
-# Canonical config: hook entries, permission lists, env vars.
+# Canonical config: reserved env vars.
 !/config/
-!/config/hooks/
-!/config/hooks/**
-!/config/permissions/
-!/config/permissions/**
 !/config/env.sh
 
 # Mac clutter.
