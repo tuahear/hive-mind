@@ -922,6 +922,13 @@ hub_harvest() {
       sel="${sec_pair#*$'\t'}"
       _hub_content_harvest_from_file \
         "$tool_dir/$tool_spec" "$sel" "$hub_dir/$hub_file"
+    elif case "$hub_rel" in *'['*']') true ;; *) false ;; esac; then
+      # Bracket-bearing hub path that failed selector validation —
+      # e.g. `content.md[0,]` with a trailing-comma typo. Without this
+      # guard the entry would fall through to _hub_sync_file and create
+      # a literal file named `content.md[0,]` in the hub, silently
+      # masking the typo. Log + skip instead.
+      _hub_log "harvest: skipping entry with malformed section selector: $hub_rel"
     else
       local src="$tool_dir/$tool_spec"
       local dst="$hub_dir/$hub_rel"
@@ -1002,6 +1009,12 @@ hub_fan_out() {
       sel="${sec_pair#*$'\t'}"
       _hub_content_fanout_to_file \
         "$hub_dir/$hub_file" "$sel" "$tool_dir/$tool_spec"
+    elif case "$hub_rel" in *'['*']') true ;; *) false ;; esac; then
+      # Same malformed-selector guard as the harvest phase — don't let
+      # a bracket-bearing entry that failed validation reach the
+      # plain-file path, where it would write to a literal
+      # `content.md[0,]`-shaped filename in the tool dir.
+      _hub_log "fan-out: skipping entry with malformed section selector: $hub_rel"
     else
       local src="$hub_dir/$hub_rel"
       local dst="$tool_dir/$tool_spec"

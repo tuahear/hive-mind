@@ -549,6 +549,38 @@ EOF
   grep -Fq 'dangling (no END)' "$HUB/content.md"
 }
 
+@test "harvest: malformed section selector in hub-map is skipped, no literal-bracket file created" {
+  # Grammar tightening in _hub_split_sections is only half the story —
+  # the dispatch cascade in hub_harvest also needs a guard so a
+  # bracket-bearing hub path that failed validation doesn't fall through
+  # to _hub_sync_file and create a file literally named `content.md[0,]`
+  # in the hub. Without the guard, a typo in ADAPTER_HUB_MAP is silently
+  # masked by an unintended file.
+  export ADAPTER_HUB_MAP=$'content.md[0,]\tAGENTS.md'
+  printf 'content that should not land under a bracket-named file\n' > "$TOOL/AGENTS.md"
+
+  hub_harvest "$TOOL" "$HUB"
+
+  # No file with a literal bracket in its name was written to the hub.
+  [ ! -e "$HUB/content.md[0,]" ]
+  # And the valid canonical target also wasn't populated (the malformed
+  # entry is skipped as a whole, not silently retargeted).
+  [ ! -f "$HUB/content.md" ]
+}
+
+@test "fan-out: malformed section selector in hub-map is skipped, no literal-bracket file created" {
+  # Symmetric regression guard on the fan-out side.
+  export ADAPTER_HUB_MAP=$'content.md[,0]\tAGENTS.md'
+  printf 'hub content\n' > "$HUB/content.md"
+
+  hub_fan_out "$HUB" "$TOOL"
+
+  # Tool dir must not have received either a literal-bracket-named file
+  # or the underlying target — the malformed entry is skipped outright.
+  [ ! -e "$TOOL/content.md[,0]" ]
+  [ ! -f "$TOOL/AGENTS.md" ]
+}
+
 @test "harvest: damaged markers in multi-section tool file are skipped, hub preserved" {
   export ADAPTER_HUB_MAP=$'content.md[0,1]\tCLAUDE.md'
   # Seed hub with a clean two-section file.

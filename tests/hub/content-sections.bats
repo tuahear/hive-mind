@@ -72,11 +72,14 @@ teardown() {
 }
 
 @test "split_sections rejects malformed CSV selectors (empty elements)" {
-  # Structural typos in a CSV selector must fail fast at adapter-load
-  # time rather than being silently normalized by the downstream
-  # `tr ',' '\n' | awk 'NF'` pipeline in _hub_expand_sections (which
-  # would accept all of these as "just 0,1"). Cover every placement of
-  # empty elements — leading, trailing, doubled, standalone comma.
+  # Structural typos in a CSV selector must be rejected by _hub_split_sections
+  # (which is called during harvest/fan-out dispatch), rather than being
+  # silently normalized by the downstream `tr ',' '\n' | awk 'NF'`
+  # pipeline in _hub_expand_sections (which would accept all of these
+  # as "just 0,1"). Cover every placement of empty elements — leading,
+  # trailing, doubled, standalone comma. The dispatch-level malformed-
+  # selector guard in hub_harvest/hub_fan_out then logs + skips rather
+  # than falling through to the plain-file path.
   local bad
   for bad in 'content.md[0,]' 'content.md[,0]' 'content.md[0,,1]' 'content.md[,]' 'content.md[,,]'; do
     run _hub_split_sections "$bad"
