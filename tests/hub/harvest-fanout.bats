@@ -651,6 +651,72 @@ EOF
   [ ! -s "$TOOL/AGENTS.override.md" ]
 }
 
+@test "fan-out: [0] on blocks-only hub writes empty dst, does not skip" {
+  # Section 0 is the default bucket — 'absent' from present_sections
+  # only means 'empty right now', not 'doesn't exist as a concept'.
+  # When the hub has only non-zero blocks (shared tier legitimately
+  # empty on this machine), content.md[0]\tAGENTS.md must write an
+  # empty AGENTS.md, not skip and leave stale content behind.
+  export ADAPTER_HUB_MAP=$'content.md[0]\tAGENTS.md'
+  cat > "$HUB/content.md" <<'EOF'
+<!-- hive-mind:section=1 START -->
+codex-scoped content only
+<!-- hive-mind:section=1 END -->
+EOF
+  printf 'stale shared content that must be cleared\n' > "$TOOL/AGENTS.md"
+
+  hub_fan_out "$HUB" "$TOOL"
+
+  [ -f "$TOOL/AGENTS.md" ]
+  [ ! -s "$TOOL/AGENTS.md" ]
+}
+
+@test "fan-out: [*] with blocks-only hub keeps section markers in tool file" {
+  # Wildcard intent is 'round-trip every tier'. When [*] expands to a
+  # single non-zero id, the tool file MUST keep the section markers so
+  # the next harvest can route the content back to that tier. Writing
+  # plain content would make the next harvest classify it as section 0
+  # (markerless → shared tier) — a silent privacy downgrade.
+  export ADAPTER_HUB_MAP=$'content.md[*]\tCLAUDE.md'
+  cat > "$HUB/content.md" <<'EOF'
+<!-- hive-mind:section=1 START -->
+codex-only content
+<!-- hive-mind:section=1 END -->
+EOF
+
+  hub_fan_out "$HUB" "$TOOL"
+
+  [ -f "$TOOL/CLAUDE.md" ]
+  grep -Fq '<!-- hive-mind:section=1 START -->' "$TOOL/CLAUDE.md"
+  grep -Fq 'codex-only content' "$TOOL/CLAUDE.md"
+  grep -Fq '<!-- hive-mind:section=1 END -->' "$TOOL/CLAUDE.md"
+}
+
+@test "fan-out+harvest round-trip: [*] on blocks-only hub preserves section 1 through a full cycle" {
+  # End-to-end guard against the privacy downgrade: if fan-out strips
+  # section markers for a wildcard-single-non-zero case, the next
+  # harvest reclassifies the content as section 0 and codex-only
+  # content starts leaking into the shared tier after just one cycle.
+  export ADAPTER_HUB_MAP=$'content.md[*]\tCLAUDE.md'
+  cat > "$HUB/content.md" <<'EOF'
+<!-- hive-mind:section=1 START -->
+codex-only content
+<!-- hive-mind:section=1 END -->
+EOF
+
+  hub_fan_out "$HUB" "$TOOL"
+  # Harvest back without modifying the tool file — simulates a sync
+  # cycle where the agent didn't change CLAUDE.md at all.
+  hub_harvest "$TOOL" "$HUB"
+
+  # Section 1 still holds the codex-only content; section 0 is still
+  # empty (no leakage into the shared tier).
+  run _hub_content_read_section "$HUB/content.md" 1
+  [ "$output" = 'codex-only content' ]
+  run _hub_content_read_section "$HUB/content.md" 0
+  [ -z "$output" ]
+}
+
 @test "fan-out: damaged markers in hub content.md are skipped for marker-dependent selectors" {
   # Symmetric with harvest-side marker validation. Fan-out with a
   # multi-id or wildcard selector parses markers; if the hub has damage,

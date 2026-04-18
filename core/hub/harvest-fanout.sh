@@ -442,12 +442,17 @@ _hub_content_fanout_to_file() {
   # would stomp whatever the tool already had.
   [ "$count" = "0" ] && return 0
 
-  # Single-id selector: if that id is not present in src, skip so we
-  # don't overwrite the tool's file with an empty one. "Present but
-  # empty body" (START + END with nothing between) still counts as
-  # present — _hub_content_present_sections reports it — and that case
-  # legitimately writes an empty dst.
-  if [ "$count" = "1" ] \
+  # Single-id skip-on-absent check: if the requested non-zero section
+  # isn't in src, leave dst untouched. Two intentional exceptions:
+  # - Section 0 is the default bucket (everything outside any block)
+  #   and is always "present as a concept" when the hub file exists —
+  #   _hub_content_present_sections only reports 0 when outside content
+  #   or markerless content exists, so a blocks-only hub legitimately
+  #   wants to write an empty dst to clear the shared tier.
+  # - "Present but empty body" (START + END with nothing between) still
+  #   counts as present via present_sections, so that case writes an
+  #   empty dst — distinct from true absence.
+  if [ "$count" = "1" ] && [ "$ids" != "0" ] \
      && ! _hub_content_present_sections "$src" | grep -Fxq "$ids"; then
     _hub_log "fan-out: skipping $dst (section $ids absent from $src)"
     return 0
@@ -458,7 +463,23 @@ _hub_content_fanout_to_file() {
   tmp="$(mktemp)"
 
   if [ "$count" = "1" ]; then
-    _hub_content_read_section "$src" "$ids" > "$tmp"
+    # Wildcard intent: when sel='*' expands to a single non-zero id (the
+    # hub is blocks-only), the tool file must keep the section markers
+    # so the next harvest cycle round-trips the content back to that
+    # section. Without markers, the next harvest would reclassify the
+    # tool-side content as section 0 (markerless → shared tier) — a
+    # silent privacy downgrade. Explicit single-id selectors (like [1])
+    # still want plain output — that's the whole point of selecting one
+    # specific tier as the tool's surface.
+    if [ "$sel" = '*' ] && [ "$ids" != "0" ]; then
+      {
+        printf '<!-- hive-mind:section=%s START -->\n' "$ids"
+        _hub_content_read_section "$src" "$ids"
+        printf '<!-- hive-mind:section=%s END -->\n' "$ids"
+      } > "$tmp"
+    else
+      _hub_content_read_section "$src" "$ids" > "$tmp"
+    fi
   else
     {
       local id
@@ -515,7 +536,23 @@ _hub_content_harvest_from_file() {
     return 0
   fi
   if [ "$count" = "1" ]; then
-    _hub_content_replace_section "$dst" "$ids" "$src"
+    # Symmetric with fan-out's wildcard-single-non-zero branch: fan-out
+    # wraps the section body in START/END markers so the tool file
+    # round-trips cleanly. Harvest must parse those markers back out —
+    # passing the whole tool file through _hub_content_replace_section
+    # would nest the markers inside the hub's section body and leak
+    # stray END lines into section 0 on the next read.
+    # Explicit single-id selectors like [1] take the plain whole-file
+    # path — the adapter declared that tier as its sole surface.
+    if [ "$sel" = '*' ] && [ "$ids" != "0" ]; then
+      local tmp_body
+      tmp_body="$(mktemp)"
+      _hub_content_read_section "$src" "$ids" > "$tmp_body"
+      _hub_content_replace_section "$dst" "$ids" "$tmp_body"
+      rm -f "$tmp_body"
+    else
+      _hub_content_replace_section "$dst" "$ids" "$src"
+    fi
     return 0
   fi
 
