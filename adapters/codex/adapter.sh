@@ -422,14 +422,14 @@ ADAPTER_FALLBACK_STRATEGY=""
 # for AGENTS.md (shared across every adapter), section 1 for the Codex-
 # scoped override layer (see docs/contributing.md for the section registry).
 #
-# NOTE: hooks.json is deliberately NOT in ADAPTER_HUB_MAP. The hub's
-# `config/hooks/` bucket is shared across every adapter that maps into
-# it, which means fan-out would push Claude's Bash-syntax hook commands
-# (PostToolUse, Notification, PermissionRequest, ...) into Codex's
-# hooks.json on every sync. On Windows, Codex executes those commands
-# under PowerShell 5.1, which chokes on `&&`, `||`, `$(...)`. Codex
-# manages its own hooks.json locally via adapter_install_hooks instead -
-# deterministic across machines, no cross-shell contamination.
+# NOTE: hooks.json is deliberately NOT in ADAPTER_HUB_MAP. Hook configs
+# are intentionally local-only across all adapters: shells diverge
+# across providers and platforms (Codex runs hook commands under
+# PowerShell 5.1 on Windows, which chokes on Bash syntax like `&&`,
+# `||`, `$(...)`), so round-tripping hook entries through the shared
+# hub would invite cross-shell contamination. Codex manages its own
+# hooks.json locally via adapter_install_hooks — deterministic across
+# machines, no shared-bucket entanglement.
 ADAPTER_HUB_MAP=$'content.md[0]\tAGENTS.md
 content.md[1]\tAGENTS.override.md'
 ADAPTER_PROJECT_CONTENT_RULES=""

@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 - `config/hooks/**` and `config/permissions/**` from the documented hub schema and hub whitelist. Those paths are no longer a source of truth for shared state.
 - `ADAPTER_MARKER_TARGETS` from the adapter contract. Declared and validated by the loader but never consumed by core — marker extraction runs from `HUB_MARKER_TARGETS` in `core/hub/sync.sh`. Removed from the loader, docs, fixtures, and both production adapters.
+- Claude Code adapter's `adapter_migrate` body and its dedicated test suite (including `tests/integration/claude-migration.bats`). hive-mind is pre-release with no known users carrying legacy settings.json shapes, so the v0.1/v0.2 → v0.3 hook-path rewriter has no audience. The `adapter_migrate` contract hook (and `PREV_HIVE_MIND_VERSION` plumbing in `setup.sh`) stays so future adapters can opt in to cross-version migrations.
 
 ## [0.3.0] - 2026-04-16
 

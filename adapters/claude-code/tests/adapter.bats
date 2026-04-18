@@ -211,85 +211,6 @@ teardown() {
   head -1 "$skill" | grep -q '^---$'
 }
 
-# === Migration =============================================================
-
-@test "adapter_migrate rewrites old scripts/ and core/ paths to the hub topology" {
-  mkdir -p "$ADAPTER_DIR"
-  cat > "$ADAPTER_DIR/settings.json" <<'SETTINGS'
-{
-  "hooks": {
-    "Stop": [{"hooks": [{"command": "~/.claude/hive-mind/scripts/sync.sh"}]}],
-    "SessionStart": [{"hooks": [{"command": "cd ~/.claude && { ~/.claude/hive-mind/scripts/check-dupes.sh; }"}]}]
-  }
-}
-SETTINGS
-
-  adapter_migrate "0.1.0"
-
-  # Neither the old scripts/ nor the 0.2 per-adapter core/ form may survive.
-  run grep 'hive-mind/scripts/' "$ADAPTER_DIR/settings.json"
-  [ "$status" -ne 0 ]
-  run grep '\.claude/hive-mind/core/sync\.sh' "$ADAPTER_DIR/settings.json"
-  [ "$status" -ne 0 ]
-  # Stop promoted to the hub entry point.
-  grep -q '\.hive-mind/bin/sync' "$ADAPTER_DIR/settings.json"
-  # Helper-script hooks (SessionStart's check-dupes) relocated under the hub.
-  grep -q '\.hive-mind/hive-mind/core/check-dupes\.sh' "$ADAPTER_DIR/settings.json"
-}
-
-@test "adapter_migrate promotes existing hub-topology SessionStart commands to include bin/sync" {
-  # Regression: a v0.3.0-alpha install (say, an early adopter's
-  # machine from before this commit landed) already has hub-topology
-  # paths for SessionStart — migrate's sed rules no longer fire on
-  # them. But the command lacks the bin/sync prefix the README now
-  # promises, so a new session on that machine wouldn't pull fresh
-  # memory. The jq post-pass in adapter_migrate targets exactly
-  # this form: SessionStart command references hub check-dupes but
-  # not bin/sync, so it needs the bin/sync prefix added.
-  mkdir -p "$ADAPTER_DIR"
-  cat > "$ADAPTER_DIR/settings.json" <<'EOF'
-{
-  "hooks": {
-    "SessionStart": [{"hooks": [{"type":"command","command":"cd \"$HOME/.claude\" && \"$HOME/.hive-mind/hive-mind/core/check-dupes.sh\" || true","timeout":10}]}],
-    "Stop": [{"hooks": [{"type":"command","command":"\"$HOME/.hive-mind/bin/sync\""}]}]
-  }
-}
-EOF
-
-  adapter_migrate "0.3.0"
-
-  # After migrate, SessionStart command now runs bin/sync AND still runs check-dupes,
-  # with bin/sync first.
-  cmd="$(jq -r '.hooks.SessionStart[0].hooks[0].command' "$ADAPTER_DIR/settings.json")"
-  [[ "$cmd" == *'.hive-mind/bin/sync'* ]]
-  [[ "$cmd" == *'hive-mind/core/check-dupes.sh'* ]]
-  # Timeout bumped from 10 to 30 (sync + check-dupes needs more headroom).
-  timeout="$(jq -r '.hooks.SessionStart[0].hooks[0].timeout' "$ADAPTER_DIR/settings.json")"
-  [ "$timeout" = "30" ]
-
-  # Stop hook unchanged (no promotion needed, already has bin/sync).
-  stop_cmd="$(jq -r '.hooks.Stop[0].hooks[0].command' "$ADAPTER_DIR/settings.json")"
-  [ "$stop_cmd" = '"$HOME/.hive-mind/bin/sync"' ]
-}
-
-@test "adapter_migrate is idempotent on the hub-topology form" {
-  mkdir -p "$ADAPTER_DIR"
-  cat > "$ADAPTER_DIR/settings.json" <<'SETTINGS'
-{
-  "hooks": {
-    "Stop": [{"hooks": [{"command": "\"$HOME/.hive-mind/bin/sync\""}]}]
-  }
-}
-SETTINGS
-
-  local before
-  before="$(cat "$ADAPTER_DIR/settings.json")"
-
-  adapter_migrate "0.3.0"
-
-  [ "$(cat "$ADAPTER_DIR/settings.json")" = "$before" ]
-}
-
 # === install_hooks =========================================================
 
 @test "install_hooks creates settings.json with hook entries" {
@@ -356,35 +277,6 @@ SETTINGS
   # User's model key still present.
   [ -f "$ADAPTER_DIR/settings.json" ]
   [ "$(jq -r '.model' "$ADAPTER_DIR/settings.json")" = "opus" ]
-}
-
-# === hook command strings are space-safe ===================================
-
-@test "adapter_migrate upgrades unquoted tilde form to hub-topology paths" {
-  # An existing install may carry the earlier unquoted-tilde form in
-  # settings.json. Migration must rewrite both the Stop hook command
-  # (now the hub's bin/sync) AND the SessionStart cd+chain (helpers
-  # now live under the hub) to the quoted-\$HOME form so users on
-  # spaces-in-home-dir machines get fixed on the next setup.sh run,
-  # not just new installs.
-  mkdir -p "$ADAPTER_DIR"
-  cat > "$ADAPTER_DIR/settings.json" <<'EOF'
-{
-  "hooks": {
-    "SessionStart": [{"hooks": [{"command": "cd ~/.claude && { ~/.claude/hive-mind/core/check-dupes.sh; }"}]}],
-    "Stop": [{"hooks": [{"command": "~/.claude/hive-mind/core/sync.sh"}]}]
-  }
-}
-EOF
-
-  adapter_migrate "0.1.0"
-
-  stop_cmd="$(jq -r '.hooks.Stop[0].hooks[0].command' "$ADAPTER_DIR/settings.json")"
-  [ "$stop_cmd" = '"$HOME/.hive-mind/bin/sync"' ]
-
-  sess_cmd="$(jq -r '.hooks.SessionStart[0].hooks[0].command' "$ADAPTER_DIR/settings.json")"
-  [[ "$sess_cmd" = *'cd "$HOME/.claude"'* ]]
-  [[ "$sess_cmd" = *'"$HOME/.hive-mind/hive-mind/core/check-dupes.sh"'* ]]
 }
 
 @test "install_hooks replaces legacy direct shell hooks and preserves non-command hook entries" {

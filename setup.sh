@@ -224,12 +224,10 @@ log "memory repo: $(sanitize_remote_url "$MEMORY_REPO")"
 log "[1/6] installing hive-mind source at $HIVE_MIND_SRC"
 mkdir -p "$HIVE_MIND_HUB_DIR"
 # Capture the previously-installed hive-mind version BEFORE `git pull`
-# rewrites $HIVE_MIND_SRC/VERSION to the latest. adapter_migrate
-# expects the pre-upgrade version string so adapter authors can gate
-# migrations on specific transitions (v0.2.x → v0.3.x hook-path
-# rewrite, for example). A missing VERSION file means a pre-0.2
-# install without version tracking — use the documented "0.1.0"
-# sentinel that adapter-loader.sh's migrate contract recognizes.
+# rewrites $HIVE_MIND_SRC/VERSION to the latest, so adapter_migrate
+# receives the pre-upgrade string and can gate any future migration
+# on a specific version transition. A missing VERSION file falls back
+# to the documented "0.1.0" sentinel the contract recognizes.
 PREV_HIVE_MIND_VERSION="0.1.0"
 if [ -f "$HIVE_MIND_SRC/VERSION" ]; then
     PREV_HIVE_MIND_VERSION="$(tr -d '[:space:]' < "$HIVE_MIND_SRC/VERSION" 2>/dev/null || echo "0.1.0")"
@@ -374,8 +372,10 @@ mkdir -p "$ADAPTER_DIR"
 # shellcheck source=/dev/null
 source "$HIVE_MIND_SRC/core/hub/harvest-fanout.sh"
 
-# Migrate BEFORE harvest so legacy hook commands in the tool's
-# settings.json get rewritten to hub-topology paths.
+# Optional per-adapter upgrade hook, invoked BEFORE harvest so any
+# tool-side rewrites happen on data the hub hasn't captured yet. No
+# production adapter ships a migration today (pre-release software),
+# but the contract stays so adapters can add one when needed.
 declare -f adapter_migrate >/dev/null 2>&1 && adapter_migrate "$PREV_HIVE_MIND_VERSION"
 
 # Install hooks BEFORE sync fan-out/harvest — an existing install may
@@ -437,18 +437,13 @@ fi
 
 # ---------- install bundled skills ----------
 # Adapter ships a bundled hive-mind skill. Install into the hub's
-# skills/ (canonical), then fan-out relays it to the tool dir. Older
-# installs may have the legacy `skills/memory-commit/` name under the
-# tool dir; clean it up so the renamed skill doesn't collide.
+# skills/ (canonical), then fan-out relays it to the tool dir.
 log "[5/6] installing bundled skills"
 manage_bundled_skills() {
     local src="$HIVE_MIND_SRC/adapters/$ADAPTER/skills"
     [ -d "$src" ] || return 0
     local hub_skills="$HIVE_MIND_HUB_DIR/skills"
     mkdir -p "$hub_skills"
-    if [ -d "$ADAPTER_DIR/skills/memory-commit" ]; then
-        rm -rf "$ADAPTER_DIR/skills/memory-commit"
-    fi
     local count=0
     for skill_dir in "$src"/*/; do
         [ -d "$skill_dir" ] || continue

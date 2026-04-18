@@ -84,14 +84,16 @@ Both `ADAPTER_HUB_MAP` and `ADAPTER_PROJECT_CONTENT_RULES` are newline-separated
 
 The engine dispatches on the shape of the two paths in each entry.
 
-These examples describe engine shapes only. Adding a new hub path to the
-shared schema also requires an explicit whitelist/schema decision.
+The table below describes the engine's dispatch shapes. Only the file-to-file
+shape has a production user today; the JSON-subkey shapes are a reserved
+capability available to future adapters. Adding a new hub path to the shared
+schema also requires an explicit whitelist entry in `core/hub/gitignore`.
 
 | Hub path | Tool path | Meaning |
 |---|---|---|
-| `content.md` | `CLAUDE.md` | File-to-file rename. `_hub_sync_file` copies on harvest; reverse on fan-out. |
-| `state/allow.txt` | `settings.json#sharedAllowlist` | Tool-side JSON subkey ↔ hub-side text-lines. Harvest extracts the array and writes one entry per line; fan-out reads the lines and replaces the subkey. |
-| `state/commands` | `settings.json#automation.events` | Tool-side JSON subkey that's an event-keyed map of entry arrays ↔ hub-side per-entry JSON files. Harvest splits each entry into `state/commands/<event>/<id>.json`; fan-out reconstructs the map. |
+| `content.md` | `CLAUDE.md` | File-to-file rename. `_hub_sync_file` copies on harvest; reverse on fan-out. Used in production by every current adapter. |
+| `<path>.txt` | `<file>.json#<jsonpath>` | *(reserved)* Tool-side JSON subkey (array of strings) ↔ hub-side text-lines. Harvest extracts the array and writes one entry per line; fan-out reads the lines and replaces the subkey. |
+| `<path>` | `<file>.json#<jsonpath>` | *(reserved)* Tool-side JSON subkey whose value is an event-keyed map of entry arrays ↔ hub-side per-event/per-entry JSON files. Harvest splits each entry into `<path>/<event>/<id>.json`; fan-out reconstructs the map. Machine-local entries (commands referencing `/Applications/`, Windows drive letters, …) are filtered on harvest and preserved on fan-out. |
 
 Skills are NOT declared in `ADAPTER_HUB_MAP`. The engine syncs `$ADAPTER_SKILL_ROOT/` ↔ `hub/skills/` directly, renaming each skill's main content file: tool's `SKILL.md` → hub's `content.md` on harvest, and the reverse on fan-out. Other files in each skill dir pass through unchanged.
 

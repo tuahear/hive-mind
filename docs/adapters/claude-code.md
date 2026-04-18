@@ -10,8 +10,7 @@ When you run the installer (the default `ADAPTER=claude-code` is assumed if you 
 2. **Creates the hub repo** at `~/.hive-mind/.git` with your `MEMORY_REPO` as `origin`.
 3. **Seeds bundled skills** — including the `hive-mind` skill that teaches the agent to embed commit markers in memory edits — into `~/.hive-mind/skills/`.
 4. **Builds or refreshes** the native `hivemind-hook` launcher under `~/.hive-mind/bin/`.
-5. **Runs `adapter_migrate`** to bring pre-0.3 installs forward to the hub topology.
-6. **Registers three local hooks** in `~/.claude/settings.json` (details below), pointing them at the launcher-backed entrypoint.
+5. **Registers three local hooks** in `~/.claude/settings.json` (details below), pointing them at the launcher-backed entrypoint.
 
 ## Hooks registered in `~/.claude/settings.json`
 
@@ -36,10 +35,6 @@ Skills are synced separately — not via `ADAPTER_HUB_MAP`. The engine walks `~/
 `~/.claude/settings.json` is intentionally local-only. hive-mind manages only its own hook entries there during install/upgrade; Claude permissions remain machine-local and do not round-trip through the hub.
 
 Lowercase filenames on the hub side signal "hive-mind canonical".
-
-## Migration from pre-0.3 installs
-
-Pre-0.3 hive-mind installed the per-tool git repo at `~/.claude/.git` (the now-legacy adapter-owns-git-repo model). `adapter_migrate` (in `adapters/claude-code/adapter.sh`) runs on every `setup.sh` invocation and transparently moves the git metadata to `~/.hive-mind/.git`, repairs legacy hook command strings to the hub topology, and preserves your memory content. `adapter_install_hooks` then strips those managed direct-shell commands and reinstalls the current launcher-backed entries. Re-running `setup.sh` on a pre-0.3 install is safe and idempotent.
 
 ## After install
 

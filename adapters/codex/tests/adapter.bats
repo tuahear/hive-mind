@@ -539,26 +539,26 @@ EOF
 }
 
 @test "hub mapping: codex hooks.json is NOT in ADAPTER_HUB_MAP (avoid cross-shell contamination)" {
-  # The hub's `config/hooks/` bucket is the same directory every adapter
-  # that has `config/hooks\t...` in its map writes into AND reads out of.
-  # If Codex mapped its hooks.json through that bucket, Claude's
-  # Bash-syntax hook commands (PostToolUse / Notification / ...) would
-  # end up in Codex's hooks.json on every fan-out, where Codex executes
-  # them under PowerShell on Windows and they fail to parse.
-  #
-  # Contract: Codex manages its own hooks.json locally via
-  # adapter_install_hooks. hooks.json must NOT appear as a tool target
-  # in ADAPTER_HUB_MAP.
+  # Contract: every adapter keeps hook configs local-only because
+  # hook-command shells diverge across providers and platforms (Codex
+  # executes under PowerShell 5.1 on Windows, which chokes on Bash
+  # syntax like `&&`, `||`, `$(...)`). If any adapter were to map a
+  # `config/hooks/`-style bucket back through the shared hub, foreign
+  # adapters' commands would leak into Codex's hooks.json on fan-out.
+  # hooks.json must NOT appear as a tool target in ADAPTER_HUB_MAP,
+  # and no hub-side config/hooks/* mapping may be introduced.
   ! printf '%s\n' "$ADAPTER_HUB_MAP" | grep -Fq 'hooks.json'
   ! printf '%s\n' "$ADAPTER_HUB_MAP" | grep -Fq 'config/hooks'
 }
 
 @test "hub mapping: fan-out never populates codex hooks.json with foreign-adapter events" {
-  # Direct regression guard for the cross-shell contamination the
-  # previous test encodes as a contract: simulate a hub that already
-  # contains Claude-style events (e.g. PostToolUse) under
-  # config/hooks/, then fan-out for codex and confirm none of those
-  # leak into ~/.codex/hooks.json.
+  # Defensive regression guard against a future adapter reintroducing
+  # the `config/hooks/` bucket: simulate a hub that contains
+  # Claude-style events (e.g. PostToolUse) under config/hooks/, then
+  # fan-out for codex and confirm none leak into ~/.codex/hooks.json.
+  # No production adapter writes to this path today; the test ensures
+  # codex's contract-level exclusion holds even if the hub contains
+  # such entries.
   TOOL="$HOME/tool"
   HUB="$HOME/hub"
   mkdir -p "$TOOL" "$HUB"
