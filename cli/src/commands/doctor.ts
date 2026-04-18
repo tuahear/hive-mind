@@ -17,7 +17,10 @@ export function doctorCmd(json: boolean): number {
   checks.push({ name: "hub directory exists", ok: existsSync(hub), detail: hub });
   checks.push({ name: "hub git initialized (as directory)", ok: isHubInstalled(hub) });
   checks.push({ name: "hub source staged", ok: existsSync(resolve(src, "core", "hub", "sync.sh")) });
-  checks.push({ name: "core/VERSION readable", ok: coreVersion() !== null, detail: coreVersion() ?? undefined });
+  // Read once — VERSION could change between two coreVersion() calls if
+  // another process (e.g. a concurrent `hivemind restage`) is staging.
+  const core = coreVersion();
+  checks.push({ name: "core/VERSION readable", ok: core !== null, detail: core ?? undefined });
 
   const attached = readAttachedAdapters();
   checks.push({

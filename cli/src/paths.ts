@@ -25,14 +25,18 @@ export function readAttachedAdapters(): string[] {
   const f = attachedAdaptersFile();
   if (!existsSync(f)) return [];
   // Match core/hub/sync.sh's parser exactly so CLI output can't disagree
-  // with what the sync engine actually iterates: raw lines (only CR from
-  // CRLF is stripped), skip empty, skip column-1 '#' comments. Do not
-  // trim leading whitespace — an indented '#' is NOT a comment to core,
-  // so treating it as one here would make CLI hide an entry core takes
-  // as a (malformed) adapter name.
+  // with what the sync engine iterates: split on '\n', keep lines
+  // verbatim (no CR strip, no leading-whitespace trim), skip empty,
+  // skip column-1 '#' comments.
+  //
+  // CRLF caveat: if the roster file is ever saved with Windows line
+  // endings, core sees names with a trailing '\r' and fails to load
+  // them. The CLI surfacing the same '\r'-suffixed names here is
+  // intentional — it exposes the divergence to the user rather than
+  // hiding it. A cross-cutting fix (make both parsers CR-tolerant)
+  // belongs in a separate change that touches core too.
   return readFileSync(f, "utf8")
     .split("\n")
-    .map((l) => (l.endsWith("\r") ? l.slice(0, -1) : l))
     .filter((l) => l.length > 0 && !l.startsWith("#"));
 }
 

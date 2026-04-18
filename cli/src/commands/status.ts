@@ -70,7 +70,7 @@ function sanitize(url: string): string {
 }
 
 export function syncCmd(force: boolean): number {
-  const bin = resolve(hubDir(), "bin", process.platform === "win32" ? "sync" : "sync");
+  const bin = resolve(hubDir(), "bin", "sync");
   const syncSh = resolve(hubSrcDir(), "core", "hub", "sync.sh");
   const target = existsSync(bin) ? bin : existsSync(syncSh) ? syncSh : null;
   if (!target) {
