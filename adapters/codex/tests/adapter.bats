@@ -53,18 +53,40 @@ teardown() {
   [ "$status" -ne 0 ]
 }
 
-@test "SessionStart hook invokes hub sync before check-dupes with Codex-specific env" {
+@test "SessionStart hook template dispatches the session-start wrapper script" {
+  # The inline shell logic that used to live in hooks.json now lives in
+  # core/hub/codex-hook-session-start.sh (see adapter.sh for why: Codex's
+  # Windows hook runner silently strips inner quotes). The template
+  # dispatches the script by path — install_hooks substitutes absolute
+  # paths at render time. This test pins the template-level references.
   template="$ADAPTER_ROOT/hooks.json"
   cmd="$(jq -r '.hooks.SessionStart[0].hooks[0].command' "$template")"
-  [[ "$cmd" == *'.hive-mind/bin/sync'* ]]
-  [[ "$cmd" == *'hive-mind/core/check-dupes.sh'* ]]
-  [[ "$cmd" == *'ADAPTER_DIR="$HOME/.codex"'* ]]
-  [[ "$cmd" == *'ADAPTER_GLOBAL_MEMORY="$HOME/.codex/AGENTS.override.md"'* ]]
-  sync_pos="$(awk -v s="$cmd" -v t='.hive-mind/bin/sync' 'BEGIN{print index(s,t)}')"
-  dupes_pos="$(awk -v s="$cmd" -v t='hive-mind/core/check-dupes.sh' 'BEGIN{print index(s,t)}')"
+  [[ "$cmd" == *'codex-hook-session-start.sh'* ]]
+  [[ "$cmd" == *'$HIVE_MIND_ROOT'* ]]
+  [[ "$cmd" == *'$ADAPTER_DIR_ABS'* ]]
+}
+
+@test "session-start wrapper script itself invokes sync before check-dupes with Codex env" {
+  script="$REPO_ROOT/core/hub/codex-hook-session-start.sh"
+  [ -f "$script" ]
+  body="$(cat "$script")"
+  [[ "$body" == *'.hive-mind/bin/sync'* ]]
+  [[ "$body" == *'hive-mind/core/check-dupes.sh'* ]]
+  [[ "$body" == *'ADAPTER_DIR='* ]]
+  [[ "$body" == *'ADAPTER_GLOBAL_MEMORY='* ]]
+  sync_pos="$(awk -v s="$body" -v t='.hive-mind/bin/sync' 'BEGIN{print index(s,t)}')"
+  dupes_pos="$(awk -v s="$body" -v t='hive-mind/core/check-dupes.sh' 'BEGIN{print index(s,t)}')"
   [ "$sync_pos" -gt 0 ]
   [ "$dupes_pos" -gt 0 ]
   [ "$sync_pos" -lt "$dupes_pos" ]
+}
+
+@test "stop wrapper script runs sync and emits JSON" {
+  script="$REPO_ROOT/core/hub/codex-hook-stop.sh"
+  [ -f "$script" ]
+  body="$(cat "$script")"
+  [[ "$body" == *'.hive-mind/bin/sync'* ]]
+  [[ "$body" == *"printf '{}'"* ]]
 }
 
 @test "install_hooks renders an absolute bash path on Windows (PowerShell cannot dispatch bare 'bash' without hitting WSL's bash.exe)" {
@@ -101,38 +123,48 @@ teardown() {
   fi
 }
 
-@test "hooks.json commands are bash-dispatched and emit JSON (cross-shell Codex on Windows)" {
-  # Codex on Windows executes hook commands under PowerShell 5.1, which
-  # cannot dispatch extensionless Unix scripts (`& "$HOME/.hive-mind/bin/sync"`
-  # fails with "Access is denied") AND rejects hooks whose stdout isn't
-  # valid JSON. Both SessionStart and Stop commands must:
-  #   1. Start with a bash invocation so PowerShell hands the whole
-  #      shell snippet off to bash for execution — no direct exec of
-  #      extensionless scripts, no PowerShell parsing of bash syntax.
-  #   2. Emit valid JSON on stdout (the `{}` empty-object fallback at
-  #      minimum, or check-dupes' hookSpecificOutput payload when dupes
-  #      were detected).
-  # Breaking either invariant reproduces the "invalid stop hook JSON
-  # output" + "Access is denied" errors observed on the live Windows
-  # two-adapter install that prompted this fix.
+@test "hooks.json template dispatches via bash + wrapper script (no inline shell)" {
+  # Earlier designs embedded full shell logic (sync + check-dupes +
+  # JSON-emit) inline in each hooks.json command string. That failed
+  # repeatedly on Windows because Codex's hook runner + PowerShell
+  # strip or mangle inner quotes before bash sees them. The current
+  # design dispatches a wrapper .sh file by absolute path — one bash
+  # token, one script-path token, optional argv. No inline shell
+  # syntax in the template, no quoting lottery downstream.
   template="$ADAPTER_ROOT/hooks.json"
   while IFS= read -r cmd; do
     [[ "$cmd" == bash\ * ]] || {
       echo "hook command must start with 'bash ' for cross-shell dispatch: $cmd" >&2
       return 1
     }
-    [[ "$cmd" == *'printf "{}"'* ]] || {
-      echo "hook command must emit JSON on stdout (printf \"{}\" fallback): $cmd" >&2
+    [[ "$cmd" == *'codex-hook-'*'.sh'* ]] || {
+      echo "hook command must dispatch a codex-hook-*.sh wrapper (no inline shell): $cmd" >&2
       return 1
     }
+    # Guard against regression to inline shell syntax — the whole point
+    # of the wrapper-script indirection is that NONE of these appear in
+    # the template-level command.
+    [[ "$cmd" != *'||'* ]] || { echo "command must not contain '||' — move to wrapper: $cmd" >&2; return 1; }
+    [[ "$cmd" != *';'* ]]  || { echo "command must not contain ';' — move to wrapper: $cmd" >&2; return 1; }
+    [[ "$cmd" != *'\"'* ]] || { echo "command must not embed \\\" — PowerShell strips inner quotes: $cmd" >&2; return 1; }
+    [[ "$cmd" != *'printf'* ]] || { echo "command must not call printf directly — move to wrapper: $cmd" >&2; return 1; }
   done < <(jq -r '.hooks | .[] | .[].hooks[] | .command' "$template")
 }
 
-@test "hooks.json commands use quoted \$HOME paths" {
+@test "hooks.json template references the hive-mind root via \$HIVE_MIND_ROOT token" {
+  # install_hooks substitutes $HIVE_MIND_ROOT (and $ADAPTER_DIR_ABS for
+  # session-start) with absolute Windows-friendly paths at render time.
+  # The template must use the tokens, not bare $HOME references — $HOME
+  # expansion in a hook command string is unreliable across Codex's
+  # Windows dispatchers.
   template="$ADAPTER_ROOT/hooks.json"
   while IFS= read -r cmd; do
-    [[ "$cmd" = *'"$HOME/.hive-mind'* ]] || {
-      echo "command missing quoted \$HOME/.hive-mind: $cmd" >&2
+    [[ "$cmd" == *'$HIVE_MIND_ROOT'* ]] || {
+      echo "command must reference \$HIVE_MIND_ROOT token (not bare \$HOME): $cmd" >&2
+      return 1
+    }
+    [[ "$cmd" != *'$HOME'* ]] || {
+      echo "command must not reference bare \$HOME — use tokens substituted at install time: $cmd" >&2
       return 1
     }
   done < <(jq -r '.hooks | .[] | .[].hooks[] | .command' "$template")

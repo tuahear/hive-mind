@@ -326,12 +326,32 @@ adapter_install_hooks() {
   fi
   [ -n "$bash_cmd" ] || bash_cmd="bash"
 
+  # Resolve an absolute Windows-friendly path to the hive-mind source
+  # root (where the hook-wrapper scripts live). We write absolute paths
+  # into hooks.json rather than relying on $HOME/env expansion inside
+  # the command string — Codex's Windows hook runner (PowerShell /
+  # Windows native) silently strips inner quotes and doesn't reliably
+  # expand shell variables, so we render everything up front.
+  local hm_root hm_root_abs adapter_dir_abs
+  hm_root="${HIVE_MIND_HUB_DIR:-$HOME/.hive-mind}/hive-mind"
+  if command -v cygpath >/dev/null 2>&1; then
+    hm_root_abs="$(cygpath -m "$hm_root" 2>/dev/null || printf '%s' "$hm_root")"
+    adapter_dir_abs="$(cygpath -m "$ADAPTER_DIR" 2>/dev/null || printf '%s' "$ADAPTER_DIR")"
+  else
+    hm_root_abs="$hm_root"
+    adapter_dir_abs="$ADAPTER_DIR"
+  fi
+
   rendered="$(mktemp)"
   jq --arg dir "$ADAPTER_DIR" \
      --arg mem "$ADAPTER_GLOBAL_MEMORY" \
      --arg bashcmd "$bash_cmd" \
+     --arg hmroot "$hm_root_abs" \
+     --arg adir "$adapter_dir_abs" \
     'walk(if type == "string" then
-      gsub("[$]HOME/[.]codex/AGENTS[.]override[.]md"; $mem)
+      gsub("[$]HIVE_MIND_ROOT"; $hmroot)
+      | gsub("[$]ADAPTER_DIR_ABS"; $adir)
+      | gsub("[$]HOME/[.]codex/AGENTS[.]override[.]md"; $mem)
       | gsub("[$]HOME/[.]codex"; $dir)
       | sub("^bash "; "\"" + $bashcmd + "\" ")
     else . end)' \
