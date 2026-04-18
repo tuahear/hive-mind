@@ -428,7 +428,27 @@ EOF
   [ "$output" = 'override content' ]
 }
 
-@test "hub mapping: hooks.json#hooks still round-trips alongside section mappings" {
+@test "hub mapping: codex hooks.json is NOT in ADAPTER_HUB_MAP (avoid cross-shell contamination)" {
+  # The hub's `config/hooks/` bucket is the same directory every adapter
+  # that has `config/hooks\t...` in its map writes into AND reads out of.
+  # If Codex mapped its hooks.json through that bucket, Claude's
+  # Bash-syntax hook commands (PostToolUse / Notification / ...) would
+  # end up in Codex's hooks.json on every fan-out, where Codex executes
+  # them under PowerShell on Windows and they fail to parse.
+  #
+  # Contract: Codex manages its own hooks.json locally via
+  # adapter_install_hooks. hooks.json must NOT appear as a tool target
+  # in ADAPTER_HUB_MAP.
+  ! printf '%s\n' "$ADAPTER_HUB_MAP" | grep -Fq 'hooks.json'
+  ! printf '%s\n' "$ADAPTER_HUB_MAP" | grep -Fq 'config/hooks'
+}
+
+@test "hub mapping: fan-out never populates codex hooks.json with foreign-adapter events" {
+  # Direct regression guard for the cross-shell contamination the
+  # previous test encodes as a contract: simulate a hub that already
+  # contains Claude-style events (e.g. PostToolUse) under
+  # config/hooks/, then fan-out for codex and confirm none of those
+  # leak into ~/.codex/hooks.json.
   TOOL="$HOME/tool"
   HUB="$HOME/hub"
   mkdir -p "$TOOL" "$HUB"
@@ -440,39 +460,30 @@ EOF
   # shellcheck source=/dev/null
   source "$HARVEST_FANOUT"
 
+  # Seed the hub with Claude-style hook entries in config/hooks/.
+  mkdir -p "$HUB/config/hooks/PostToolUse" "$HUB/config/hooks/Notification"
+  printf '{"hooks":[{"type":"command","command":"bash-syntax && would-fail-in-powershell"}]}' \
+    > "$HUB/config/hooks/PostToolUse/entry.json"
+  printf '{"hooks":[{"type":"command","command":"echo notif"}]}' \
+    > "$HUB/config/hooks/Notification/entry.json"
+
+  # Seed Codex's own hooks.json with the expected SessionStart + Stop.
   cat > "$TOOL/hooks.json" <<'EOF'
 {
   "hooks": {
-    "SessionStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "echo session",
-            "timeout": 10
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "echo stop",
-            "timeout": 10
-          }
-        ]
-      }
-    ]
+    "SessionStart": [{"hooks": [{"type": "command", "command": "codex-session-cmd"}]}],
+    "Stop":         [{"hooks": [{"type": "command", "command": "codex-stop-cmd"}]}]
   }
 }
 EOF
 
-  hub_harvest "$TOOL" "$HUB"
-  rm -f "$TOOL/hooks.json"
   hub_fan_out "$HUB" "$TOOL"
 
-  jq -e '.hooks.SessionStart[0].hooks[0].command == "echo session"' "$TOOL/hooks.json" >/dev/null
-  jq -e '.hooks.Stop[0].hooks[0].command == "echo stop"' "$TOOL/hooks.json" >/dev/null
+  # Fan-out must not have injected the hub's Claude events into Codex's file.
+  run jq -e '.hooks | has("PostToolUse") or has("Notification")' "$TOOL/hooks.json"
+  [ "$status" -ne 0 ]
+
+  # Codex's own hooks survive unchanged.
+  jq -e '.hooks.SessionStart[0].hooks[0].command == "codex-session-cmd"' "$TOOL/hooks.json" >/dev/null
+  jq -e '.hooks.Stop[0].hooks[0].command == "codex-stop-cmd"' "$TOOL/hooks.json" >/dev/null
 }
