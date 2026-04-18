@@ -7,6 +7,7 @@ import { attachCmd } from "./commands/attach.js";
 import { detachCmd } from "./commands/detach.js";
 import { statusCmd, syncCmd, pullCmd } from "./commands/status.js";
 import { doctorCmd } from "./commands/doctor.js";
+import { restageCmd } from "./commands/restage.js";
 
 const pkg = JSON.parse(readFileSync(resolve(__dirname, "..", "package.json"), "utf8")) as { version: string };
 
@@ -52,6 +53,12 @@ async function main(): Promise<number> {
     .command("pull")
     .description("git pull --rebase --autostash on the hub")
     .action(() => process.exit(pullCmd()));
+
+  program
+    .command("restage")
+    .description("refresh the bundled core in ~/.hive-mind/hive-mind/ from the CLI's assets (upgrade step; does not touch hooks)")
+    .option("--force-stage", "replace a legacy git-cloned source with CLI-bundled assets")
+    .action((opts) => process.exit(restageCmd({ forceStage: !!opts.forceStage })));
 
   program
     .command("doctor")

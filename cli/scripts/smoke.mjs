@@ -42,7 +42,7 @@ assert(ver.status === 0 && ver.stdout.trim().length > 0, `--version (got='${ver.
 // 3. --help lists every subcommand.
 const help = node(["dist/cli.js", "--help"]);
 assert(help.status === 0, `--help status (stderr='${help.stderr}')`);
-for (const cmd of ["init", "attach", "detach", "status", "sync", "pull", "doctor", "version"]) {
+for (const cmd of ["init", "attach", "detach", "restage", "status", "sync", "pull", "doctor", "version"]) {
   assert(help.stdout.includes(cmd), `--help lists '${cmd}'`);
 }
 
@@ -154,6 +154,17 @@ for (const bad of ["codex/", "../evil", "bad name", ""]) {
 const okAttach = node(["dist/cli.js", "attach", "codex"], { env: { ...process.env, HIVE_MIND_HUB_DIR: resolve(cliDir, ".no-such-hub") } });
 // Valid name, but no hub → must fail with the 'hub not initialized' message, not the validator.
 assert(okAttach.status === 1 && okAttach.stderr.includes("hub not initialized"), `attach codex with no hub hits hub-init error, not validator (status=${okAttach.status}, stderr='${okAttach.stderr}')`);
+
+// 4e. restage into an empty hub succeeds and populates core/.
+{
+  const { rmSync, existsSync: fsExists } = await import("node:fs");
+  const hub = resolve(cliDir, ".smoke-hub-restage");
+  rmSync(hub, { recursive: true, force: true });
+  const r = node(["dist/cli.js", "restage"], { env: { ...process.env, HIVE_MIND_HUB_DIR: hub } });
+  assert(r.status === 0, `restage into empty hub succeeds (status=${r.status}, stderr='${r.stderr}')`);
+  assert(fsExists(resolve(hub, "hive-mind", "setup.sh")), "restage populates setup.sh");
+  assert(fsExists(resolve(hub, "hive-mind", "core", "hub", "sync.sh")), "restage populates core/hub/sync.sh");
+}
 
 // 5. npm pack stays under 2 MB (CLI spec cap).
 // --ignore-scripts so the prepack build doesn't mix its stdout into the

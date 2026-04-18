@@ -13,8 +13,10 @@ hivemind detach <adapter>      # remove an adapter's hooks (preserves hub conten
 hivemind status [--json]       # attached adapters, origin, unpushed commits
 hivemind sync [--force-push]   # run the hub's sync flow
 hivemind pull                  # git pull --rebase --autostash
+hivemind restage [--force-stage]  # refresh staged core from the CLI's bundled assets (upgrade step)
 hivemind doctor [--json]       # diagnostic checks
 hivemind version [--json]      # CLI + bundled core + installed core
+hivemind assets-path           # print the directory holding the CLI's bundled assets
 ```
 
 ## Why this fixes the install pain
@@ -23,7 +25,7 @@ The legacy path (`bash setup.sh`) requires a full `git clone` of the `hive-mind`
 
 This CLI ships the bash `core/`, `adapters/`, and `cmd/` trees **inside the npm tarball** (~70 KB gzipped). `hivemind init` copies those bundled assets into `~/.hive-mind/hive-mind/` and runs `setup.sh` with `HIVE_MIND_SKIP_CLONE=1`, which short-circuits the clone/pull branch.
 
-Upgrades stop meaning "git pull on the user's machine" and start meaning "install the next version of `hive-mind` from npm."
+Upgrade flow: `npm install -g hive-mind@latest` refreshes the CLI's *bundled* assets, then `hivemind restage` copies them over `~/.hive-mind/hive-mind/`. Hooks and attached adapters stay put — re-run `hivemind init` / `hivemind attach` only if hook wiring changed. No user-side `git clone` or `git pull` anywhere in the loop.
 
 ## Layout
 
