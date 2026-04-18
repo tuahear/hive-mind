@@ -157,7 +157,7 @@ memory\tmemory'
 
 ### Non-JSON config formats
 
-If your tool stores hooks or permissions outside JSON (e.g. Codex's `config.toml` with `[[hooks]]` blocks), the `<file>#<jsonpath>` notation still applies to the hub side — the file extension (`.toml`) tells your adapter's own shell code which parser to invoke. The MVP engine in `core/hub/harvest-fanout.sh` only understands JSON; TOML-shaped adapters will need to extend the dispatch (see issue [#11](https://github.com/tuahear/hive-mind/issues/11) for the Codex implementation plan).
+The shared hub does not currently sync hook configs or tool permissions — both live machine-local in their adapter's native file (e.g. `~/.claude/settings.json`, `~/.codex/hooks.json` + `~/.codex/config.toml`). If a future schema extension adds cross-provider state that needs to live in a non-JSON tool config, the `<file>#<jsonpath>` notation on the tool side is the intended extension point: the file extension (`.toml`, `.yaml`, …) tells the adapter's shell code which parser to invoke. The MVP engine in `core/hub/harvest-fanout.sh` only implements the JSON dispatch today; a TOML-shaped extension would plug in alongside it.
 
 ## PR checklist
 

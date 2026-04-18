@@ -343,6 +343,30 @@ SETTINGS
   [ "$(jq '.hooks.Stop | length' "$ADAPTER_DIR/settings.json")" -gt 0 ]
 }
 
+# === disable_instructions ==================================================
+
+@test "disable_instructions renders the hub path from HIVE_MIND_HUB_DIR override" {
+  HIVE_MIND_HUB_DIR="$HOME/custom-hub"
+  export HIVE_MIND_HUB_DIR
+  run adapter_disable_instructions
+  [ "$status" -eq 0 ]
+  # Hub path comes from the env override, not a hard-coded ~/.hive-mind.
+  printf '%s\n' "$output" | grep -Fq "$HOME/custom-hub/.install-state/attached-adapters"
+  # Must not suggest wiping the whole file — detaches ALL adapters, not
+  # just this one. Pin the no-rm invariant so the bug can't reappear.
+  run printf '%s\n' "$output"
+  ! printf '%s\n' "$output" | grep -Eq '(^|[^A-Za-z])rm[[:space:]]+[^[:space:]]*attached-adapters'
+  # And the line must name which adapter to strip.
+  printf '%s\n' "$output" | grep -Fq 'claude-code'
+}
+
+@test "disable_instructions defaults to \$HOME/.hive-mind when HIVE_MIND_HUB_DIR unset" {
+  unset HIVE_MIND_HUB_DIR
+  run adapter_disable_instructions
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -Fq "$HOME/.hive-mind/.install-state/attached-adapters"
+}
+
 # === hub mapping ===========================================================
 
 @test "hub mapping keeps Claude hooks and permissions out of ADAPTER_HUB_MAP" {

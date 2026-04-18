@@ -184,9 +184,13 @@ adapter_activation_instructions() {
 }
 
 adapter_disable_instructions() {
+  local hub="${HIVE_MIND_HUB_DIR:-$HOME/.hive-mind}"
   echo "To temporarily disable hive-mind sync, remove the hook entries from"
-  echo "~/.claude/settings.json. To fully disconnect from the hub:"
-  echo "  rm ~/.hive-mind/.install-state/attached-adapters"
+  echo "${ADAPTER_DIR}/settings.json. To fully disconnect Claude Code from"
+  echo "the hub, edit"
+  echo "  ${hub}/.install-state/attached-adapters"
+  echo "and remove only the line:"
+  echo "  claude-code"
 }
 
 # --- G. Fallback -----------------------------------------------------------

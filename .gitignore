@@ -4,3 +4,9 @@ docs/.vitepress/dist/
 docs/.vitepress/cache/
 .claude/
 HUB-HANDOFF.md
+
+# Stray hivemind-hook binaries from ad-hoc `go build` at the repo root.
+# setup.sh writes the real one into ~/.hive-mind/bin/; nothing inside
+# this repo should ever commit the binary.
+/hivemind-hook
+/hivemind-hook.exe

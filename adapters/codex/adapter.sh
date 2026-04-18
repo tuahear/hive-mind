@@ -406,10 +406,14 @@ adapter_activation_instructions() {
 }
 
 adapter_disable_instructions() {
+  local hub="${HIVE_MIND_HUB_DIR:-$HOME/.hive-mind}"
   echo "To temporarily disable hive-mind sync, remove the SessionStart +"
   echo "Stop entries from ${ADAPTER_DIR}/hooks.json or set [features].codex_hooks"
-  echo "to false in ${ADAPTER_DIR}/config.toml. To fully disconnect from the hub:"
-  echo "  rm ~/.hive-mind/.install-state/attached-adapters"
+  echo "to false in ${ADAPTER_DIR}/config.toml. To fully disconnect Codex from"
+  echo "the hub, edit"
+  echo "  ${hub}/.install-state/attached-adapters"
+  echo "and remove only the line:"
+  echo "  codex"
 }
 
 # --- G. Fallback -----------------------------------------------------------

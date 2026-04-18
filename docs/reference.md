@@ -57,18 +57,26 @@ hive-mind/
 │       ├── claude-hook-session-start.sh ← Claude SessionStart wrapper
 │       ├── claude-hook-stop.sh    ← Claude Stop wrapper
 │       ├── claude-hook-post-tool-use.sh ← Claude PostToolUse wrapper
+│       ├── codex-hook-session-start.sh ← Codex SessionStart wrapper
+│       ├── codex-hook-stop.sh     ← Codex Stop wrapper
 │       ├── sync.sh                ← THE hub sync entry point (installed to bin/sync)
 │       ├── harvest-fanout.sh      ← bidirectional tool ↔ hub mapper
+│       ├── project-gc.sh          ← orphan-variant GC
 │       ├── gitignore              ← hub-level whitelist
 │       └── gitattributes          ← hub-level merge-driver bindings
 ├── adapters/
-│   └── claude-code/
-│       ├── adapter.sh             ← contract surface for Claude Code
-│       ├── settings.json          ← hook template (installed into ~/.claude/)
-│       ├── gitignore              ← reserved (per-adapter tool-dir ignores)
-│       ├── gitattributes          ← reserved (per-adapter tool-dir attrs)
+│   ├── claude-code/
+│   │   ├── adapter.sh             ← contract surface for Claude Code
+│   │   ├── settings.json          ← hook template (installed into ~/.claude/)
+│   │   ├── gitignore              ← reserved (per-adapter tool-dir ignores)
+│   │   ├── gitattributes          ← reserved (per-adapter tool-dir attrs)
+│   │   ├── skills/                ← bundled skills (installed into hub)
+│   │   └── tests/                 ← Claude-specific adapter tests
+│   └── codex/
+│       ├── adapter.sh             ← contract surface for Codex CLI
+│       ├── hooks.json             ← hook template (installed into ~/.codex/)
 │       ├── skills/                ← bundled skills (installed into hub)
-│       └── tests/                 ← Claude-specific adapter tests
+│       └── tests/                 ← Codex-specific adapter tests
 ├── scripts/
 │   └── install-dev-hooks.sh       ← maintainer-only; pre-commit for this repo
 ├── tests/                         ← bats test suite (see ./test runner)

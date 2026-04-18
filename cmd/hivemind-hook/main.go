@@ -57,7 +57,10 @@ func run(args []string) int {
 		return 0
 	}
 
-	stdout, err := runHookScript(bashPath, invocation.scriptPath, invocation.scriptArgs)
+	stdout, stderr, err := runHookScript(bashPath, invocation.scriptPath, invocation.scriptArgs)
+	if stderrText := strings.TrimSpace(string(stderr)); stderrText != "" {
+		appendHubLog(hubDir, fmt.Sprintf("%s stderr: %s", invocation.scriptPath, stderrText))
+	}
 	if err != nil {
 		message := fmt.Sprintf("run %s via %s: %v", invocation.scriptPath, bashPath, err)
 		if invocation.outputMode == outputJSONFallback {
@@ -164,18 +167,23 @@ func claudeInvocation(hubDir, action string, scriptArgs []string) (hookInvocatio
 	}
 }
 
-func runHookScript(bashPath, scriptPath string, scriptArgs []string) ([]byte, error) {
+// runHookScript invokes the wrapper script and captures stdout + stderr
+// separately. Stderr is never forwarded to the parent process: Codex on
+// Windows parses hivemind-hook's own stderr as hook-runner output, and a
+// noisy wrapper line would surface as a user-visible hook failure. The
+// caller is responsible for routing captured stderr into the hub log.
+func runHookScript(bashPath, scriptPath string, scriptArgs []string) ([]byte, []byte, error) {
 	args := append([]string{scriptPath}, scriptArgs...)
 	cmd := exec.Command(bashPath, args...)
 	cmd.Env = os.Environ()
 	cmd.Stdin = os.Stdin
-	cmd.Stderr = os.Stderr
 
-	var stdout bytes.Buffer
+	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
 
 	err := cmd.Run()
-	return stdout.Bytes(), err
+	return stdout.Bytes(), stderr.Bytes(), err
 }
 
 func writeFallbackJSON(hubDir, reason string) {

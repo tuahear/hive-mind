@@ -460,6 +460,26 @@ EOF
   [[ "$out" != *'~/.codex'* ]]
 }
 
+@test "disable_instructions renders the hub path from HIVE_MIND_HUB_DIR override" {
+  HIVE_MIND_HUB_DIR="$HOME/custom-hub"
+  export HIVE_MIND_HUB_DIR
+  run adapter_disable_instructions
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -Fq "$HOME/custom-hub/.install-state/attached-adapters"
+  # Must not suggest wiping the whole file — detaches ALL adapters, not
+  # just this one. Pin the no-rm invariant so the bug can't reappear.
+  ! printf '%s\n' "$output" | grep -Eq '(^|[^A-Za-z])rm[[:space:]]+[^[:space:]]*attached-adapters'
+  # And the line must name which adapter to strip.
+  printf '%s\n' "$output" | grep -Fq 'codex'
+}
+
+@test "disable_instructions defaults to \$HOME/.hive-mind when HIVE_MIND_HUB_DIR unset" {
+  unset HIVE_MIND_HUB_DIR
+  run adapter_disable_instructions
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -Fq "$HOME/.hive-mind/.install-state/attached-adapters"
+}
+
 # === round-trip mapping ====================================================
 
 @test "hub mapping: AGENTS.md round-trips through content.md section 0" {
