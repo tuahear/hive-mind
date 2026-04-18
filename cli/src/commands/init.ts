@@ -9,6 +9,7 @@ type InitOpts = {
   adapter?: string;
   memoryRepo?: string;
   yes?: boolean;
+  forceStage?: boolean;
 };
 
 async function prompt(question: string): Promise<string> {
@@ -59,6 +60,24 @@ export async function initCmd(opts: InitOpts): Promise<number> {
       "error: --yes requires --memory-repo (or the MEMORY_REPO env var) when the hub has no existing origin."
     );
     return 2;
+  }
+
+  // If HIVE_MIND_SRC is a real git checkout (legacy curl|bash install),
+  // don't quietly overwrite the working tree — setup.sh would then take
+  // the .git branch and `git pull`, defeating the CLI-owns-upgrades
+  // model. Refuse unless the user opts in via --force-stage.
+  if (existsSync(resolve(src, ".git")) && !opts.forceStage) {
+    console.error(
+      `error: ${src} is a git checkout (legacy install). Refusing to overwrite.\n` +
+        `  - To convert to a CLI-managed install, rerun with --force-stage.\n` +
+        `  - To keep using the cloned install, upgrade via \`cd ${src} && git pull\`.`
+    );
+    return 1;
+  }
+  if (opts.forceStage) {
+    // Wipe the old .git (and anything else left behind) so the resulting
+    // tree is a plain staged set owned by the CLI.
+    rmSync(src, { recursive: true, force: true });
   }
 
   // Stage bundled assets into ~/.hive-mind/hive-mind/. Required roots must

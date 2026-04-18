@@ -23,6 +23,7 @@ async function main(): Promise<number> {
     .option("-a, --adapter <name>", "adapter to attach (claude-code, codex, ...)", "claude-code")
     .option("-m, --memory-repo <url>", "SSH URL of your private memory repo")
     .option("-y, --yes", "non-interactive (requires --memory-repo or existing origin)")
+    .option("--force-stage", "replace an existing legacy git-cloned source with the CLI-bundled assets")
     .action(async (opts) => process.exit(await initCmd(opts)));
 
   program

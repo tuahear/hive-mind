@@ -19,9 +19,13 @@ export function statusCmd(json: boolean): number {
     } catch {}
   }
 
-  let unpushed: number | null = 0;
+  // Default to null (unknown) so an uninstalled hub doesn't claim 0
+  // unpushed commits — that reads like "everything is in sync" which is
+  // the opposite of the truth pre-install.
+  let unpushed: number | null = null;
   let originUrl: string | null = null;
   if (installed) {
+    unpushed = 0;
     // Probe for an upstream first; without it `rev-list @{u}..HEAD` exits
     // non-zero and we'd silently report "0 unpushed", which is misleading
     // for a freshly-initialised hub that has never been pushed.

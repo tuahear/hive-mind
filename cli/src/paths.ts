@@ -24,10 +24,11 @@ export function attachedAdaptersFile(): string {
 export function readAttachedAdapters(): string[] {
   const f = attachedAdaptersFile();
   if (!existsSync(f)) return [];
+  // Match core/hub/sync.sh's parser: skip blank lines and `#` comments.
   return readFileSync(f, "utf8")
     .split(/\r?\n/)
     .map((l) => l.trim())
-    .filter((l) => l.length > 0);
+    .filter((l) => l.length > 0 && !l.startsWith("#"));
 }
 
 export function bundledVersion(): { cli: string; core: string } | null {

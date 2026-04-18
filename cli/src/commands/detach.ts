@@ -17,12 +17,12 @@ const DETACH_SH = [
   "[ -d \"$ADAPTER_ROOT\" ] || { echo \"error: unknown adapter '$ADAPTER'\" >&2; exit 1; }",
   "export ADAPTER_ROOT HIVE_MIND_HUB_DIR",
   '. "$SRC/core/adapter-loader.sh"',
+  // adapter_uninstall_hooks is a required contract function — the loader
+  // validates its presence, so anything that survived load_adapter has
+  // it. No declare -F fallback: missing function should surface as a
+  // load error, not be silently warned-and-skipped.
   'load_adapter "$ADAPTER"',
-  "if declare -F adapter_uninstall_hooks >/dev/null; then",
-  "  adapter_uninstall_hooks",
-  "else",
-  "  echo \"warning: adapter '$ADAPTER' defines no adapter_uninstall_hooks; skipping\" >&2",
-  "fi",
+  "adapter_uninstall_hooks",
 ].join("\n");
 
 export function detachCmd(adapter: string): number {

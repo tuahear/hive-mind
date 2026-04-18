@@ -84,6 +84,32 @@ assert(
   assert(s.stdout.includes('"unpushedCommits": null'), `status reports null for unpushed when no upstream (got stdout='${s.stdout}')`);
 }
 
+// 4c2. status on a hub that doesn't exist reports unpushedCommits:null,
+// not 0 — "0" would read like "everything in sync" pre-install.
+{
+  const missingHub = resolve(cliDir, ".smoke-hub-missing");
+  const { rmSync } = await import("node:fs");
+  rmSync(missingHub, { recursive: true, force: true });
+  const s = node(["dist/cli.js", "status", "--json"], { env: { ...process.env, HIVE_MIND_HUB_DIR: missingHub } });
+  assert(s.stdout.includes('"unpushedCommits": null'), `status reports null unpushed when hub missing (got='${s.stdout}')`);
+}
+
+// 4c3. readAttachedAdapters filters `#` comment lines so they don't show
+// up as fake adapters in status/version/doctor.
+{
+  const { mkdirSync, writeFileSync, rmSync } = await import("node:fs");
+  const hub = resolve(cliDir, ".smoke-hub-comments");
+  rmSync(hub, { recursive: true, force: true });
+  mkdirSync(resolve(hub, ".install-state"), { recursive: true });
+  writeFileSync(resolve(hub, ".install-state", "attached-adapters"), "# this is a comment\nclaude-code\n\n  # indented\ncodex\n");
+  const s = node(["dist/cli.js", "version", "--json"], { env: { ...process.env, HIVE_MIND_HUB_DIR: hub } });
+  const parsed = JSON.parse(s.stdout);
+  assert(
+    JSON.stringify(parsed.attached) === JSON.stringify(["claude-code", "codex"]),
+    `attached-adapters parser skips # comments (got=${JSON.stringify(parsed.attached)})`
+  );
+}
+
 // 4d. adapter name validation — reject traversal and whitespace.
 for (const bad of ["codex/", "../evil", "bad name", ""]) {
   const r = node(["dist/cli.js", "attach", bad]);
