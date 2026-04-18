@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"$HOME/.hive-mind/bin/sync\" 2>>\"$HOME/.hive-mind/.sync-error.log\" || true; \"$HOME/.hive-mind/hive-mind/core/check-dupes.sh\" 2>>\"$HOME/.claude/.sync-error.log\" || true",
+            "command": "$HIVE_MIND_HOOK claude-code session-start $ADAPTER_DIR_ARG",
             "timeout": 30
           }
         ]
@@ -16,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"$HOME/.hive-mind/bin/sync\"",
+            "command": "$HIVE_MIND_HOOK claude-code stop",
             "timeout": 30,
             "async": true
           }
@@ -29,7 +29,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"$HOME/.hive-mind/hive-mind/core/marker-nudge.sh\"",
+            "command": "$HIVE_MIND_HOOK claude-code post-tool-use $ADAPTER_DIR_ARG",
             "timeout": 2
           }
         ]

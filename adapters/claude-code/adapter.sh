@@ -29,55 +29,87 @@ ADAPTER_EVENT_SESSION_START="SessionStart"
 ADAPTER_EVENT_TURN_END="Stop"
 ADAPTER_EVENT_POST_EDIT="PostToolUse"
 
+_claude_hook_binary_suffix() {
+  case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*) printf '.exe' ;;
+    *)                    printf '' ;;
+  esac
+}
+
+_claude_hook_binary_path() {
+  printf '%s' "${HIVE_MIND_HUB_DIR:-$HOME/.hive-mind}/bin/hivemind-hook$(_claude_hook_binary_suffix)"
+}
+
+_claude_managed_hook_regex() {
+  printf '%s' 'hivemind-hook(\.exe)?|\.hive-mind/bin/sync|hive-mind/core/check-dupes\.sh|hive-mind/core/marker-nudge\.sh|\.claude/hive-mind/(core|scripts)/(sync|check-dupes|marker-nudge)\.sh'
+}
+
+_claude_strip_managed_hooks_file() {
+  local source="$1" dest="$2" regex
+  regex="$(_claude_managed_hook_regex)"
+
+  jq --arg re "$regex" '
+    if .hooks then
+      .hooks |= with_entries(
+        .value |= map(
+          if .hooks then
+            .hooks |= map(
+              select(((.command // "") | test($re)) | not)
+            )
+          else . end
+          | select((.hooks // []) | length > 0)
+        )
+      )
+      | .hooks |= with_entries(select((.value | length) > 0))
+      | if (.hooks | keys | length) == 0 then del(.hooks) else . end
+    else . end
+  ' "$source" > "$dest" 2>/dev/null
+}
+
 adapter_install_hooks() {
   local settings="$ADAPTER_DIR/settings.json"
   local template="${ADAPTER_ROOT}/settings.json"
+  local rendered hook_path hook_abs adapter_dir_abs stripped tmp
   [ -f "$template" ] || return 1
 
   mkdir -p "$ADAPTER_DIR"
 
+  hook_path="$(_claude_hook_binary_path)"
+  if command -v cygpath >/dev/null 2>&1; then
+    hook_abs="$(cygpath -m "$hook_path" 2>/dev/null || printf '%s' "$hook_path")"
+    adapter_dir_abs="$(cygpath -m "$ADAPTER_DIR" 2>/dev/null || printf '%s' "$ADAPTER_DIR")"
+  else
+    hook_abs="$hook_path"
+    adapter_dir_abs="$ADAPTER_DIR"
+  fi
+
+  rendered="$(mktemp)"
+  jq --arg hookcmd "\"$hook_abs\"" \
+     --arg adir "\"$adapter_dir_abs\"" \
+     'walk(if type == "string" then
+       gsub("[$]HIVE_MIND_HOOK"; $hookcmd)
+       | gsub("[$]ADAPTER_DIR_ARG"; $adir)
+     else . end)' \
+     "$template" > "$rendered"
+
   if [ ! -f "$settings" ]; then
-    cp "$template" "$settings"
+    mv "$rendered" "$settings"
     return 0
   fi
 
-  # Idempotent: check whether every required hook event is already
-  # present with a hive-mind command. The hub topology (v0.3.0+) routes
-  # Stop through `$HOME/.hive-mind/bin/sync` and the others through
-  # `$HOME/.hive-mind/hive-mind/core/...`; pre-0.3.0 installs used
-  # `$HOME/.claude/hive-mind/core/...`. Match either so a partial or
-  # pre-refactor install still triggers the merge-template path and
-  # gets repaired on re-run.
-  local all_present=1
-  local event
-  # The `select` uses `(.command // "")` rather than `.command` because
-  # a user's settings.json can legitimately contain non-command hook
-  # entries (prompt hooks, agent hooks, http hooks — none of which
-  # carry a `.command` field). With a bare `.command | test(...)` jq
-  # errors on the first such entry and the probe misreports "this
-  # event has no hive-mind hook" for an event that does — the merge
-  # branch below then runs on every invocation, wasting work on an
-  # already-installed hook set.
-  for event in SessionStart Stop PostToolUse; do
-    if ! jq -e --arg e "$event" '
-      (.hooks[$e] // []) | map(.hooks[]? | select((.command // "") | test("(\\.hive-mind/(bin/sync|hive-mind/core/)|\\.claude/hive-mind/(core|scripts)/)"))) | length > 0
-    ' "$settings" >/dev/null 2>&1; then
-      all_present=0
-      break
-    fi
-  done
-  if [ "$all_present" -eq 1 ]; then
-    return 0
+  stripped="$(mktemp)"
+  if ! _claude_strip_managed_hooks_file "$settings" "$stripped"; then
+    rm -f "$stripped" "$rendered"
+    return 1
   fi
 
-  local tmp
   tmp="$(mktemp)"
   # Concatenate hook event arrays instead of replacing them -- jq's `*`
   # operator overwrites arrays, which would drop user-defined hooks on
   # the same event (e.g. a user's custom Stop hook). For each event we
   # know about, append the template's entries only if they aren't
   # already present (match by command string so re-running is a no-op).
-  jq -s '
+  if jq -s '
     .[0] as $user | .[1] as $new
     # Scalar / object keys: deep-merge, new wins.
     | ($user * $new) as $base
@@ -104,7 +136,13 @@ adapter_install_hooks() {
           (($user.permissions.allow // []) + ($new.permissions.allow // [])) | unique
         )
       else . end
-  ' "$settings" "$template" > "$tmp" 2>/dev/null && mv "$tmp" "$settings"
+  ' "$stripped" "$rendered" > "$tmp" 2>/dev/null; then
+    mv "$tmp" "$settings"
+    rm -f "$rendered" "$stripped"
+  else
+    rm -f "$tmp" "$rendered" "$stripped"
+    return 1
+  fi
 }
 
 adapter_uninstall_hooks() {
@@ -117,23 +155,7 @@ adapter_uninstall_hooks() {
   # different hive-mind (a repo path, for instance) aren't removed.
   local tmp
   tmp="$(mktemp)"
-  if jq '
-    if .hooks then
-      .hooks |= with_entries(
-        .value |= map(
-          if .hooks then
-            # Guard against hook entries missing a `.command` field (prompt
-            # hooks, agent hooks, or any other non-command schema). Treat
-            # missing/null command as a non-match -- we only want to
-            # remove hive-mind command hooks, nothing else.
-            .hooks |= map(select((.command // "") | test("((~/\\.claude|\\$HOME/\\.claude)/hive-mind/(core|scripts)/|(~/\\.hive-mind|\\$HOME/\\.hive-mind)/(bin/sync|hive-mind/core/))") | not))
-          else . end
-          | select((.hooks // []) | length > 0)
-        )
-      )
-      | if (.hooks | keys | length) == 0 then del(.hooks) else . end
-    else . end
-  ' "$settings" > "$tmp" 2>/dev/null; then
+  if _claude_strip_managed_hooks_file "$settings" "$tmp"; then
     # If only empty hooks remain (no user content), remove the file.
     local remaining
     remaining="$(jq 'del(.hooks) | length' "$tmp" 2>/dev/null)"

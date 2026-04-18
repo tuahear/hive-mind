@@ -26,7 +26,7 @@
 #      - Back up tool dir on first attach
 #      - Harvest existing tool content -> hub (avoid losing user memory)
 #      - Push, pull-rebase, fan out -> tool dir
-#      - Build any adapter-local helper binaries (Codex's hivemind-hook)
+#      - Build any adapter-local helper binaries (shared hivemind-hook)
 #      - Install the tool's hooks, pointing at $HIVE_MIND_HUB_DIR/bin/sync
 #      - Record adapter name in .install-state/attached-adapters
 #   7. Run the hub's bin/sync once to verify
@@ -65,12 +65,12 @@ hivemind_hook_binary_path() {
     printf '%s/bin/%s' "$HIVE_MIND_HUB_DIR" "$(hivemind_hook_binary_name)"
 }
 should_build_hivemind_hook() {
-    if [ "$ADAPTER" = "codex" ]; then
+    if [ "$ADAPTER" = "codex" ] || [ "$ADAPTER" = "claude-code" ]; then
         return 0
     fi
     [ -f "$(hivemind_hook_binary_path)" ] && return 0
     [ -f "$HIVE_MIND_HUB_DIR/.install-state/attached-adapters" ] \
-        && grep -Fxq 'codex' "$HIVE_MIND_HUB_DIR/.install-state/attached-adapters"
+        && grep -Eq '^(codex|claude-code)$' "$HIVE_MIND_HUB_DIR/.install-state/attached-adapters"
 }
 build_hivemind_hook_binary() {
     local out tmp
@@ -83,7 +83,7 @@ build_hivemind_hook_binary() {
             log "  go not found; keeping existing $(basename "$out")"
             return 0
         fi
-        die "Go is required to build Codex's native hivemind-hook launcher. Install Go from https://go.dev/dl/ and rerun setup.sh."
+        die "Go is required to build hive-mind's native hook launcher. Install Go from https://go.dev/dl/ and rerun setup.sh."
     fi
 
     log "  building native hivemind-hook launcher"

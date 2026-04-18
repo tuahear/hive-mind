@@ -6,11 +6,11 @@ Every attached AI tool registers the same single entry point in its native hook 
 
 | Event | Command | Behavior |
 |---|---|---|
-| `SessionStart` | `"$HOME/.hive-mind/bin/sync"` then `"$HOME/.hive-mind/hive-mind/core/check-dupes.sh"` | Pulls fresh memory from the hub remote (so a new session on a second machine sees cross-machine edits immediately), then scans for union-merge duplicates and nudges the model to clean them up |
-| `Stop` (end of each turn) | `"$HOME/.hive-mind/bin/sync"` | Hub sync entry point. Harvests the tool dir → hub, pull-rebase-pushes the shared memory repo, fans the merged state back out to every attached tool |
-| `PostToolUse` on `Edit|Write|NotebookEdit` | `"$HOME/.hive-mind/hive-mind/core/marker-nudge.sh"` | Reminds the model to drop a `<!-- commit: ... -->` marker when it edits memory so the next sync gets a meaningful commit subject |
+| `SessionStart` | `"$HOME/.hive-mind/bin/hivemind-hook[.exe]" claude-code session-start "<claude-dir>"` | Native launcher entrypoint. Shells into hub sync first, then `check-dupes.sh`, so a new session on a second machine sees cross-machine edits immediately |
+| `Stop` (end of each turn) | `"$HOME/.hive-mind/bin/hivemind-hook[.exe]" claude-code stop` | Native launcher entrypoint. Shells into the hub sync entry point, which harvests the tool dir → hub, pull-rebase-pushes the shared memory repo, and fans the merged state back out to every attached tool |
+| `PostToolUse` on `Edit|Write|NotebookEdit` | `"$HOME/.hive-mind/bin/hivemind-hook[.exe]" claude-code post-tool-use "<claude-dir>"` | Native launcher entrypoint. Shells into `marker-nudge.sh`, which reminds the model to drop a `<!-- commit: ... -->` marker when it edits memory |
 
-Other adapters (Codex, Qwen, Kimi) will wire the same three events to the same three paths in their native hook config formats — see [Adapters](./adapters/).
+Other adapters can reuse the same native launcher while mapping their own hook events/actions to the appropriate helper scripts — see [Adapters](./adapters/).
 
 ## Commit marker convention
 
@@ -42,6 +42,8 @@ Tool-side JSON config conflicts are resolved before they hit the hub: harvest ex
 
 ```
 hive-mind/
+├── cmd/
+│   └── hivemind-hook/            ← native hook launcher (Codex + Claude entrypoint)
 ├── setup.sh                       ← installer: set up hub + attach an adapter
 ├── VERSION                        ← installed hive-mind version
 ├── core/
@@ -54,6 +56,9 @@ hive-mind/
 │   ├── tomlmerge.sh               ← custom git merge driver for TOML configs
 │   ├── log.sh                     ← shared logging helpers
 │   └── hub/
+│       ├── claude-hook-session-start.sh ← Claude SessionStart wrapper
+│       ├── claude-hook-stop.sh    ← Claude Stop wrapper
+│       ├── claude-hook-post-tool-use.sh ← Claude PostToolUse wrapper
 │       ├── sync.sh                ← THE hub sync entry point (installed to bin/sync)
 │       ├── harvest-fanout.sh      ← bidirectional tool ↔ hub mapper
 │       ├── gitignore              ← hub-level whitelist
@@ -71,4 +76,3 @@ hive-mind/
 ├── tests/                         ← bats test suite (see ./test runner)
 └── docs/                          ← docs site
 ```
-

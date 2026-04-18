@@ -14,6 +14,19 @@ import (
 
 const fallbackJSON = "{}"
 
+type outputMode int
+
+const (
+	outputPassthrough outputMode = iota
+	outputJSONFallback
+)
+
+type hookInvocation struct {
+	scriptPath string
+	scriptArgs []string
+	outputMode outputMode
+}
+
 func main() {
 	os.Exit(run(os.Args[1:]))
 }
@@ -32,7 +45,7 @@ func run(args []string) int {
 	}
 
 	hubDir := hubDirFromExecutable(exePath)
-	scriptPath, scriptArgs, err := hookScriptForAction(hubDir, args)
+	invocation, err := hookScriptForAction(hubDir, args)
 	if err != nil {
 		writeFallbackJSON(hubDir, err.Error())
 		return 0
@@ -44,13 +57,23 @@ func run(args []string) int {
 		return 0
 	}
 
-	stdout, err := runHookScript(bashPath, scriptPath, scriptArgs)
+	stdout, err := runHookScript(bashPath, invocation.scriptPath, invocation.scriptArgs)
 	if err != nil {
-		writeFallbackJSON(hubDir, fmt.Sprintf("run %s via %s: %v", scriptPath, bashPath, err))
+		message := fmt.Sprintf("run %s via %s: %v", invocation.scriptPath, bashPath, err)
+		if invocation.outputMode == outputJSONFallback {
+			writeFallbackJSON(hubDir, message)
+		} else {
+			appendHubLog(hubDir, message)
+		}
 		return 0
 	}
 
-	writeJSONOrFallback(hubDir, stdout, "")
+	if invocation.outputMode == outputJSONFallback {
+		writeJSONOrFallback(hubDir, stdout, "")
+		return 0
+	}
+
+	_, _ = os.Stdout.Write(stdout)
 	return 0
 }
 
@@ -58,19 +81,86 @@ func hubDirFromExecutable(exePath string) string {
 	return filepath.Clean(filepath.Join(filepath.Dir(exePath), ".."))
 }
 
-func hookScriptForAction(hubDir string, args []string) (string, []string, error) {
+func hookScriptForAction(hubDir string, args []string) (hookInvocation, error) {
 	if len(args) == 0 {
-		return "", nil, fmt.Errorf("missing action")
+		return hookInvocation{}, fmt.Errorf("missing action")
 	}
 
-	repoRoot := filepath.Join(hubDir, "hive-mind")
-	switch args[0] {
-	case "session-start":
-		return filepath.Join(repoRoot, "core", "hub", "codex-hook-session-start.sh"), args[1:], nil
-	case "stop":
-		return filepath.Join(repoRoot, "core", "hub", "codex-hook-stop.sh"), args[1:], nil
+	if legacyCodexAction(args[0]) {
+		return codexInvocation(hubDir, args[0], args[1:])
+	}
+
+	if len(args) < 2 {
+		return hookInvocation{}, fmt.Errorf("missing action for adapter %q", args[0])
+	}
+
+	return adapterInvocation(hubDir, args[0], args[1], args[2:])
+}
+
+func legacyCodexAction(action string) bool {
+	switch action {
+	case "session-start", "stop":
+		return true
 	default:
-		return "", nil, fmt.Errorf("unknown action %q", args[0])
+		return false
+	}
+}
+
+func codexInvocation(hubDir, action string, scriptArgs []string) (hookInvocation, error) {
+	repoRoot := filepath.Join(hubDir, "hive-mind")
+	switch action {
+	case "session-start":
+		return hookInvocation{
+			scriptPath: filepath.Join(repoRoot, "core", "hub", "codex-hook-session-start.sh"),
+			scriptArgs: scriptArgs,
+			outputMode: outputJSONFallback,
+		}, nil
+	case "stop":
+		return hookInvocation{
+			scriptPath: filepath.Join(repoRoot, "core", "hub", "codex-hook-stop.sh"),
+			scriptArgs: scriptArgs,
+			outputMode: outputJSONFallback,
+		}, nil
+	default:
+		return hookInvocation{}, fmt.Errorf("unknown codex action %q", action)
+	}
+}
+
+func adapterInvocation(hubDir, adapter, action string, scriptArgs []string) (hookInvocation, error) {
+	switch strings.ToLower(adapter) {
+	case "codex":
+		return codexInvocation(hubDir, action, scriptArgs)
+	case "claude", "claude-code":
+		return claudeInvocation(hubDir, action, scriptArgs)
+	default:
+		return hookInvocation{}, fmt.Errorf("unknown adapter %q", adapter)
+	}
+}
+
+func claudeInvocation(hubDir, action string, scriptArgs []string) (hookInvocation, error) {
+	repoRoot := filepath.Join(hubDir, "hive-mind")
+
+	switch action {
+	case "session-start":
+		return hookInvocation{
+			scriptPath: filepath.Join(repoRoot, "core", "hub", "claude-hook-session-start.sh"),
+			scriptArgs: scriptArgs,
+			outputMode: outputPassthrough,
+		}, nil
+	case "stop":
+		return hookInvocation{
+			scriptPath: filepath.Join(repoRoot, "core", "hub", "claude-hook-stop.sh"),
+			scriptArgs: scriptArgs,
+			outputMode: outputPassthrough,
+		}, nil
+	case "post-edit", "post-tool-use":
+		return hookInvocation{
+			scriptPath: filepath.Join(repoRoot, "core", "hub", "claude-hook-post-tool-use.sh"),
+			scriptArgs: scriptArgs,
+			outputMode: outputPassthrough,
+		}, nil
+	default:
+		return hookInvocation{}, fmt.Errorf("unknown claude action %q", action)
 	}
 }
 
@@ -78,6 +168,7 @@ func runHookScript(bashPath, scriptPath string, scriptArgs []string) ([]byte, er
 	args := append([]string{scriptPath}, scriptArgs...)
 	cmd := exec.Command(bashPath, args...)
 	cmd.Env = os.Environ()
+	cmd.Stdin = os.Stdin
 	cmd.Stderr = os.Stderr
 
 	var stdout bytes.Buffer

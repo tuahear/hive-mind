@@ -9,16 +9,17 @@ When you run the installer (the default `ADAPTER=claude-code` is assumed if you 
 1. **Clones hive-mind** into `~/.hive-mind/hive-mind/` (machine-local, gitignored).
 2. **Creates the hub repo** at `~/.hive-mind/.git` with your `MEMORY_REPO` as `origin`.
 3. **Seeds bundled skills** — including the `hive-mind` skill that teaches the agent to embed commit markers in memory edits — into `~/.hive-mind/skills/`.
-4. **Registers three hooks** in `~/.claude/settings.json` (details below).
+4. **Builds or refreshes** the native `hivemind-hook` launcher under `~/.hive-mind/bin/`.
 5. **Runs `adapter_migrate`** to bring pre-0.3 installs forward to the hub topology.
+6. **Registers three hooks** in `~/.claude/settings.json` (details below), pointing them at the launcher-backed entrypoint.
 
 ## Hooks registered in `~/.claude/settings.json`
 
 | Event | Command | Purpose |
 |---|---|---|
-| `SessionStart` | `"$HOME/.hive-mind/bin/sync"` then `"$HOME/.hive-mind/hive-mind/core/check-dupes.sh"` | Pulls fresh memory from the hub remote, then scans for union-merge duplicates and nudges the model to clean them up. |
-| `Stop` (end of each turn) | `"$HOME/.hive-mind/bin/sync"` | Harvests `~/.claude/` into the hub, pull-rebase-pushes the shared repo, fans the merged state back out. |
-| `PostToolUse` on `Edit\|Write\|NotebookEdit` | `"$HOME/.hive-mind/hive-mind/core/marker-nudge.sh"` | Reminds the model to drop a `<!-- commit: ... -->` marker so the next sync gets a meaningful commit subject. |
+| `SessionStart` | `"$HOME/.hive-mind/bin/hivemind-hook[.exe]" claude-code session-start "<claude-dir>"` | Runs the shared launcher, which shells into hub sync first and then `check-dupes.sh` so a new Claude session sees fresh cross-machine memory before the first turn. |
+| `Stop` (end of each turn) | `"$HOME/.hive-mind/bin/hivemind-hook[.exe]" claude-code stop` | Runs the shared launcher, which shells into the hub sync entry point and stays otherwise silent. |
+| `PostToolUse` on `Edit\|Write\|NotebookEdit` | `"$HOME/.hive-mind/bin/hivemind-hook[.exe]" claude-code post-tool-use "<claude-dir>"` | Runs the shared launcher, which shells into `marker-nudge.sh` with the Claude dir wired in. |
 
 ## Memory file mapping
 
@@ -38,7 +39,7 @@ Lowercase filenames on the hub side signal "hive-mind canonical".
 
 ## Migration from pre-0.3 installs
 
-Pre-0.3 hive-mind installed the per-tool git repo at `~/.claude/.git` (the now-legacy adapter-owns-git-repo model). `adapter_migrate` (in `adapters/claude-code/adapter.sh`) runs on every `setup.sh` invocation and transparently moves the git metadata to `~/.hive-mind/.git`, updates the hook commands to point at `~/.hive-mind/bin/sync`, and preserves your memory content. Re-running `setup.sh` on a pre-0.3 install is safe and idempotent.
+Pre-0.3 hive-mind installed the per-tool git repo at `~/.claude/.git` (the now-legacy adapter-owns-git-repo model). `adapter_migrate` (in `adapters/claude-code/adapter.sh`) runs on every `setup.sh` invocation and transparently moves the git metadata to `~/.hive-mind/.git`, repairs legacy hook command strings to the hub topology, and preserves your memory content. `adapter_install_hooks` then strips those managed direct-shell commands and reinstalls the current launcher-backed entries. Re-running `setup.sh` on a pre-0.3 install is safe and idempotent.
 
 ## After install
 
