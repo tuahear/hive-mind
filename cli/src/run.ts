@@ -15,9 +15,12 @@ export function run(cmd: string, args: string[], opts: SpawnSyncOptions = {}): R
   };
 }
 
-// Run bash with a script path + args. On Windows, this requires bash on PATH
-// (Git Bash / MSYS / WSL). We don't try to emulate bash — setup.sh and core/
-// are bash-only and that's a documented platform requirement.
+// Run bash with a script path + args. On Windows, this requires a bash
+// that understands host paths — Git Bash / MSYS work; WSL does NOT,
+// because we pass the script as a Windows drive-letter path (e.g.
+// C:\Users\...\setup.sh) and WSL bash needs /mnt/c/... instead. A
+// `wslpath`-style translation layer could fix that; out of scope for
+// the prototype.
 export function runBash(scriptPath: string, args: string[] = [], env: NodeJS.ProcessEnv = {}): number {
   const res = spawnSync("bash", [scriptPath, ...args], {
     stdio: "inherit",
