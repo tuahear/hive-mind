@@ -519,6 +519,36 @@ EOF
   [ "$output" = 'edited codex-scoped' ]
 }
 
+@test "harvest: single-id selector ignores marker state in tool file" {
+  # Single-id selectors (e.g. content.md[1]\tAGENTS.override.md) treat the
+  # whole tool file as plain content for that one section. Marker damage
+  # elsewhere in the file must NOT cause harvest to bail — only multi-id
+  # / wildcard selectors parse markers. Regression guard for the case
+  # pattern that decides whether to invoke _hub_content_markers_ok.
+  #
+  # Concrete failure mode this pins: if the case pattern were ever widened
+  # to match single-id selectors, harvest would short-circuit and the hub
+  # file would stay empty (or keep its pre-harvest state).
+  export ADAPTER_HUB_MAP=$'content.md[1]\tAGENTS.override.md'
+  # Tool file deliberately has an unmatched START marker (damaged).
+  cat > "$TOOL/AGENTS.override.md" <<'EOF'
+body line
+<!-- hive-mind:section=2 START -->
+dangling (no END)
+EOF
+  hub_harvest "$TOOL" "$HUB"
+
+  # Harvest ran: the hub file exists and contains the tool-side body.
+  # Raw grep (not _hub_content_read_section) because wrapping the damaged
+  # marker inside section 1's block produces nested markers that the
+  # section-reader isn't required to untangle — harvest's contract is
+  # "don't skip single-id harvests", not "perfectly round-trip damaged
+  # markers through the section parser".
+  [ -f "$HUB/content.md" ]
+  grep -Fq 'body line' "$HUB/content.md"
+  grep -Fq 'dangling (no END)' "$HUB/content.md"
+}
+
 @test "harvest: damaged markers in multi-section tool file are skipped, hub preserved" {
   export ADAPTER_HUB_MAP=$'content.md[0,1]\tCLAUDE.md'
   # Seed hub with a clean two-section file.

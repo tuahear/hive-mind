@@ -456,13 +456,15 @@ _hub_content_harvest_from_file() {
   [ -f "$src" ] || return 0
   mkdir -p "$(dirname "$dst")" 2>/dev/null
 
-  # Validate markers up front for any selector that will drive a marker-
-  # based parse (explicit multi-id or "*" — "*" effectively always parses
-  # markers when they exist in the tool file).
+  # Validate markers up front only for selectors that drive a marker-
+  # based parse: a literal "*" (wildcard, expands from the tool file's
+  # actual section list) or any explicit multi-id CSV (contains a
+  # comma). Single-id selectors like "0" / "1" treat the tool file as
+  # plain content for that section and must not be blocked by unrelated
+  # marker imbalance elsewhere in the file.
   local needs_valid_markers=0
   case "$sel" in
-    *',*'|'*,*'|'*') needs_valid_markers=1 ;;
-    *,*) needs_valid_markers=1 ;;
+    \*|*,*) needs_valid_markers=1 ;;
   esac
   if [ "$needs_valid_markers" -eq 1 ] && ! _hub_content_markers_ok "$src"; then
     _hub_log "harvest: skipping sectioned harvest for $src (marker imbalance)"
