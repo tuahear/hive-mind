@@ -1,5 +1,5 @@
 ---
-name: hive-mind
+name: hive-mind-claude
 description: Load when editing a hive-mind-synced file — `~/.claude/CLAUDE.md`, `~/.claude/settings.json`, `~/.claude/projects/*/MEMORY.md`, `~/.claude/projects/*/memory/*`, `~/.claude/skills/*/*`. Triggers — remembering, saving a preference, updating project memory, adding feedback, modifying a skill/hook/permission.
 ---
 

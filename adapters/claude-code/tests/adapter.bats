@@ -134,7 +134,7 @@ teardown() {
 # === Skill format ==========================================================
 
 @test "bundled hive-mind skill has YAML frontmatter" {
-  local skill="${ADAPTER_ROOT}/skills/hive-mind/SKILL.md"
+  local skill="${ADAPTER_ROOT}/skills/hive-mind-claude/content.md"
   [ -f "$skill" ]
   head -1 "$skill" | grep -q '^---$'
 }

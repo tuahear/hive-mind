@@ -1,5 +1,5 @@
 ---
-name: hive-mind
+name: hive-mind-codex
 description: Load when editing a hive-mind-synced file: `~/.codex/AGENTS.override.md`, `~/.codex/hooks.json`, `~/.codex/config.toml`, `~/.agents/skills/*/*`. Triggers: remembering, saving a preference, updating a hook, or modifying a synced skill.
 ---
 

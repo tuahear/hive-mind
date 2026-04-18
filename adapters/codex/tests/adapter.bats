@@ -97,7 +97,7 @@ teardown() {
 # === Skill format ==========================================================
 
 @test "bundled hive-mind skill has YAML frontmatter and Codex paths" {
-  skill="$ADAPTER_ROOT/skills/hive-mind/content.md"
+  skill="$ADAPTER_ROOT/skills/hive-mind-codex/content.md"
   [ -f "$skill" ]
   head -1 "$skill" | grep -q '^---$'
   grep -q '\.codex/AGENTS\.override\.md' "$skill"

@@ -98,7 +98,7 @@ This README is for end users. If you want to hack on hive-mind itself:
 
 1. Fork the repo and clone
 2. Run `scripts/install-dev-hooks.sh` once in your clone — installs a pre-commit hook that keeps bundled skills clean
-3. Edit `adapters/claude-code/skills/hive-mind/content.md` to change the bundled Claude skill (not the copy in `~/.claude/skills/hive-mind/` — that's a user-facing install target that gets refreshed each time setup.sh runs)
+3. Edit `adapters/claude-code/skills/hive-mind-claude/content.md` to change the bundled Claude skill (not the copy in `~/.claude/skills/hive-mind-claude/` — that's a user-facing install target that gets refreshed each time setup.sh runs)
 4. Install [bats-core](https://github.com/bats-core/bats-core) + GNU `parallel` — `brew install bats-core parallel` (macOS), `apt install bats parallel` (Linux). Run `./test` from the repo root.
 5. PRs welcome
 

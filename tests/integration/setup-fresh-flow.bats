@@ -168,14 +168,14 @@ seed_older_remote() {
   eval "$(awk '/^manage_bundled_skills\(\)/,/^}/' "$REPO_ROOT/setup.sh")"
   manage_bundled_skills
 
-  [ -d "$HIVE_MIND_HUB_DIR/skills/hive-mind" ]
-  [ -f "$HIVE_MIND_HUB_DIR/skills/hive-mind/content.md" ]
+  [ -d "$HIVE_MIND_HUB_DIR/skills/hive-mind-claude" ]
+  [ -f "$HIVE_MIND_HUB_DIR/skills/hive-mind-claude/content.md" ]
 }
 
 @test "manage_bundled_skills removes the legacy memory-commit skill under the tool dir" {
   # Pre-0.3 installs shipped the hive-mind skill under the tool's
   # skills/memory-commit/. Upgrades must delete it to avoid a collision
-  # with the renamed skills/hive-mind/ that fan-out will write to the
+  # with the renamed skills/hive-mind-claude/ that fan-out will write to the
   # tool dir on the next sync.
   ADAPTER_ROOT="$REPO_ROOT/adapters/claude-code"
   export ADAPTER_ROOT
