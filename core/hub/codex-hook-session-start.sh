@@ -15,14 +15,16 @@
 # rather than inline in hooks.json.
 set +e
 
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+HUB_DIR="$(CDPATH= cd -- "$SCRIPT_DIR/../../.." && pwd)"
 adapter_dir="${1:-$HOME/.codex}"
 adapter_global_memory="$adapter_dir/AGENTS.override.md"
 
-"$HOME/.hive-mind/bin/sync" >/dev/null 2>>"$HOME/.hive-mind/.sync-error.log"
+"$HUB_DIR/bin/sync" >/dev/null 2>>"$HUB_DIR/.sync-error.log"
 
 out="$(ADAPTER_DIR="$adapter_dir" \
        ADAPTER_GLOBAL_MEMORY="$adapter_global_memory" \
-       "$HOME/.hive-mind/hive-mind/core/check-dupes.sh" \
+       "$HUB_DIR/hive-mind/core/check-dupes.sh" \
        2>>"$adapter_dir/.sync-error.log")"
 
 if [ -n "$out" ]; then

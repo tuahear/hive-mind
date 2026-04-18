@@ -53,7 +53,7 @@ teardown() {
   [ "$status" -ne 0 ]
 }
 
-@test "SessionStart hook template dispatches the session-start wrapper script" {
+@test "SessionStart hook template dispatches via the native hivemind-hook launcher" {
   # The inline shell logic that used to live in hooks.json now lives in
   # core/hub/codex-hook-session-start.sh (see adapter.sh for why: Codex's
   # Windows hook runner silently strips inner quotes). The template
@@ -61,20 +61,18 @@ teardown() {
   # paths at render time. This test pins the template-level references.
   template="$ADAPTER_ROOT/hooks.json"
   cmd="$(jq -r '.hooks.SessionStart[0].hooks[0].command' "$template")"
-  [[ "$cmd" == *'codex-hook-session-start.sh'* ]]
-  [[ "$cmd" == *'$HIVE_MIND_ROOT'* ]]
-  [[ "$cmd" == *'$ADAPTER_DIR_ABS'* ]]
+  [ "$cmd" = '$HIVE_MIND_HOOK session-start $ADAPTER_DIR_ARG' ]
 }
 
 @test "session-start wrapper script itself invokes sync before check-dupes with Codex env" {
   script="$REPO_ROOT/core/hub/codex-hook-session-start.sh"
   [ -f "$script" ]
   body="$(cat "$script")"
-  [[ "$body" == *'.hive-mind/bin/sync'* ]]
+  [[ "$body" == *'HUB_DIR/bin/sync'* ]]
   [[ "$body" == *'hive-mind/core/check-dupes.sh'* ]]
   [[ "$body" == *'ADAPTER_DIR='* ]]
   [[ "$body" == *'ADAPTER_GLOBAL_MEMORY='* ]]
-  sync_pos="$(awk -v s="$body" -v t='.hive-mind/bin/sync' 'BEGIN{print index(s,t)}')"
+  sync_pos="$(awk -v s="$body" -v t='HUB_DIR/bin/sync' 'BEGIN{print index(s,t)}')"
   dupes_pos="$(awk -v s="$body" -v t='hive-mind/core/check-dupes.sh' 'BEGIN{print index(s,t)}')"
   [ "$sync_pos" -gt 0 ]
   [ "$dupes_pos" -gt 0 ]
@@ -85,11 +83,11 @@ teardown() {
   script="$REPO_ROOT/core/hub/codex-hook-stop.sh"
   [ -f "$script" ]
   body="$(cat "$script")"
-  [[ "$body" == *'.hive-mind/bin/sync'* ]]
+  [[ "$body" == *'HUB_DIR/bin/sync'* ]]
   [[ "$body" == *"printf '{}'"* ]]
 }
 
-@test "install_hooks renders an absolute bash path on Windows (PowerShell cannot dispatch bare 'bash' without hitting WSL's bash.exe)" {
+@test "install_hooks renders an absolute hivemind-hook path" {
   # On Windows, `bash` resolves via PATH to C:\Windows\System32\bash.exe
   # (the WSL launcher) when invoked from PowerShell — not Git Bash.
   # adapter_install_hooks detects the current shell's bash via cygpath
@@ -107,8 +105,8 @@ teardown() {
   # "C:/Program Files/Git/.../bash" (or similar absolute Windows path)
   # on Windows. The leading char is `"` and the first token ends in
   # `bash` or `bash.exe`.
-  [[ "$cmd" =~ ^\"[^\"]*bash(\.exe)?\"[[:space:]] ]] || {
-    echo "installed hooks.json Stop command must begin with a quoted bash executable, got: $cmd" >&2
+  [[ "$cmd" =~ ^\"[^\"]*hivemind-hook(\.exe)?\"[[:space:]]stop$ ]] || {
+    echo "installed hooks.json Stop command must begin with a quoted hivemind-hook executable, got: $cmd" >&2
     return 1
   }
 
@@ -123,7 +121,7 @@ teardown() {
   fi
 }
 
-@test "hooks.json template dispatches via bash + wrapper script (no inline shell)" {
+@test "hooks.json template dispatches only through hivemind-hook (no inline shell)" {
   # Earlier designs embedded full shell logic (sync + check-dupes +
   # JSON-emit) inline in each hooks.json command string. That failed
   # repeatedly on Windows because Codex's hook runner + PowerShell
@@ -133,12 +131,16 @@ teardown() {
   # syntax in the template, no quoting lottery downstream.
   template="$ADAPTER_ROOT/hooks.json"
   while IFS= read -r cmd; do
-    [[ "$cmd" == bash\ * ]] || {
-      echo "hook command must start with 'bash ' for cross-shell dispatch: $cmd" >&2
+    [[ "$cmd" == '$HIVE_MIND_HOOK '* ]] || {
+      echo "hook command must start with the \$HIVE_MIND_HOOK token: $cmd" >&2
       return 1
     }
-    [[ "$cmd" == *'codex-hook-'*'.sh'* ]] || {
-      echo "hook command must dispatch a codex-hook-*.sh wrapper (no inline shell): $cmd" >&2
+    [[ "$cmd" != *'bash '* ]] || {
+      echo "hook command must not dispatch bash directly: $cmd" >&2
+      return 1
+    }
+    [[ "$cmd" != *'codex-hook-'*'.sh'* ]] || {
+      echo "hook command must not mention wrapper scripts directly: $cmd" >&2
       return 1
     }
     # Guard against regression to inline shell syntax — the whole point
@@ -151,16 +153,18 @@ teardown() {
   done < <(jq -r '.hooks | .[] | .[].hooks[] | .command' "$template")
 }
 
-@test "hooks.json template references the hive-mind root via \$HIVE_MIND_ROOT token" {
+@test "hooks.json template references launcher and adapter-dir tokens" {
   # install_hooks substitutes $HIVE_MIND_ROOT (and $ADAPTER_DIR_ABS for
   # session-start) with absolute Windows-friendly paths at render time.
   # The template must use the tokens, not bare $HOME references — $HOME
   # expansion in a hook command string is unreliable across Codex's
   # Windows dispatchers.
   template="$ADAPTER_ROOT/hooks.json"
+  session_cmd="$(jq -r '.hooks.SessionStart[0].hooks[0].command' "$template")"
+  stop_cmd="$(jq -r '.hooks.Stop[0].hooks[0].command' "$template")"
   while IFS= read -r cmd; do
-    [[ "$cmd" == *'$HIVE_MIND_ROOT'* ]] || {
-      echo "command must reference \$HIVE_MIND_ROOT token (not bare \$HOME): $cmd" >&2
+    [[ "$cmd" == *'$HIVE_MIND_HOOK'* ]] || {
+      echo "command must reference \$HIVE_MIND_HOOK (not bare \$HOME): $cmd" >&2
       return 1
     }
     [[ "$cmd" != *'$HOME'* ]] || {
@@ -168,6 +172,8 @@ teardown() {
       return 1
     }
   done < <(jq -r '.hooks | .[] | .[].hooks[] | .command' "$template")
+  [[ "$session_cmd" == *'$ADAPTER_DIR_ARG'* ]]
+  [[ "$stop_cmd" == '$HIVE_MIND_HOOK stop' ]]
 
   run grep -E '~/\.hive-mind|~/\.codex' "$template"
   [ "$status" -ne 0 ]
@@ -284,7 +290,7 @@ EOF
   grep -q '^codex_hooks = true$' "$ADAPTER_DIR/config.toml"
 }
 
-@test "install_hooks idempotency probe tolerates non-command hook entries" {
+@test "install_hooks replaces legacy hive-mind commands and preserves non-command hook entries" {
   mkdir -p "$ADAPTER_DIR"
   cat > "$ADAPTER_DIR/hooks.json" <<'EOF'
 {
@@ -327,8 +333,23 @@ EOF
   adapter_install_hooks
   after="$(cat "$ADAPTER_DIR/hooks.json")"
 
-  [ "$before" = "$after" ]
+  [ "$before" != "$after" ]
+  run grep -q 'hivemind-hook' "$ADAPTER_DIR/hooks.json"
+  [ "$status" -eq 0 ]
+  run grep -q '\.hive-mind/bin/sync' "$ADAPTER_DIR/hooks.json"
+  [ "$status" -ne 0 ]
   jq -e '.hooks.SessionStart[] | select(.hooks[0].type == "prompt")' "$ADAPTER_DIR/hooks.json" >/dev/null
+}
+
+@test "install_hooks is idempotent once hivemind-hook commands are present" {
+  mkdir -p "$ADAPTER_DIR"
+
+  adapter_install_hooks
+  before="$(cat "$ADAPTER_DIR/hooks.json")"
+  adapter_install_hooks
+  after="$(cat "$ADAPTER_DIR/hooks.json")"
+
+  [ "$before" = "$after" ]
 }
 
 # === uninstall_hooks =======================================================
@@ -352,9 +373,13 @@ EOF
 
   adapter_install_hooks
 
+  if command -v cygpath >/dev/null 2>&1; then
+    custom_expected="$(cygpath -m "$custom")"
+  else
+    custom_expected="$custom"
+  fi
   cmd="$(jq -r '.hooks.SessionStart[0].hooks[0].command' "$custom/hooks.json")"
-  [[ "$cmd" == *"ADAPTER_DIR=\"$custom\""* ]]
-  [[ "$cmd" == *"ADAPTER_GLOBAL_MEMORY=\"$custom/AGENTS.override.md\""* ]]
+  [[ "$cmd" == *"session-start \"$custom_expected\""* ]]
   [[ "$cmd" != *'$HOME/.codex'* ]]
 }
 
@@ -368,8 +393,13 @@ EOF
 
   adapter_install_hooks
 
+  if command -v cygpath >/dev/null 2>&1; then
+    custom_expected="$(cygpath -m "$custom")"
+  else
+    custom_expected="$custom"
+  fi
   cmd="$(jq -r '.hooks.SessionStart[0].hooks[0].command' "$custom/hooks.json")"
-  [[ "$cmd" == *"ADAPTER_DIR=\"$custom\""* ]]
+  [[ "$cmd" == *"session-start \"$custom_expected\""* ]]
   [[ "$cmd" != *'$HOME/.codex'* ]]
 }
 
@@ -402,7 +432,7 @@ EOF
 
   [ -f "$ADAPTER_DIR/hooks.json" ]
   jq -e '.hooks.Stop | map(.hooks[0].command) | index("echo user-stop")' "$ADAPTER_DIR/hooks.json" >/dev/null
-  run grep -q '\.hive-mind/bin/sync' "$ADAPTER_DIR/hooks.json"
+  run grep -q 'hivemind-hook' "$ADAPTER_DIR/hooks.json"
   [ "$status" -ne 0 ]
   grep -q '^model = "gpt-5.4"$' "$ADAPTER_DIR/config.toml"
   grep -q '^codex_hooks = false$' "$ADAPTER_DIR/config.toml"

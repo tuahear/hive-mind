@@ -9,5 +9,8 @@
 # the entire quoting lottery.
 set +e
 
-"$HOME/.hive-mind/bin/sync" >/dev/null 2>>"$HOME/.hive-mind/.sync-error.log"
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+HUB_DIR="$(CDPATH= cd -- "$SCRIPT_DIR/../../.." && pwd)"
+
+"$HUB_DIR/bin/sync" >/dev/null 2>>"$HUB_DIR/.sync-error.log"
 printf '{}'

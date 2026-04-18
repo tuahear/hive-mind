@@ -20,6 +20,7 @@ adapter_list_memory_files() { :; }
 ADAPTER_GITIGNORE_TEMPLATE="${ADAPTER_ROOT}/gitignore"
 ADAPTER_GITATTRIBUTES_TEMPLATE="${ADAPTER_ROOT}/gitattributes"
 ADAPTER_SECRET_FILES="auth.json"
+
 # --- C. Lifecycle touchpoints ----------------------------------------------
 # ADAPTER_EVENT_POST_EDIT is intentionally omitted: Codex's current hook
 # surface does not install a PostToolUse-style per-edit hook, so the
@@ -243,8 +244,46 @@ _codex_restore_feature_state() {
   rm -f "$state_file"
 }
 
+_codex_hook_binary_suffix() {
+  case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*) printf '.exe' ;;
+    *)                    printf '' ;;
+  esac
+}
+
+_codex_hook_binary_path() {
+  printf '%s' "${HIVE_MIND_HUB_DIR:-$HOME/.hive-mind}/bin/hivemind-hook$(_codex_hook_binary_suffix)"
+}
+
+_codex_managed_hook_regex() {
+  printf '%s' 'hivemind-hook(\.exe)?|codex-hook-session-start\.sh|codex-hook-stop\.sh|\.hive-mind/bin/sync|hive-mind/core/check-dupes\.sh'
+}
+
+_codex_strip_managed_hooks_file() {
+  local source="$1" dest="$2" regex
+  regex="$(_codex_managed_hook_regex)"
+
+  jq --arg re "$regex" '
+    if .hooks then
+      .hooks |= with_entries(
+        .value |= map(
+          if .hooks then
+            .hooks |= map(
+              select(((.command // "") | test($re)) | not)
+            )
+          else . end
+          | select((.hooks // []) | length > 0)
+        )
+      )
+      | .hooks |= with_entries(select((.value | length) > 0))
+      | if (.hooks | keys | length) == 0 then del(.hooks) else . end
+    else . end
+  ' "$source" > "$dest" 2>/dev/null
+}
+
 adapter_install_hooks() {
-  local hooks template config rendered bash_cmd
+  local hooks template config rendered hook_path hook_abs adapter_dir_abs
+  local stripped tmp
 
   hooks="$(_codex_hooks_file)"
   template="${ADAPTER_ROOT}/hooks.json"
@@ -256,104 +295,21 @@ adapter_install_hooks() {
   _codex_record_feature_state "$config"
   _codex_set_feature_flag "$config" true
 
-  # Bare `bash` in a hooks.json command is not portable on Windows: when
-  # Codex's hook runner invokes the command under PowerShell, `bash`
-  # resolves via PATH to C:\Windows\System32\bash.exe (the WSL launcher),
-  # which fails with "Access is denied" long before Git Bash is reached.
-  #
-  # Candidate priority on Windows (most to least reliable when spawned
-  # from a non-MSYS parent process like PowerShell):
-  #   1. $EXEPATH/bin/bash.exe — the Git Bash "wrapper" binary. Sets up
-  #      MSYS signal handling + pipe plumbing correctly even when the
-  #      parent is cmd/PowerShell. $EXEPATH is set by Git Bash itself.
-  #   2. $EXEPATH/usr/bin/bash.exe — the raw msys2 bash. Fails with
-  #      "couldn't create signal pipe, Win32 error 5" when spawned cold
-  #      from PowerShell/cmd, but works if (1) is absent.
-  #   3. Whatever `$BASH` or `command -v bash` points at, .exe-suffixed
-  #      then bare. Fallback for non-standard Git installs.
-  # Every candidate must pass [ -f ] before we commit to it — a dangling
-  # path embedded in hooks.json would reproduce the exact regression
-  # we're fixing.
-  #
-  # On Unix: cygpath is absent, bare `bash` is the correct dispatcher.
-  bash_cmd=""
+  hook_path="$(_codex_hook_binary_path)"
   if command -v cygpath >/dev/null 2>&1; then
-    local _unix_bash _win_bash _git_root _candidate _candidates
-    _unix_bash="${BASH:-$(command -v bash 2>/dev/null)}"
-    _candidates=""
-    if [ -n "$_unix_bash" ]; then
-      _win_bash="$(cygpath -m "$_unix_bash" 2>/dev/null)"
-      if [ -n "$_win_bash" ]; then
-        # Derive the Git install root by stripping whichever tail the
-        # currently-running bash happens to have. Git Bash's wrapper
-        # lives under $GIT_ROOT/bin, the raw msys2 bash under
-        # $GIT_ROOT/usr/bin. cygpath of either gives us one of those
-        # absolute paths; strip it back to $GIT_ROOT so we can probe
-        # both candidates regardless of which one we happen to be
-        # running under right now.
-        _git_root="$_win_bash"
-        _git_root="${_git_root%.exe}"
-        _git_root="${_git_root%/bash}"
-        _git_root="${_git_root%/bin}"
-        _git_root="${_git_root%/usr}"
-        if [ -d "$_git_root" ]; then
-          # Wrapper first — handles PowerShell/cmd spawn quirks (signal
-          # pipe / stdin plumbing) where the raw msys2 binary fails.
-          _candidates+="$_git_root/bin/bash.exe"$'\n'
-          _candidates+="$_git_root/usr/bin/bash.exe"$'\n'
-        fi
-      fi
-      # Fallback: whatever $BASH / command -v happens to point at.
-      _candidates+="${_unix_bash}.exe"$'\n'
-      _candidates+="$_unix_bash"
-    fi
-    while IFS= read -r _candidate; do
-      [ -n "$_candidate" ] && [ -f "$_candidate" ] || continue
-      # Windows-style paths pass through; unix-style paths ($BASH output)
-      # go through cygpath.
-      case "$_candidate" in
-        [A-Za-z]:/*) bash_cmd="$_candidate" ;;
-        *)           bash_cmd="$(cygpath -m "$_candidate" 2>/dev/null)" ;;
-      esac
-      [ -n "$bash_cmd" ] && break
-    done <<< "$_candidates"
-    if [ -z "$bash_cmd" ]; then
-      # Windows detected (cygpath present) but no resolvable bash path —
-      # warn loudly rather than silently shipping a hooks.json that will
-      # dispatch through WSL's bash.exe and fail on every session.
-      printf '%s\n' 'codex adapter: WARNING — could not resolve absolute Git Bash path on Windows; codex hooks may dispatch to WSL bash.exe and fail. Ensure Git Bash is installed and on PATH.' >&2
-    fi
-  fi
-  [ -n "$bash_cmd" ] || bash_cmd="bash"
-
-  # Resolve an absolute Windows-friendly path to the hive-mind source
-  # root (where the hook-wrapper scripts live). We write absolute paths
-  # into hooks.json rather than relying on $HOME/env expansion inside
-  # the command string — Codex's Windows hook runner (PowerShell /
-  # Windows native) silently strips inner quotes and doesn't reliably
-  # expand shell variables, so we render everything up front.
-  local hm_root hm_root_abs adapter_dir_abs
-  hm_root="${HIVE_MIND_HUB_DIR:-$HOME/.hive-mind}/hive-mind"
-  if command -v cygpath >/dev/null 2>&1; then
-    hm_root_abs="$(cygpath -m "$hm_root" 2>/dev/null || printf '%s' "$hm_root")"
+    hook_abs="$(cygpath -m "$hook_path" 2>/dev/null || printf '%s' "$hook_path")"
     adapter_dir_abs="$(cygpath -m "$ADAPTER_DIR" 2>/dev/null || printf '%s' "$ADAPTER_DIR")"
   else
-    hm_root_abs="$hm_root"
+    hook_abs="$hook_path"
     adapter_dir_abs="$ADAPTER_DIR"
   fi
 
   rendered="$(mktemp)"
-  jq --arg dir "$ADAPTER_DIR" \
-     --arg mem "$ADAPTER_GLOBAL_MEMORY" \
-     --arg bashcmd "$bash_cmd" \
-     --arg hmroot "$hm_root_abs" \
-     --arg adir "$adapter_dir_abs" \
+  jq --arg hookcmd "\"$hook_abs\"" \
+     --arg adir "\"$adapter_dir_abs\"" \
     'walk(if type == "string" then
-      gsub("[$]HIVE_MIND_ROOT"; $hmroot)
-      | gsub("[$]ADAPTER_DIR_ABS"; $adir)
-      | gsub("[$]HOME/[.]codex/AGENTS[.]override[.]md"; $mem)
-      | gsub("[$]HOME/[.]codex"; $dir)
-      | sub("^bash "; "\"" + $bashcmd + "\" ")
+      gsub("[$]HIVE_MIND_HOOK"; $hookcmd)
+      | gsub("[$]ADAPTER_DIR_ARG"; $adir)
     else . end)' \
     "$template" > "$rendered"
 
@@ -362,27 +318,12 @@ adapter_install_hooks() {
     return 0
   fi
 
-  if jq -e '
-    (.hooks.SessionStart // [])
-    | map(
-        .hooks[]?
-        | select(
-            ((.command // "") | test("\\.hive-mind/bin/sync"))
-            and
-            ((.command // "") | test("hive-mind/core/check-dupes\\.sh"))
-          )
-      )
-    | length > 0
-  ' "$hooks" >/dev/null 2>&1 && jq -e '
-    (.hooks.Stop // [])
-    | map(.hooks[]? | select((.command // "") | test("\\.hive-mind/bin/sync")))
-    | length > 0
-  ' "$hooks" >/dev/null 2>&1; then
-    rm -f "$rendered"
-    return 0
+  stripped="$(mktemp)"
+  if ! _codex_strip_managed_hooks_file "$hooks" "$stripped"; then
+    rm -f "$stripped" "$rendered"
+    return 1
   fi
 
-  local tmp
   tmp="$(mktemp)"
   if jq -s '
     .[0] as $user | .[1] as $new
@@ -414,11 +355,11 @@ adapter_install_hooks() {
             })
           | add
       )
-  ' "$hooks" "$rendered" > "$tmp" 2>/dev/null; then
+  ' "$stripped" "$rendered" > "$tmp" 2>/dev/null; then
     mv "$tmp" "$hooks"
-    rm -f "$rendered"
+    rm -f "$rendered" "$stripped"
   else
-    rm -f "$tmp" "$rendered"
+    rm -f "$tmp" "$rendered" "$stripped"
     return 1
   fi
 }
@@ -431,24 +372,7 @@ adapter_uninstall_hooks() {
 
   if [ -f "$hooks" ]; then
     tmp="$(mktemp)"
-    if jq '
-      if .hooks then
-        .hooks |= with_entries(
-          .value |= map(
-            if .hooks then
-              .hooks |= map(
-                select(
-                  ((.command // "") | test("((~/\\.hive-mind|\\$HOME/\\.hive-mind)/(bin/sync|hive-mind/core/check-dupes\\.sh))") | not)
-                )
-              )
-            else . end
-            | select((.hooks // []) | length > 0)
-          )
-        )
-        | .hooks |= with_entries(select((.value | length) > 0))
-        | if (.hooks | keys | length) == 0 then del(.hooks) else . end
-      else . end
-    ' "$hooks" > "$tmp" 2>/dev/null; then
+    if _codex_strip_managed_hooks_file "$hooks" "$tmp"; then
       remaining="$(jq 'del(.hooks) | length' "$tmp" 2>/dev/null)"
       hook_count="$(jq '[.hooks // {} | .[] | .[]] | length' "$tmp" 2>/dev/null)"
       if [ "${remaining:-0}" = "0" ] && [ "${hook_count:-0}" = "0" ]; then
@@ -478,7 +402,7 @@ adapter_activation_instructions() {
   echo "Restart Codex so it reloads hooks.json and starts using the synced"
   echo "global memory. hive-mind syncs both ${ADAPTER_DIR}/AGENTS.md (shared"
   echo "across every adapter) and ${ADAPTER_GLOBAL_MEMORY} (Codex-scoped"
-  echo "override layer) — Codex reads the concatenation at runtime."
+  echo "override layer) - Codex reads the concatenation at runtime."
 }
 
 adapter_disable_instructions() {
@@ -504,8 +428,8 @@ ADAPTER_FALLBACK_STRATEGY=""
 # (PostToolUse, Notification, PermissionRequest, ...) into Codex's
 # hooks.json on every sync. On Windows, Codex executes those commands
 # under PowerShell 5.1, which chokes on `&&`, `||`, `$(...)`. Codex
-# manages its own hooks.json locally via adapter_install_hooks instead
-# — deterministic across machines, no cross-shell contamination.
+# manages its own hooks.json locally via adapter_install_hooks instead -
+# deterministic across machines, no cross-shell contamination.
 ADAPTER_HUB_MAP=$'content.md[0]\tAGENTS.md
 content.md[1]\tAGENTS.override.md'
 ADAPTER_PROJECT_CONTENT_RULES=""

@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash $HIVE_MIND_ROOT/core/hub/codex-hook-session-start.sh $ADAPTER_DIR_ABS",
+            "command": "$HIVE_MIND_HOOK session-start $ADAPTER_DIR_ARG",
             "timeout": 30
           }
         ]
@@ -16,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash $HIVE_MIND_ROOT/core/hub/codex-hook-stop.sh",
+            "command": "$HIVE_MIND_HOOK stop",
             "timeout": 30
           }
         ]

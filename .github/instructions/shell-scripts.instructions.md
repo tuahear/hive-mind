@@ -4,7 +4,7 @@ applyTo: "core/*.sh,adapters/*/*.sh,setup.sh,scripts/*.sh"
 
 # Review guidance for hive-mind shell scripts
 
-This project is **bash + standard Unix utilities** (awk, sed, grep, tr, cut, sort, mktemp — the POSIX-defined userland) plus a small set of required external deps (`jq`, `git`, `curl`). The contract is "no python / node / go / rust in the sync path"; POSIX-strict isn't the bar, but neither is "anything goes." Hook-invoked scripts (`core/sync.sh`, `core/check-dupes.sh`, `core/mirror-projects.sh`, `core/marker-nudge.sh`) must never block an agent session — every failure path logs and exits 0. `setup.sh` is the exception: it's the installer, uses strict mode, and exits non-zero on failures. Comments below are specifically for Copilot code review; they distill patterns that wasted review rounds on this codebase.
+This project is **bash + standard Unix utilities** (awk, sed, grep, tr, cut, sort, mktemp - the POSIX-defined userland) plus a small set of required external deps (`jq`, `git`, `curl`). The contract is "no python / node / rust in the sync path"; the one deliberate exception is the tiny Go-based `cmd/hivemind-hook` launcher that exists only to enter the existing bash hook flow safely on Windows. POSIX-strict isn't the bar, but neither is "anything goes." Hook-invoked scripts (`core/sync.sh`, `core/check-dupes.sh`, `core/mirror-projects.sh`, `core/marker-nudge.sh`) must never block an agent session - every failure path logs and exits 0. `setup.sh` is the exception: it's the installer, uses strict mode, and exits non-zero on failures. Comments below are specifically for Copilot code review; they distill patterns that wasted review rounds on this codebase.
 
 ## Top principle: verify before asserting
 

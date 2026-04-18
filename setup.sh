@@ -26,6 +26,7 @@
 #      - Back up tool dir on first attach
 #      - Harvest existing tool content -> hub (avoid losing user memory)
 #      - Push, pull-rebase, fan out -> tool dir
+#      - Build any adapter-local helper binaries (Codex's hivemind-hook)
 #      - Install the tool's hooks, pointing at $HIVE_MIND_HUB_DIR/bin/sync
 #      - Record adapter name in .install-state/attached-adapters
 #   7. Run the hub's bin/sync once to verify
@@ -53,6 +54,48 @@ confirm() {
     local prompt="${1:-continue?}"
     read -r -p "$prompt [y/N] " ans
     [[ "$ans" =~ ^[yY]$ ]] || { echo "aborted."; exit 1; }
+}
+hivemind_hook_binary_name() {
+    case "$(uname -s)" in
+        MINGW*|MSYS*|CYGWIN*) printf 'hivemind-hook.exe' ;;
+        *)                    printf 'hivemind-hook' ;;
+    esac
+}
+hivemind_hook_binary_path() {
+    printf '%s/bin/%s' "$HIVE_MIND_HUB_DIR" "$(hivemind_hook_binary_name)"
+}
+should_build_hivemind_hook() {
+    if [ "$ADAPTER" = "codex" ]; then
+        return 0
+    fi
+    [ -f "$(hivemind_hook_binary_path)" ] && return 0
+    [ -f "$HIVE_MIND_HUB_DIR/.install-state/attached-adapters" ] \
+        && grep -Fxq 'codex' "$HIVE_MIND_HUB_DIR/.install-state/attached-adapters"
+}
+build_hivemind_hook_binary() {
+    local out tmp
+
+    should_build_hivemind_hook || return 0
+    out="$(hivemind_hook_binary_path)"
+
+    if ! command -v go >/dev/null 2>&1; then
+        if [ -f "$out" ]; then
+            log "  go not found; keeping existing $(basename "$out")"
+            return 0
+        fi
+        die "Go is required to build Codex's native hivemind-hook launcher. Install Go from https://go.dev/dl/ and rerun setup.sh."
+    fi
+
+    log "  building native hivemind-hook launcher"
+    tmp="${out}.tmp"
+    rm -f "$tmp"
+    (
+        cd "$HIVE_MIND_SRC"
+        CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' \
+            -o "$tmp" ./cmd/hivemind-hook
+    )
+    chmod +x "$tmp" 2>/dev/null || true
+    mv "$tmp" "$out"
 }
 
 # ---------- preflight ----------
@@ -263,6 +306,7 @@ exec "$(dirname "$0")/../hive-mind/core/hub/sync.sh" "$@"
 WRAPPER
 chmod +x "$HIVE_MIND_HUB_DIR/bin/sync"
 chmod +x "$HIVE_MIND_SRC/core/hub/sync.sh" 2>/dev/null || true
+build_hivemind_hook_binary
 
 # Seed BEFORE git init so merge drivers are active from commit 1.
 cp "$HIVE_MIND_SRC/core/hub/gitignore"     "$HIVE_MIND_HUB_DIR/.gitignore"
