@@ -87,6 +87,19 @@ teardown() {
   done
 }
 
+@test "adapter loader does not invoke _hub_split_sections (validation is deferred to harvest/fan-out dispatch)" {
+  # Pin the contract described in the _hub_split_sections header: the
+  # adapter loader (core/adapter-loader.sh) sources + validates the
+  # contract surface but does NOT parse ADAPTER_HUB_MAP section
+  # selectors. Selectors are parsed/rejected when hub_harvest and
+  # hub_fan_out iterate the map.
+  #
+  # If a future change wires selector validation into load-time, the
+  # comment block above _hub_split_sections must move with it — this
+  # assertion catches silent drift between the doc and the wiring.
+  ! grep -q '_hub_split_sections' "$REPO_ROOT/core/adapter-loader.sh"
+}
+
 @test "split_sections still accepts well-formed multi-element CSVs" {
   # Regression guard paired with the rejection test above: the tightening
   # must not false-positive on legitimate CSVs (single id, two ids,

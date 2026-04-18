@@ -166,8 +166,11 @@ _hub_split_subkey() {
 #     round-trip any future tier without an adapter update).
 #   - a CSV of one or more integer section ids with no empty elements
 #     (e.g. "0", "1", "0,1"). Rejects "0,", ",0", "0,,1", etc. so typos
-#     in ADAPTER_HUB_MAP surface at load time instead of being silently
-#     normalized downstream.
+#     in ADAPTER_HUB_MAP fail when hub_harvest / hub_fan_out parse the
+#     entry, instead of being silently normalized by the downstream
+#     `tr ',' '\n' | awk 'NF'` pipeline in _hub_expand_sections.
+#     (The adapter loader does not validate selectors — validation is
+#     deferred to harvest/fan-out dispatch.)
 # Returns 1 if no `[...]` selector is present or the grammar doesn't match.
 _hub_split_sections() {
   local spec="$1"
