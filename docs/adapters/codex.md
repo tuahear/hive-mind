@@ -41,7 +41,7 @@ Section 0 is the default bucket in `content.md` (everything outside any `<!-- hi
 Skills are synced separately through `~/.agents/skills/` and are not declared in `ADAPTER_HUB_MAP`.
 `hooks.json` is also intentionally local to Codex: the installer manages it directly so shell-specific hook commands from other adapters never fan out into Codex's PowerShell-facing hook surface.
 
-Codex permissions are not mapped in this first adapter release. Current Codex permissions are profile-based inside `config.toml`, which does not match hive-mind's canonical allow/deny/ask text lists cleanly enough to round-trip without data loss.
+Codex permissions are not mapped. hive-mind keeps permission state machine-local across all adapters (the hub has no shared allow/deny/ask schema), so Codex's profile-based permissions stay in `~/.codex/config.toml` where Codex expects them.
 
 ## After install
 
@@ -52,4 +52,4 @@ Restart Codex so it reloads `~/.codex/hooks.json`. From then on:
 
 If those events still do not fire, check Codex's current platform support for hooks before debugging the launcher path further.
 
-See [Get started](/get-started) for the install flow and [Technical reference](/reference) for the shared hook and hub details.
+See [Get started](/get-started) for the install flow and [Technical reference](/reference) for the hub details.
