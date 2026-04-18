@@ -332,6 +332,83 @@ _hub_content_replace_section() {
   rm -f "$outside" "$blocks"
 }
 
+# Fan-out: write selected sections from a hub content file to a tool file.
+# sel: CSV of section ids. Semantics:
+#   - single id: write that section's body plain (markers stripped).
+#   - multiple ids: write section 0 plain (if selected), then each non-zero
+#     section wrapped in its own START/END markers in ascending-id order.
+# `_hub_content_read_section` emits via awk's `print`, so every line already
+# ends in \n and successive blocks separate cleanly without manual fixups.
+_hub_content_fanout_to_file() {
+  local src="$1" sel="$2" dst="$3"
+  [ -f "$src" ] || return 0
+  mkdir -p "$(dirname "$dst")" 2>/dev/null
+
+  local ids count
+  ids="$(printf '%s\n' "$sel" | tr ',' '\n' | awk 'NF' | sort -u -n)"
+  count="$(printf '%s\n' "$ids" | awk 'NF' | wc -l | tr -d ' ')"
+
+  local tmp
+  tmp="$(mktemp)"
+
+  if [ "$count" = "1" ]; then
+    _hub_content_read_section "$src" "$ids" > "$tmp"
+  else
+    {
+      local id
+      if printf '%s\n' "$ids" | grep -qx '0'; then
+        _hub_content_read_section "$src" 0
+      fi
+      while IFS= read -r id; do
+        [ -z "$id" ] && continue
+        [ "$id" = "0" ] && continue
+        printf '<!-- hive-mind:section=%s START -->\n' "$id"
+        _hub_content_read_section "$src" "$id"
+        printf '<!-- hive-mind:section=%s END -->\n' "$id"
+      done <<EOF
+$ids
+EOF
+    } > "$tmp"
+  fi
+
+  mv "$tmp" "$dst"
+}
+
+# Harvest: replace selected sections in a hub content file from a tool file.
+# Single-id selector: whole tool file becomes that section.
+# Multi-id selector: parse tool file by markers, extract each selected
+# section, replace in hub. Unbalanced markers in tool file → log + skip.
+_hub_content_harvest_from_file() {
+  local src="$1" sel="$2" dst="$3"
+  [ -f "$src" ] || return 0
+  mkdir -p "$(dirname "$dst")" 2>/dev/null
+
+  local ids count
+  ids="$(printf '%s\n' "$sel" | tr ',' '\n' | awk 'NF' | sort -u -n)"
+  count="$(printf '%s\n' "$ids" | awk 'NF' | wc -l | tr -d ' ')"
+
+  if [ "$count" = "1" ]; then
+    _hub_content_replace_section "$dst" "$ids" "$src"
+    return 0
+  fi
+
+  if ! _hub_content_markers_ok "$src"; then
+    _hub_log "harvest: skipping sectioned harvest for $src (marker imbalance)"
+    return 0
+  fi
+
+  local id tmp
+  while IFS= read -r id; do
+    [ -z "$id" ] && continue
+    tmp="$(mktemp)"
+    _hub_content_read_section "$src" "$id" > "$tmp"
+    _hub_content_replace_section "$dst" "$id" "$tmp"
+    rm -f "$tmp"
+  done <<EOF
+$ids
+EOF
+}
+
 # Dedupe non-trivial lines within each section independently (stdin/stdout
 # variant for testability; callers typically wrap a file in <).
 # Uses the same "non-trivial" heuristic as core/check-dupes.sh: length >= 20,
@@ -736,7 +813,7 @@ hub_harvest() {
   [ -d "$tool_dir" ] || return 0
   mkdir -p "$hub_dir" 2>/dev/null
 
-  local hub_rel tool_spec file_part jsonpath_part
+  local hub_rel tool_spec file_part jsonpath_part pair sec_pair
   while IFS=$'\t' read -r hub_rel tool_spec; do
     [ -z "$hub_rel" ] && continue
     [ -z "$tool_spec" ] && continue
@@ -753,6 +830,12 @@ hub_harvest() {
       else
         _hub_harvest_hooks_dir "$tool_json" "$jq_path" "$hub_dir/$hub_rel"
       fi
+    elif sec_pair="$(_hub_split_sections "$hub_rel")"; then
+      local hub_file sel
+      hub_file="${sec_pair%%$'\t'*}"
+      sel="${sec_pair#*$'\t'}"
+      _hub_content_harvest_from_file \
+        "$tool_dir/$tool_spec" "$sel" "$hub_dir/$hub_file"
     else
       local src="$tool_dir/$tool_spec"
       local dst="$hub_dir/$hub_rel"
@@ -810,7 +893,7 @@ hub_fan_out() {
   [ -d "$hub_dir" ] || return 0
   mkdir -p "$tool_dir" 2>/dev/null
 
-  local hub_rel tool_spec file_part jsonpath_part
+  local hub_rel tool_spec file_part jsonpath_part pair sec_pair
   while IFS=$'\t' read -r hub_rel tool_spec; do
     [ -z "$hub_rel" ] && continue
     [ -z "$tool_spec" ] && continue
@@ -827,6 +910,12 @@ hub_fan_out() {
       else
         _hub_fan_out_hooks_dir "$hub_dir/$hub_rel" "$tool_json" "$jq_path"
       fi
+    elif sec_pair="$(_hub_split_sections "$hub_rel")"; then
+      local hub_file sel
+      hub_file="${sec_pair%%$'\t'*}"
+      sel="${sec_pair#*$'\t'}"
+      _hub_content_fanout_to_file \
+        "$hub_dir/$hub_file" "$sel" "$tool_dir/$tool_spec"
     else
       local src="$hub_dir/$hub_rel"
       local dst="$tool_dir/$tool_spec"

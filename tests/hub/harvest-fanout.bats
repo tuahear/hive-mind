@@ -431,3 +431,115 @@ EOF
   # No variant created — tool has no encoded-cwd for this project.
   [ ! -d "$TOOL/projects" ]
 }
+
+# === section selectors in ADAPTER_HUB_MAP =================================
+# A dual-file tool (AGENTS.md + AGENTS.override.md shape) uses section
+# selectors to round-trip memory through a single canonical content.md.
+
+@test "harvest: content.md[0]/[1] routes two plain tool files into distinct hub sections" {
+  export ADAPTER_HUB_MAP=$'content.md[0]\tAGENTS.md\ncontent.md[1]\tAGENTS.override.md'
+  printf 'shared-a\n' > "$TOOL/AGENTS.md"
+  printf 'override-a\n' > "$TOOL/AGENTS.override.md"
+
+  hub_harvest "$TOOL" "$HUB"
+
+  run _hub_content_read_section "$HUB/content.md" 0
+  [ "$output" = 'shared-a' ]
+  run _hub_content_read_section "$HUB/content.md" 1
+  [ "$output" = 'override-a' ]
+  run _hub_content_markers_ok "$HUB/content.md"
+  [ "$status" -eq 0 ]
+}
+
+@test "fan-out: content.md[0] writes plain body without markers" {
+  export ADAPTER_HUB_MAP=$'content.md[0]\tAGENTS.md'
+  cat > "$HUB/content.md" <<'EOF'
+shared line
+<!-- hive-mind:section=1 START -->
+codex only
+<!-- hive-mind:section=1 END -->
+EOF
+  hub_fan_out "$HUB" "$TOOL"
+
+  [ -f "$TOOL/AGENTS.md" ]
+  run cat "$TOOL/AGENTS.md"
+  [ "$output" = 'shared line' ]
+  # Exact-match guard: no marker strings leaked into the plain fan-out.
+  ! grep -q 'hive-mind:section' "$TOOL/AGENTS.md"
+}
+
+@test "fan-out: content.md[0,1] concatenates section 0 plain then section 1 wrapped in markers" {
+  export ADAPTER_HUB_MAP=$'content.md[0,1]\tCLAUDE.md'
+  cat > "$HUB/content.md" <<'EOF'
+shared stuff
+<!-- hive-mind:section=1 START -->
+codex-scoped
+<!-- hive-mind:section=1 END -->
+EOF
+  hub_fan_out "$HUB" "$TOOL"
+
+  [ -f "$TOOL/CLAUDE.md" ]
+  # Section 0 content appears first, plain.
+  grep -q '^shared stuff$' "$TOOL/CLAUDE.md"
+  # Section 1 content survives, wrapped in START/END markers.
+  grep -q '^<!-- hive-mind:section=1 START -->$' "$TOOL/CLAUDE.md"
+  grep -q '^codex-scoped$' "$TOOL/CLAUDE.md"
+  grep -q '^<!-- hive-mind:section=1 END -->$' "$TOOL/CLAUDE.md"
+}
+
+@test "round-trip: multi-section fan-out, tool edit, harvest — edits land in correct sections" {
+  export ADAPTER_HUB_MAP=$'content.md[0,1]\tCLAUDE.md'
+  cat > "$HUB/content.md" <<'EOF'
+starting shared
+<!-- hive-mind:section=1 START -->
+starting codex-scoped
+<!-- hive-mind:section=1 END -->
+EOF
+  hub_fan_out "$HUB" "$TOOL"
+
+  # Agent appends a shared-tier line at EOF (outside any block) AND edits
+  # the codex-scoped block body in-place.
+  awk '
+    /<!-- hive-mind:section=1 START -->/ { print; in_block=1; next }
+    /<!-- hive-mind:section=1 END -->/   { print "edited codex-scoped"; print; in_block=0; next }
+    in_block { next }
+    { print }
+  ' "$TOOL/CLAUDE.md" > "$TOOL/CLAUDE.md.tmp"
+  mv "$TOOL/CLAUDE.md.tmp" "$TOOL/CLAUDE.md"
+  printf 'appended shared at EOF\n' >> "$TOOL/CLAUDE.md"
+
+  hub_harvest "$TOOL" "$HUB"
+
+  # Section 0 picked up both the original shared line and the EOF append.
+  run _hub_content_read_section "$HUB/content.md" 0
+  printf '%s\n' "$output" | grep -Fq 'starting shared'
+  printf '%s\n' "$output" | grep -Fq 'appended shared at EOF'
+  # Section 1 picked up the in-block edit, not the old body.
+  run _hub_content_read_section "$HUB/content.md" 1
+  [ "$output" = 'edited codex-scoped' ]
+}
+
+@test "harvest: damaged markers in multi-section tool file are skipped, hub preserved" {
+  export ADAPTER_HUB_MAP=$'content.md[0,1]\tCLAUDE.md'
+  # Seed hub with a clean two-section file.
+  cat > "$HUB/content.md" <<'EOF'
+hub shared
+<!-- hive-mind:section=1 START -->
+hub codex
+<!-- hive-mind:section=1 END -->
+EOF
+  # Tool file has an unmatched START (damage).
+  cat > "$TOOL/CLAUDE.md" <<'EOF'
+shared
+<!-- hive-mind:section=1 START -->
+dangling body (no END)
+EOF
+
+  hub_harvest "$TOOL" "$HUB"
+
+  # Hub unchanged: still has both sections with the pre-harvest content.
+  run _hub_content_read_section "$HUB/content.md" 0
+  [ "$output" = 'hub shared' ]
+  run _hub_content_read_section "$HUB/content.md" 1
+  [ "$output" = 'hub codex' ]
+}
