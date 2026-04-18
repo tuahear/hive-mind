@@ -1,6 +1,6 @@
 # Codex adapter
 
-The Codex adapter attaches [OpenAI Codex CLI](https://github.com/openai/codex) to your `~/.hive-mind/` hub. After install, Codex still reads and writes its native files in `~/.codex/`, but hive-mind keeps the portable parts in sync through the hub: the active global memory layer, shared hook definitions, and bundled skills.
+The Codex adapter attaches [OpenAI Codex CLI](https://github.com/openai/codex) to your `~/.hive-mind/` hub. After install, Codex still reads and writes its native files in `~/.codex/`, but hive-mind keeps the portable parts in sync through the hub: both global memory files, shared hook definitions, and bundled skills.
 
 ## What `setup.sh` does on install
 
@@ -8,9 +8,10 @@ When you run `ADAPTER=codex bash ~/.hive-mind/hive-mind/setup.sh`:
 
 1. It loads the Codex adapter contract from `adapters/codex/adapter.sh`.
 2. It seeds bundled skills into the hub, then fans them out to `~/.agents/skills/`.
-3. It ensures Codex's active global memory file exists at `~/.codex/AGENTS.override.md`, seeding it from `~/.codex/AGENTS.md` on first attach when needed.
-4. It merges hive-mind's shared hooks into `~/.codex/hooks.json`.
-5. It enables Codex hook execution with `[features] codex_hooks = true` in `~/.codex/config.toml` without replacing unrelated config.
+3. It merges hive-mind's shared hooks into `~/.codex/hooks.json`.
+4. It enables Codex hook execution with `[features] codex_hooks = true` in `~/.codex/config.toml` without replacing unrelated config.
+
+On every subsequent sync cycle, both `~/.codex/AGENTS.md` and `~/.codex/AGENTS.override.md` round-trip through the hub — no one-time seed step is needed.
 
 ## Hooks installed for Codex
 
@@ -25,12 +26,15 @@ Codex's current hook surface does not expose the Claude-style `PostToolUse` edit
 
 ## Memory file mapping
 
-The first shipped Codex adapter keeps the mapping intentionally small and lossless:
+Codex natively reads both `AGENTS.md` (the user's own memory) and `AGENTS.override.md` (an override layer) at startup and concatenates them at runtime. hive-mind syncs each through its own section of the hub's canonical `content.md`, using the section selector extension to `ADAPTER_HUB_MAP`:
 
-| Hub path | Codex-side path |
-|---|---|
-| `content.md` | `~/.codex/AGENTS.override.md` |
-| `config/hooks` | `~/.codex/hooks.json#hooks` |
+| Hub path | Codex-side path | Semantics |
+|---|---|---|
+| `content.md[0]` | `~/.codex/AGENTS.md` | Shared tier — every adapter reads/writes this |
+| `content.md[1]` | `~/.codex/AGENTS.override.md` | Codex-scoped override tier |
+| `config/hooks` | `~/.codex/hooks.json#hooks` | Shared hook definitions |
+
+Section 0 is the default bucket in `content.md` (everything outside any `<!-- hive-mind:section=N START/END -->` block). Section 1 lives inside a paired marker block. See `docs/contributing.md` for the section registry and the full selector contract.
 
 Skills are synced separately through `~/.agents/skills/` and are not declared in `ADAPTER_HUB_MAP`.
 

@@ -117,14 +117,21 @@ teardown() {
   grep -q '^codex_hooks = true$' "$ADAPTER_DIR/config.toml"
 }
 
-@test "install_hooks seeds AGENTS.override.md from an existing AGENTS.md" {
+@test "install_hooks does not create AGENTS.override.md (no more one-time seed)" {
+  # Pre-sectioned content.md design: AGENTS.md and AGENTS.override.md both
+  # round-trip through the hub every sync cycle via section selectors, so
+  # the one-time seed that used to copy AGENTS.md → AGENTS.override.md is
+  # gone. install_hooks must leave the tool dir's memory files untouched.
   mkdir -p "$ADAPTER_DIR"
-  printf '# legacy memory\n' > "$ADAPTER_DIR/AGENTS.md"
+  printf '# existing memory\n' > "$ADAPTER_DIR/AGENTS.md"
 
   adapter_install_hooks
 
-  [ -f "$ADAPTER_DIR/AGENTS.override.md" ]
-  grep -q '# legacy memory' "$ADAPTER_DIR/AGENTS.override.md"
+  [ -f "$ADAPTER_DIR/AGENTS.md" ]
+  grep -q '# existing memory' "$ADAPTER_DIR/AGENTS.md"
+  # AGENTS.override.md stays absent; the next sync cycle's fan-out
+  # creates it from hub section 1 if (and only if) the hub has any.
+  [ ! -e "$ADAPTER_DIR/AGENTS.override.md" ]
 }
 
 @test "install_hooks merges into existing hooks.json and preserves user keys" {
@@ -293,12 +300,14 @@ EOF
 
 # === instructions ==========================================================
 
-@test "activation_instructions renders ADAPTER_GLOBAL_MEMORY path under override" {
+@test "activation_instructions renders both AGENTS.md and AGENTS.override.md under override" {
   custom="$HOME/alt-codex-dir"
   ADAPTER_DIR="$custom"
   ADAPTER_GLOBAL_MEMORY="$custom/AGENTS.override.md"
 
   out="$(adapter_activation_instructions)"
+  # Both synced files mentioned so the user knows the full memory surface.
+  [[ "$out" == *"$custom/AGENTS.md"* ]]
   [[ "$out" == *"$custom/AGENTS.override.md"* ]]
   [[ "$out" != *'~/.codex'* ]]
 }
@@ -316,7 +325,7 @@ EOF
 
 # === round-trip mapping ====================================================
 
-@test "hub mapping round-trips AGENTS.override.md and hooks.json#hooks" {
+@test "hub mapping: AGENTS.md round-trips through content.md section 0" {
   TOOL="$HOME/tool"
   HUB="$HOME/hub"
   mkdir -p "$TOOL" "$HUB"
@@ -328,7 +337,82 @@ EOF
   # shellcheck source=/dev/null
   source "$HARVEST_FANOUT"
 
-  printf 'alpha\nbeta\n' > "$TOOL/AGENTS.override.md"
+  printf 'shared line\n' > "$TOOL/AGENTS.md"
+  hub_harvest "$TOOL" "$HUB"
+
+  run _hub_content_read_section "$HUB/content.md" 0
+  [ "$output" = 'shared line' ]
+
+  # Fan-out back to a clean tool dir → AGENTS.md reappears plain.
+  rm -f "$TOOL/AGENTS.md"
+  hub_fan_out "$HUB" "$TOOL"
+  [ -f "$TOOL/AGENTS.md" ]
+  run cat "$TOOL/AGENTS.md"
+  [ "$output" = 'shared line' ]
+}
+
+@test "hub mapping: AGENTS.override.md round-trips through content.md section 1" {
+  TOOL="$HOME/tool"
+  HUB="$HOME/hub"
+  mkdir -p "$TOOL" "$HUB"
+
+  ADAPTER_DIR="$TOOL"
+  export ADAPTER_DIR
+  source "$LOADER"
+  load_adapter "codex"
+  # shellcheck source=/dev/null
+  source "$HARVEST_FANOUT"
+
+  printf 'override line\n' > "$TOOL/AGENTS.override.md"
+  hub_harvest "$TOOL" "$HUB"
+
+  run _hub_content_read_section "$HUB/content.md" 1
+  [ "$output" = 'override line' ]
+
+  rm -f "$TOOL/AGENTS.override.md"
+  hub_fan_out "$HUB" "$TOOL"
+  [ -f "$TOOL/AGENTS.override.md" ]
+  run cat "$TOOL/AGENTS.override.md"
+  [ "$output" = 'override line' ]
+}
+
+@test "hub mapping: both AGENTS.md and AGENTS.override.md coexist in content.md" {
+  TOOL="$HOME/tool"
+  HUB="$HOME/hub"
+  mkdir -p "$TOOL" "$HUB"
+
+  ADAPTER_DIR="$TOOL"
+  export ADAPTER_DIR
+  source "$LOADER"
+  load_adapter "codex"
+  # shellcheck source=/dev/null
+  source "$HARVEST_FANOUT"
+
+  printf 'agents md content\n' > "$TOOL/AGENTS.md"
+  printf 'override content\n' > "$TOOL/AGENTS.override.md"
+
+  hub_harvest "$TOOL" "$HUB"
+
+  run _hub_content_markers_ok "$HUB/content.md"
+  [ "$status" -eq 0 ]
+  run _hub_content_read_section "$HUB/content.md" 0
+  [ "$output" = 'agents md content' ]
+  run _hub_content_read_section "$HUB/content.md" 1
+  [ "$output" = 'override content' ]
+}
+
+@test "hub mapping: hooks.json#hooks still round-trips alongside section mappings" {
+  TOOL="$HOME/tool"
+  HUB="$HOME/hub"
+  mkdir -p "$TOOL" "$HUB"
+
+  ADAPTER_DIR="$TOOL"
+  export ADAPTER_DIR
+  source "$LOADER"
+  load_adapter "codex"
+  # shellcheck source=/dev/null
+  source "$HARVEST_FANOUT"
+
   cat > "$TOOL/hooks.json" <<'EOF'
 {
   "hooks": {
@@ -359,11 +443,9 @@ EOF
 EOF
 
   hub_harvest "$TOOL" "$HUB"
-  rm -rf "$TOOL"
-  mkdir -p "$TOOL"
+  rm -f "$TOOL/hooks.json"
   hub_fan_out "$HUB" "$TOOL"
 
-  diff <(printf 'alpha\nbeta\n') "$TOOL/AGENTS.override.md"
   jq -e '.hooks.SessionStart[0].hooks[0].command == "echo session"' "$TOOL/hooks.json" >/dev/null
   jq -e '.hooks.Stop[0].hooks[0].command == "echo stop"' "$TOOL/hooks.json" >/dev/null
 }

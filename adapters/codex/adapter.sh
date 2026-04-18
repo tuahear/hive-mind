@@ -38,15 +38,6 @@ _codex_config_file() {
   printf '%s' "$ADAPTER_DIR/config.toml"
 }
 
-_codex_seed_global_memory() {
-  local legacy="$ADAPTER_DIR/AGENTS.md"
-  local active="$ADAPTER_GLOBAL_MEMORY"
-
-  [ -f "$active" ] && return 0
-  [ -f "$legacy" ] || return 0
-  cp "$legacy" "$active"
-}
-
 _codex_detect_feature_state() {
   local config="$1"
   [ -f "$config" ] || {
@@ -257,7 +248,6 @@ adapter_install_hooks() {
   [ -f "$template" ] || return 1
   mkdir -p "$ADAPTER_DIR"
 
-  _codex_seed_global_memory
   _codex_record_feature_state "$config"
   _codex_set_feature_flag "$config" true
 
@@ -385,7 +375,9 @@ ADAPTER_MERGE_DRIVER_ENV=""
 # --- F. User education -----------------------------------------------------
 adapter_activation_instructions() {
   echo "Restart Codex so it reloads hooks.json and starts using the synced"
-  echo "global memory layer at ${ADAPTER_GLOBAL_MEMORY}."
+  echo "global memory. hive-mind syncs both ${ADAPTER_DIR}/AGENTS.md (shared"
+  echo "across every adapter) and ${ADAPTER_GLOBAL_MEMORY} (Codex-scoped"
+  echo "override layer) — Codex reads the concatenation at runtime."
 }
 
 adapter_disable_instructions() {
@@ -399,11 +391,18 @@ adapter_disable_instructions() {
 ADAPTER_FALLBACK_STRATEGY=""
 
 # --- H. Hub mapping --------------------------------------------------------
-ADAPTER_HUB_MAP=$'content.md\tAGENTS.override.md\nconfig/hooks\thooks.json#hooks'
+# Codex natively reads both AGENTS.md AND AGENTS.override.md at startup and
+# concatenates them at runtime. To keep both files fully synced with the
+# hub, each gets its own section of the canonical content.md: section 0
+# for AGENTS.md (shared across every adapter), section 1 for the Codex-
+# scoped override layer (see docs/contributing.md for the section registry).
+ADAPTER_HUB_MAP=$'content.md[0]\tAGENTS.md
+content.md[1]\tAGENTS.override.md
+config/hooks\thooks.json#hooks'
 ADAPTER_PROJECT_CONTENT_RULES=""
 
 # --- I. File harvest rules -------------------------------------------------
-ADAPTER_FILE_HARVEST_RULES=$'AGENTS.override.md\nhooks.json'
+ADAPTER_FILE_HARVEST_RULES=$'AGENTS.md\nAGENTS.override.md\nhooks.json'
 ADAPTER_PROJECT_CONTENT_GLOBS=""
 
 # --- J. Logging ------------------------------------------------------------

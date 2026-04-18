@@ -1,6 +1,6 @@
 ---
 name: hive-mind-codex
-description: Load when editing a hive-mind-synced file: `~/.codex/AGENTS.override.md`, `~/.codex/hooks.json`, `~/.codex/config.toml`, `~/.agents/skills/*/*`. Triggers: remembering, saving a preference, updating a hook, or modifying a synced skill. Every edit requires an embedded commit marker; Codex has no edit hooks, so remember it yourself each time.
+description: Load when editing a hive-mind-synced file: `~/.codex/AGENTS.md` (shared tier), `~/.codex/AGENTS.override.md` (Codex-scoped override tier), `~/.codex/hooks.json`, `~/.codex/config.toml`, `~/.agents/skills/*/*`. Triggers: remembering, saving a preference, updating a hook, or modifying a synced skill. Every edit requires an embedded commit marker; Codex has no edit hooks, so remember it yourself each time.
 ---
 
 # Hive-mind commit marker
