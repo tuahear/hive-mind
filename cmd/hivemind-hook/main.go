@@ -172,8 +172,15 @@ func claudeInvocation(hubDir, action string, scriptArgs []string) (hookInvocatio
 // Windows parses hivemind-hook's own stderr as hook-runner output, and a
 // noisy wrapper line would surface as a user-visible hook failure. The
 // caller is responsible for routing captured stderr into the hub log.
+//
+// scriptPath is normalized to forward slashes via bashFacingPath so the
+// wrapper gets a Git-Bash-friendly `C:/…` argv element on Windows
+// regardless of how filepath.Join composed the native path. scriptArgs
+// come from os.Args (the hook command line, already rendered as forward
+// slashes by the adapter's cygpath -m pass) and are passed through
+// untouched — they may legitimately contain non-path strings.
 func runHookScript(bashPath, scriptPath string, scriptArgs []string) ([]byte, []byte, error) {
-	args := append([]string{scriptPath}, scriptArgs...)
+	args := append([]string{bashFacingPath(scriptPath)}, scriptArgs...)
 	cmd := exec.Command(bashPath, args...)
 	cmd.Env = os.Environ()
 	cmd.Stdin = os.Stdin
@@ -184,6 +191,17 @@ func runHookScript(bashPath, scriptPath string, scriptArgs []string) ([]byte, []
 
 	err := cmd.Run()
 	return stdout.Bytes(), stderr.Bytes(), err
+}
+
+// bashFacingPath renders a filesystem path as Git Bash expects it on
+// every supported OS: forward slashes, no backslashes. filepath.Join
+// produces OS-native separators (backslashes on Windows), and while
+// Git Bash accepts backslash-separated paths as a literal argv for most
+// wrappers, it composes unreliably when the script itself concatenates
+// the path with other strings. Matches what adapters render into
+// hooks.json / settings.json via cygpath -m.
+func bashFacingPath(p string) string {
+	return filepath.ToSlash(p)
 }
 
 func writeFallbackJSON(hubDir, reason string) {

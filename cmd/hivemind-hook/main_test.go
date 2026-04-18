@@ -14,13 +14,8 @@ import (
 // user-visible failure.
 func TestRunHookScriptIsolatesStderrFromParentProcess(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("requires POSIX bash on PATH")
+		t.Skip("requires /bin/sh on PATH")
 	}
-	bash, err := os.Executable()
-	if err != nil {
-		t.Fatalf("resolve executable: %v", err)
-	}
-	_ = bash
 
 	stdout, stderr, err := runHookScript("/bin/sh", "-c", []string{"printf OUT; printf ERR >&2"})
 	if err != nil {
@@ -39,7 +34,7 @@ func TestRunHookScriptIsolatesStderrFromParentProcess(t *testing.T) {
 // that the `run` entrypoint depends on.
 func TestStderrRoutedToHubLog(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("requires POSIX bash on PATH")
+		t.Skip("requires /bin/sh on PATH")
 	}
 	hubDir := t.TempDir()
 
@@ -70,7 +65,7 @@ func TestStderrRoutedToHubLog(t *testing.T) {
 // as hook-failure noise.
 func TestStderrNeverLeaksOnScriptFailure(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("requires POSIX bash on PATH")
+		t.Skip("requires /bin/sh on PATH")
 	}
 	// Redirect the process's stderr into a pipe so we can assert nothing
 	// lands there.
@@ -96,5 +91,38 @@ func TestStderrNeverLeaksOnScriptFailure(t *testing.T) {
 	n, _ := r.Read(buf)
 	if n != 0 {
 		t.Fatalf("parent stderr received %q (should be empty)", buf[:n])
+	}
+}
+
+// bashFacingPath must never produce a backslash in its output. Git Bash
+// composes wrapper-facing paths with user content inside the script
+// body; backslashes surface as literal characters on some paths and
+// break the compose. The invariant holds on every supported OS because
+// filepath.ToSlash is a no-op on POSIX.
+func TestBashFacingPathHasNoBackslashes(t *testing.T) {
+	// Use filepath.Join to construct an OS-native path — backslashes on
+	// Windows, forward slashes on POSIX. The normalization contract is
+	// the same in either direction: never hand a backslash to Git Bash.
+	joined := filepath.Join("C:", "Users", "alice", "hub", "hive-mind", "core", "hub", "claude-hook-stop.sh")
+	got := bashFacingPath(joined)
+	if strings.ContainsRune(got, '\\') {
+		t.Fatalf("bashFacingPath(%q) = %q, must not contain backslashes", joined, got)
+	}
+	// And it must still resolve to the same file when Go re-parses it.
+	if filepath.Clean(got) == "" {
+		t.Fatalf("bashFacingPath produced an empty or invalid path: %q", got)
+	}
+}
+
+// Windows-only: verify the concrete "C:\\…" → "C:/…" rewrite that the
+// bashFacingPath helper pins for Git Bash consumption.
+func TestBashFacingPathRewritesWindowsSeparators(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows-only path shape")
+	}
+	got := bashFacingPath(`C:\Users\alice\hub\hive-mind\core\hub\claude-hook-stop.sh`)
+	want := "C:/Users/alice/hub/hive-mind/core/hub/claude-hook-stop.sh"
+	if got != want {
+		t.Fatalf("bashFacingPath = %q, want %q", got, want)
 	}
 }
