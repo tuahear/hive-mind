@@ -1,0 +1,26 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HIVE_MIND_HOOK session-start $ADAPTER_DIR_ARG",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HIVE_MIND_HOOK stop",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}

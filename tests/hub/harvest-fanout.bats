@@ -17,10 +17,10 @@ setup() {
   mkdir -p "$TOOL" "$HUB"
   export ADAPTER_LOG_PATH="$HOME/hub.log"
 
-  # Claude-shaped hub map (the only adapter shipping one today). The
-  # helpers are adapter-agnostic; using Claude's here keeps the test
-  # shape identical to what production hits.
-  export ADAPTER_HUB_MAP=$'content.md\tCLAUDE.md\nconfig/hooks\tsettings.json#hooks\nconfig/permissions/allow.txt\tsettings.json#permissions.allow'
+  # Claude-shaped content/project rules. The helpers are adapter-agnostic;
+  # using Claude's current production map keeps the test shape aligned
+  # with a real adapter.
+  export ADAPTER_HUB_MAP=$'content.md\tCLAUDE.md'
   export ADAPTER_PROJECT_CONTENT_RULES=$'content.md\tmemory/MEMORY.md\ncontent.md\tMEMORY.md\nmemory\tmemory'
   export ADAPTER_SKILL_ROOT="$TOOL/skills"
 
@@ -187,137 +187,6 @@ teardown() {
   [ ! -d "$TOOL/skills/stale" ]
 }
 
-# === JSON subkey — text list (permissions.allow) ===========================
-
-@test "harvest extracts permissions.allow to a newline-per-entry text file" {
-  cat > "$TOOL/settings.json" <<'EOF'
-{"permissions":{"allow":["Bash(npm *)","Edit","Read"]}}
-EOF
-  hub_harvest "$TOOL" "$HUB"
-  [ -f "$HUB/config/permissions/allow.txt" ]
-  run cat "$HUB/config/permissions/allow.txt"
-  [[ "$output" == *'Bash(npm *)'* ]]
-  [[ "$output" == *'Edit'* ]]
-  [[ "$output" == *'Read'* ]]
-}
-
-@test "fanout writes hub allow.txt back into settings.json .permissions.allow" {
-  mkdir -p "$HUB/config/permissions"
-  printf 'Bash(git *)\nRead\n' > "$HUB/config/permissions/allow.txt"
-  echo '{"model":"opus"}' > "$TOOL/settings.json"
-
-  hub_fan_out "$HUB" "$TOOL"
-
-  # Array reconstructed with all entries, model preserved.
-  [ "$(jq -r '.model' "$TOOL/settings.json")" = "opus" ]
-  jq -e '.permissions.allow | index("Bash(git *)")' "$TOOL/settings.json" >/dev/null
-  jq -e '.permissions.allow | index("Read")' "$TOOL/settings.json" >/dev/null
-  [ "$(jq '.permissions.allow | length' "$TOOL/settings.json")" = "2" ]
-}
-
-# === JSON subkey — hooks directory split ===================================
-
-@test "harvest splits settings.json#hooks into per-event/<slug>.json files" {
-  cat > "$TOOL/settings.json" <<'EOF'
-{
-  "hooks": {
-    "Stop": [
-      { "hooks": [ { "type": "command", "command": "$HOME/.hive-mind/bin/sync" } ] }
-    ],
-    "PostToolUse": [
-      { "matcher": "Edit|Write", "hooks": [ { "type": "command", "command": "echo" } ] }
-    ]
-  }
-}
-EOF
-  hub_harvest "$TOOL" "$HUB"
-
-  [ -d "$HUB/config/hooks/Stop" ]
-  [ -d "$HUB/config/hooks/PostToolUse" ]
-  # One wrapper per event → one file per event.
-  [ "$(find "$HUB/config/hooks/Stop" -name '*.json' | wc -l | tr -d ' ')" = "1" ]
-  [ "$(find "$HUB/config/hooks/PostToolUse" -name '*.json' | wc -l | tr -d ' ')" = "1" ]
-  # Stop entry's command survived verbatim.
-  jq -e '.hooks[0].command == "$HOME/.hive-mind/bin/sync"' "$HUB/config/hooks/Stop"/*.json >/dev/null
-  # Filenames are human-readable command slugs (not content hashes).
-  [ -f "$HUB/config/hooks/Stop/sync.json" ]
-  [ -f "$HUB/config/hooks/PostToolUse/echo.json" ]
-}
-
-@test "harvest filters out hooks whose command references a machine-local path" {
-  cat > "$TOOL/settings.json" <<'EOF'
-{
-  "hooks": {
-    "SessionStart": [
-      { "hooks": [ { "type": "command", "command": "/Applications/LocalTool.app/foo" } ] },
-      { "hooks": [ { "type": "command", "command": "echo hello" } ] }
-    ]
-  }
-}
-EOF
-  hub_harvest "$TOOL" "$HUB"
-
-  # Only the non-machine-local entry should be harvested.
-  [ "$(find "$HUB/config/hooks/SessionStart" -name '*.json' | wc -l | tr -d ' ')" = "1" ]
-  grep -q 'echo hello' "$HUB/config/hooks/SessionStart"/*.json
-  # Skip was logged.
-  grep -Fq 'skipped machine-local hook' "$ADAPTER_LOG_PATH"
-}
-
-@test "fanout rebuilds settings.json .hooks from hub and preserves tool-side machine-local entries" {
-  # Hub has one Stop entry.
-  mkdir -p "$HUB/config/hooks/Stop"
-  printf '{"hooks":[{"type":"command","command":"$HOME/.hive-mind/bin/sync"}]}\n' \
-    > "$HUB/config/hooks/Stop/sync.json"
-
-  # Tool already has a machine-local Stop entry (fan-out must keep it).
-  cat > "$TOOL/settings.json" <<'EOF'
-{
-  "hooks": {
-    "Stop": [
-      { "hooks": [ { "type": "command", "command": "/Applications/LocalApp.app/notify" } ] }
-    ]
-  },
-  "ui": { "theme": "dark" }
-}
-EOF
-
-  hub_fan_out "$HUB" "$TOOL"
-
-  # Both entries present.
-  [ "$(jq '.hooks.Stop | length' "$TOOL/settings.json")" = "2" ]
-  # Machine-local one retained.
-  jq -e '.hooks.Stop | map(.hooks[0].command) | index("/Applications/LocalApp.app/notify")' "$TOOL/settings.json" >/dev/null
-  # Hub one added.
-  jq -e '.hooks.Stop | map(.hooks[0].command) | index("$HOME/.hive-mind/bin/sync")' "$TOOL/settings.json" >/dev/null
-  # Fields outside the map untouched.
-  [ "$(jq -r '.ui.theme' "$TOOL/settings.json")" = "dark" ]
-}
-
-@test "harvest rewrites stale hub hooks for an event when the tool changes" {
-  # First pass: one Stop entry.
-  cat > "$TOOL/settings.json" <<'EOF'
-{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"cmd-one"}]}]}}
-EOF
-  hub_harvest "$TOOL" "$HUB"
-  first_id="$(basename "$(find "$HUB/config/hooks/Stop" -name '*.json' | head -1)" .json)"
-  [ -n "$first_id" ]
-
-  # User removes the first entry, adds a different one. Harvest must
-  # nuke the old file under Stop/ and write the new one — otherwise
-  # the hub would accumulate ghost hooks forever.
-  cat > "$TOOL/settings.json" <<'EOF'
-{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"cmd-two"}]}]}}
-EOF
-  hub_harvest "$TOOL" "$HUB"
-
-  [ "$(find "$HUB/config/hooks/Stop" -name '*.json' | wc -l | tr -d ' ')" = "1" ]
-  [ ! -f "$HUB/config/hooks/Stop/$first_id.json" ]
-  grep -q 'cmd-two' "$HUB/config/hooks/Stop"/*.json
-  run grep -q 'cmd-one' "$HUB/config/hooks/Stop"/*.json
-  [ "$status" -ne 0 ]
-}
-
 # === per-project content ===================================================
 
 @test "harvest walks tool/projects/<variant>/ and mirrors content under hub/projects/<project-id>/" {
@@ -430,4 +299,388 @@ EOF
 
   # No variant created — tool has no encoded-cwd for this project.
   [ ! -d "$TOOL/projects" ]
+}
+
+# === section selectors in ADAPTER_HUB_MAP =================================
+# A dual-file tool (AGENTS.md + AGENTS.override.md shape) uses section
+# selectors to round-trip memory through a single canonical content.md.
+
+@test "harvest: content.md[0]/[1] routes two plain tool files into distinct hub sections" {
+  export ADAPTER_HUB_MAP=$'content.md[0]\tAGENTS.md\ncontent.md[1]\tAGENTS.override.md'
+  printf 'shared-a\n' > "$TOOL/AGENTS.md"
+  printf 'override-a\n' > "$TOOL/AGENTS.override.md"
+
+  hub_harvest "$TOOL" "$HUB"
+
+  run _hub_content_read_section "$HUB/content.md" 0
+  [ "$output" = 'shared-a' ]
+  run _hub_content_read_section "$HUB/content.md" 1
+  [ "$output" = 'override-a' ]
+  run _hub_content_markers_ok "$HUB/content.md"
+  [ "$status" -eq 0 ]
+}
+
+@test "fan-out: content.md[0] writes plain body without markers" {
+  export ADAPTER_HUB_MAP=$'content.md[0]\tAGENTS.md'
+  cat > "$HUB/content.md" <<'EOF'
+shared line
+<!-- hive-mind:section=1 START -->
+codex only
+<!-- hive-mind:section=1 END -->
+EOF
+  hub_fan_out "$HUB" "$TOOL"
+
+  [ -f "$TOOL/AGENTS.md" ]
+  run cat "$TOOL/AGENTS.md"
+  [ "$output" = 'shared line' ]
+  # Exact-match guard: no marker strings leaked into the plain fan-out.
+  ! grep -q 'hive-mind:section' "$TOOL/AGENTS.md"
+}
+
+@test "fan-out: content.md[0,1] concatenates section 0 plain then section 1 wrapped in markers" {
+  export ADAPTER_HUB_MAP=$'content.md[0,1]\tCLAUDE.md'
+  cat > "$HUB/content.md" <<'EOF'
+shared stuff
+<!-- hive-mind:section=1 START -->
+codex-scoped
+<!-- hive-mind:section=1 END -->
+EOF
+  hub_fan_out "$HUB" "$TOOL"
+
+  [ -f "$TOOL/CLAUDE.md" ]
+  # Section 0 content appears first, plain.
+  grep -q '^shared stuff$' "$TOOL/CLAUDE.md"
+  # Section 1 content survives, wrapped in START/END markers.
+  grep -q '^<!-- hive-mind:section=1 START -->$' "$TOOL/CLAUDE.md"
+  grep -q '^codex-scoped$' "$TOOL/CLAUDE.md"
+  grep -q '^<!-- hive-mind:section=1 END -->$' "$TOOL/CLAUDE.md"
+}
+
+@test "round-trip: multi-section fan-out, tool edit, harvest — edits land in correct sections" {
+  export ADAPTER_HUB_MAP=$'content.md[0,1]\tCLAUDE.md'
+  cat > "$HUB/content.md" <<'EOF'
+starting shared
+<!-- hive-mind:section=1 START -->
+starting codex-scoped
+<!-- hive-mind:section=1 END -->
+EOF
+  hub_fan_out "$HUB" "$TOOL"
+
+  # Agent appends a shared-tier line at EOF (outside any block) AND edits
+  # the codex-scoped block body in-place.
+  awk '
+    /<!-- hive-mind:section=1 START -->/ { print; in_block=1; next }
+    /<!-- hive-mind:section=1 END -->/   { print "edited codex-scoped"; print; in_block=0; next }
+    in_block { next }
+    { print }
+  ' "$TOOL/CLAUDE.md" > "$TOOL/CLAUDE.md.tmp"
+  mv "$TOOL/CLAUDE.md.tmp" "$TOOL/CLAUDE.md"
+  printf 'appended shared at EOF\n' >> "$TOOL/CLAUDE.md"
+
+  hub_harvest "$TOOL" "$HUB"
+
+  # Section 0 picked up both the original shared line and the EOF append.
+  run _hub_content_read_section "$HUB/content.md" 0
+  printf '%s\n' "$output" | grep -Fq 'starting shared'
+  printf '%s\n' "$output" | grep -Fq 'appended shared at EOF'
+  # Section 1 picked up the in-block edit, not the old body.
+  run _hub_content_read_section "$HUB/content.md" 1
+  [ "$output" = 'edited codex-scoped' ]
+}
+
+@test "harvest: single-id selector ignores marker state in tool file" {
+  # Single-id selectors (e.g. content.md[1]\tAGENTS.override.md) treat the
+  # whole tool file as plain content for that one section. Marker damage
+  # elsewhere in the file must NOT cause harvest to bail — only multi-id
+  # / wildcard selectors parse markers. Regression guard for the case
+  # pattern that decides whether to invoke _hub_content_markers_ok.
+  #
+  # Concrete failure mode this pins: if the case pattern were ever widened
+  # to match single-id selectors, harvest would short-circuit and the hub
+  # file would stay empty (or keep its pre-harvest state).
+  export ADAPTER_HUB_MAP=$'content.md[1]\tAGENTS.override.md'
+  # Tool file deliberately has an unmatched START marker (damaged).
+  cat > "$TOOL/AGENTS.override.md" <<'EOF'
+body line
+<!-- hive-mind:section=2 START -->
+dangling (no END)
+EOF
+  hub_harvest "$TOOL" "$HUB"
+
+  # Harvest ran: the hub file exists and contains the tool-side body.
+  # Raw grep (not _hub_content_read_section) because wrapping the damaged
+  # marker inside section 1's block produces nested markers that the
+  # section-reader isn't required to untangle — harvest's contract is
+  # "don't skip single-id harvests", not "perfectly round-trip damaged
+  # markers through the section parser".
+  [ -f "$HUB/content.md" ]
+  grep -Fq 'body line' "$HUB/content.md"
+  grep -Fq 'dangling (no END)' "$HUB/content.md"
+}
+
+@test "harvest: every malformed-selector typo shape is skipped, no literal-bracket file created" {
+  # Grammar tightening in _hub_split_sections is only half the story —
+  # the dispatch cascade in hub_harvest also needs a guard so a
+  # bracket-bearing hub path that failed validation doesn't fall through
+  # to _hub_sync_file and create a file literally named after the
+  # broken selector in the hub.
+  #
+  # Cover every typo shape that _hub_split_sections rejects:
+  #   - trailing comma:       content.md[0,]
+  #   - leading comma:        content.md[,0]
+  #   - doubled comma:        content.md[0,,1]
+  #   - missing close bracket: content.md[0
+  #   - missing open bracket:  content.md0]
+  #   - reversed brackets:     content.md][
+  #   - standalone open:       content.md[
+  #   - standalone close:      content.md]
+  #
+  # For each, confirm: no file with the literal broken name lands in
+  # the hub AND the canonical content.md target isn't silently populated
+  # as a fallback.
+  local bad
+  for bad in 'content.md[0,]' 'content.md[,0]' 'content.md[0,,1]' \
+             'content.md[0' 'content.md0]' 'content.md][' \
+             'content.md[' 'content.md]'; do
+    rm -rf "$HUB" "$TOOL"
+    mkdir -p "$HUB" "$TOOL"
+    export ADAPTER_HUB_MAP="${bad}"$'\tAGENTS.md'
+    printf 'tool content\n' > "$TOOL/AGENTS.md"
+
+    hub_harvest "$TOOL" "$HUB"
+
+    if [ -e "$HUB/$bad" ]; then
+      echo "harvest leaked literal-bracket file for: $bad"
+      return 1
+    fi
+    if [ -f "$HUB/content.md" ]; then
+      echo "harvest silently retargeted to content.md for: $bad"
+      return 1
+    fi
+  done
+}
+
+@test "fan-out: every malformed-selector typo shape is skipped, no literal-bracket file created" {
+  # Symmetric regression guard on the fan-out side. Same coverage of
+  # typo shapes as the harvest test above.
+  local bad
+  for bad in 'content.md[0,]' 'content.md[,0]' 'content.md[0,,1]' \
+             'content.md[0' 'content.md0]' 'content.md][' \
+             'content.md[' 'content.md]'; do
+    rm -rf "$HUB" "$TOOL"
+    mkdir -p "$HUB" "$TOOL"
+    export ADAPTER_HUB_MAP="${bad}"$'\tAGENTS.md'
+    printf 'hub content\n' > "$HUB/content.md"
+
+    hub_fan_out "$HUB" "$TOOL"
+
+    if [ -e "$TOOL/$bad" ]; then
+      echo "fan-out leaked literal-bracket file for: $bad"
+      return 1
+    fi
+    if [ -f "$TOOL/AGENTS.md" ]; then
+      echo "fan-out silently retargeted to AGENTS.md for: $bad"
+      return 1
+    fi
+  done
+}
+
+@test "fan-out: single-id selector skips when section absent from hub (does not create empty tool file)" {
+  # Defense symmetric with harvest's early-return-on-absent-src: if the
+  # hub doesn't have the requested section, fan-out must not overwrite
+  # the tool's file with an empty one. The tool's existing file is
+  # preserved untouched until the hub actually has content to ship.
+  export ADAPTER_HUB_MAP=$'content.md[1]\tAGENTS.override.md'
+  # Hub has ONLY a section 0 — no section 1 block.
+  printf 'shared stuff only\n' > "$HUB/content.md"
+  # Tool already had content; must survive the fan-out pass.
+  printf 'tool-side pre-existing content\n' > "$TOOL/AGENTS.override.md"
+
+  hub_fan_out "$HUB" "$TOOL"
+
+  [ "$(cat "$TOOL/AGENTS.override.md")" = 'tool-side pre-existing content' ]
+}
+
+@test "fan-out: single-id selector writes empty dst when section is present but body empty" {
+  # Distinct from absence: if the hub explicitly declares section 1 with
+  # markers around an empty body, that IS an intentional signal ("this
+  # tier is empty on this machine"). Fan-out should honor it and write
+  # an empty file, not skip.
+  export ADAPTER_HUB_MAP=$'content.md[1]\tAGENTS.override.md'
+  cat > "$HUB/content.md" <<'EOF'
+shared stuff
+<!-- hive-mind:section=1 START -->
+<!-- hive-mind:section=1 END -->
+EOF
+  printf 'should be cleared by fan-out\n' > "$TOOL/AGENTS.override.md"
+
+  hub_fan_out "$HUB" "$TOOL"
+
+  [ -f "$TOOL/AGENTS.override.md" ]
+  [ ! -s "$TOOL/AGENTS.override.md" ]
+}
+
+@test "fan-out: [0] on blocks-only hub writes empty dst, does not skip" {
+  # Section 0 is the default bucket — 'absent' from present_sections
+  # only means 'empty right now', not 'doesn't exist as a concept'.
+  # When the hub has only non-zero blocks (shared tier legitimately
+  # empty on this machine), content.md[0]\tAGENTS.md must write an
+  # empty AGENTS.md, not skip and leave stale content behind.
+  export ADAPTER_HUB_MAP=$'content.md[0]\tAGENTS.md'
+  cat > "$HUB/content.md" <<'EOF'
+<!-- hive-mind:section=1 START -->
+codex-scoped content only
+<!-- hive-mind:section=1 END -->
+EOF
+  printf 'stale shared content that must be cleared\n' > "$TOOL/AGENTS.md"
+
+  hub_fan_out "$HUB" "$TOOL"
+
+  [ -f "$TOOL/AGENTS.md" ]
+  [ ! -s "$TOOL/AGENTS.md" ]
+}
+
+@test "fan-out: [*] with blocks-only hub keeps section markers in tool file" {
+  # Wildcard intent is 'round-trip every tier'. When [*] expands to a
+  # single non-zero id, the tool file MUST keep the section markers so
+  # the next harvest can route the content back to that tier. Writing
+  # plain content would make the next harvest classify it as section 0
+  # (markerless → shared tier) — a silent privacy downgrade.
+  export ADAPTER_HUB_MAP=$'content.md[*]\tCLAUDE.md'
+  cat > "$HUB/content.md" <<'EOF'
+<!-- hive-mind:section=1 START -->
+codex-only content
+<!-- hive-mind:section=1 END -->
+EOF
+
+  hub_fan_out "$HUB" "$TOOL"
+
+  [ -f "$TOOL/CLAUDE.md" ]
+  grep -Fq '<!-- hive-mind:section=1 START -->' "$TOOL/CLAUDE.md"
+  grep -Fq 'codex-only content' "$TOOL/CLAUDE.md"
+  grep -Fq '<!-- hive-mind:section=1 END -->' "$TOOL/CLAUDE.md"
+}
+
+@test "fan-out+harvest round-trip: [*] on blocks-only hub preserves section 1 through a full cycle" {
+  # End-to-end guard against the privacy downgrade: if fan-out strips
+  # section markers for a wildcard-single-non-zero case, the next
+  # harvest reclassifies the content as section 0 and codex-only
+  # content starts leaking into the shared tier after just one cycle.
+  export ADAPTER_HUB_MAP=$'content.md[*]\tCLAUDE.md'
+  cat > "$HUB/content.md" <<'EOF'
+<!-- hive-mind:section=1 START -->
+codex-only content
+<!-- hive-mind:section=1 END -->
+EOF
+
+  hub_fan_out "$HUB" "$TOOL"
+  # Harvest back without modifying the tool file — simulates a sync
+  # cycle where the agent didn't change CLAUDE.md at all.
+  hub_harvest "$TOOL" "$HUB"
+
+  # Section 1 still holds the codex-only content; section 0 is still
+  # empty (no leakage into the shared tier).
+  run _hub_content_read_section "$HUB/content.md" 1
+  [ "$output" = 'codex-only content' ]
+  run _hub_content_read_section "$HUB/content.md" 0
+  [ -z "$output" ]
+}
+
+@test "fan-out: damaged markers in hub content.md are skipped for marker-dependent selectors" {
+  # Symmetric with harvest-side marker validation. Fan-out with a
+  # multi-id or wildcard selector parses markers; if the hub has damage,
+  # silent mis-routing is possible. Skip + log and leave the tool file
+  # unchanged, matching the harvest robustness contract.
+  export ADAPTER_HUB_MAP=$'content.md[*]\tCLAUDE.md'
+  cat > "$HUB/content.md" <<'EOF'
+top
+<!-- hive-mind:section=1 START -->
+body (no matching END — damaged)
+EOF
+  printf 'pre-existing tool content\n' > "$TOOL/CLAUDE.md"
+
+  hub_fan_out "$HUB" "$TOOL"
+
+  # Tool file untouched — fan-out must not emit a corrupted rewrite.
+  [ "$(cat "$TOOL/CLAUDE.md")" = 'pre-existing tool content' ]
+}
+
+@test "harvest: damaged markers in multi-section tool file are skipped, hub preserved" {
+  export ADAPTER_HUB_MAP=$'content.md[0,1]\tCLAUDE.md'
+  # Seed hub with a clean two-section file.
+  cat > "$HUB/content.md" <<'EOF'
+hub shared
+<!-- hive-mind:section=1 START -->
+hub codex
+<!-- hive-mind:section=1 END -->
+EOF
+  # Tool file has an unmatched START (damage).
+  cat > "$TOOL/CLAUDE.md" <<'EOF'
+shared
+<!-- hive-mind:section=1 START -->
+dangling body (no END)
+EOF
+
+  hub_harvest "$TOOL" "$HUB"
+
+  # Hub unchanged: still has both sections with the pre-harvest content.
+  run _hub_content_read_section "$HUB/content.md" 0
+  [ "$output" = 'hub shared' ]
+  run _hub_content_read_section "$HUB/content.md" 1
+  [ "$output" = 'hub codex' ]
+}
+
+# === snapshot path normalization ===========================================
+
+@test "_hub_snapshot_path strips a trailing slash so adapters never collide" {
+  # Regression: _hub_snapshot_path used ${tool_dir##*/} without stripping
+  # a trailing slash first. A caller-override tool_dir like
+  # "/path/to/.codex/" would yield base="" and every adapter's
+  # snapshots would collapse under fanout-snapshots// — silent
+  # cross-adapter collision risk.
+  export HIVE_MIND_HUB_DIR="$HOME/hub-root"
+  run _hub_snapshot_path "/path/to/.codex/" "content.md"
+  [ "$status" -eq 0 ]
+  # Namespace path must reflect the real basename, not an empty segment.
+  [[ "$output" == *"fanout-snapshots/.codex/content.md" ]]
+  [[ "$output" != *"fanout-snapshots//"* ]]
+
+  # No-trailing-slash form matches the same namespace.
+  run _hub_snapshot_path "/path/to/.codex" "content.md"
+  [[ "$output" == *"fanout-snapshots/.codex/content.md" ]]
+}
+
+# === wildcard empty-hub clear propagation =================================
+
+@test "fan-out: [*] on an existing but empty hub clears the tool file" {
+  # Regression: a user on machine A clears CLAUDE.md to empty, which
+  # harvests an empty hub content.md. On machine B the fan-out must
+  # propagate the clear — otherwise B's stale CLAUDE.md survives the
+  # sync cycle and the two machines drift. [*] selector with an empty
+  # hub file (zero sections) must write an empty dst, not skip.
+  : > "$HUB/content.md"
+  printf 'stale content from before the clear\n' > "$TOOL/CLAUDE.md"
+
+  run _hub_content_fanout_to_file "$HUB/content.md" '*' "$TOOL/CLAUDE.md"
+  [ "$status" -eq 0 ]
+
+  # CLAUDE.md exists and is empty (the clear propagated).
+  [ -f "$TOOL/CLAUDE.md" ]
+  [ ! -s "$TOOL/CLAUDE.md" ]
+}
+
+@test "fan-out: explicit single-id selector still skips when section is absent from empty hub" {
+  # The wildcard fix must NOT change non-wildcard semantics. [1] against
+  # an empty hub file still means "section 1 isn't here; leave dst
+  # alone" — otherwise any adapter that targets a specific non-zero
+  # section would start writing empty files whenever the hub is empty.
+  : > "$HUB/content.md"
+  printf 'existing body\n' > "$TOOL/AGENTS.override.md"
+
+  run _hub_content_fanout_to_file "$HUB/content.md" '1' "$TOOL/AGENTS.override.md"
+  [ "$status" -eq 0 ]
+
+  # Tool file untouched — content preserved.
+  run cat "$TOOL/AGENTS.override.md"
+  [ "$output" = "existing body" ]
 }

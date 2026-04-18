@@ -25,7 +25,6 @@ adapter_list_memory_files() { :; }
 ADAPTER_GITIGNORE_TEMPLATE="${ADAPTER_ROOT}/gitignore"
 ADAPTER_GITATTRIBUTES_TEMPLATE="${ADAPTER_ROOT}/gitattributes"
 ADAPTER_SECRET_FILES=""
-ADAPTER_MARKER_TARGETS=$'*.md\n**/*.md'
 
 # --- C. Lifecycle touchpoints ----------------------------------------------
 ADAPTER_HAS_HOOK_SYSTEM=true
@@ -50,7 +49,7 @@ ADAPTER_SKILL_ROOT="$ADAPTER_DIR/skills"
 ADAPTER_SKILL_FORMAT="markdown-frontmatter"
 
 # --- E. Settings merge -----------------------------------------------------
-ADAPTER_SETTINGS_MERGE_BINDINGS=$'tool.json jsonmerge'
+ADAPTER_SETTINGS_MERGE_BINDINGS=""
 
 # --- F. User education -----------------------------------------------------
 adapter_activation_instructions() { echo "Restart fake-b."; }
@@ -60,13 +59,12 @@ adapter_disable_instructions() { echo "Remove tool.json from $ADAPTER_DIR."; }
 ADAPTER_FALLBACK_STRATEGY=""
 
 # --- I. Hub mapping -------------------------------------------------------
-# Same canonical hub paths as `fake`, but the tool-native layout differs:
-# memory.md → NOTES.md (not MEMORY.md); config/hooks → tool.json#hooks.
-# That mismatch is what makes the cross-provider round-trip test
-# meaningful — an edit via fake's tool dir must surface under fake-b's
-# tool-native name after the shared hub sync cycle.
-ADAPTER_HUB_MAP=$'content.md\tNOTES.md
-config/hooks\ttool.json#hooks'
+# Same canonical hub content path as `fake`, but the tool-native layout
+# differs: content.md → NOTES.md (not MEMORY.md). That mismatch is what
+# makes the cross-provider round-trip test meaningful — an edit via
+# fake's tool dir must surface under fake-b's tool-native name after
+# the shared hub sync cycle.
+ADAPTER_HUB_MAP=$'content.md\tNOTES.md'
 ADAPTER_PROJECT_CONTENT_RULES=$'content.md\tnotes/NOTES.md
 content.md\tNOTES.md
 notes\tnotes'

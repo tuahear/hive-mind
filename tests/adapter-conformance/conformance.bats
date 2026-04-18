@@ -108,10 +108,6 @@ teardown() {
   rm -rf "$tmpdir"
 }
 
-@test "ADAPTER_MARKER_TARGETS is non-empty" {
-  [ -n "$ADAPTER_MARKER_TARGETS" ]
-}
-
 @test "ADAPTER_SECRET_FILES is declared (may be empty)" {
   # Just verify the variable exists (even if empty string).
   [ "${ADAPTER_SECRET_FILES+x}" = "x" ]

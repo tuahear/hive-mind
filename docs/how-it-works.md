@@ -13,10 +13,10 @@ You've attached both Claude Code and Codex to the same hub on one machine.
 
 1. You teach Claude Code something useful. It writes to `~/.claude/CLAUDE.md`.
 2. Claude's Stop hook fires → harvest reads `CLAUDE.md` into `~/.hive-mind/content.md` → commit + push.
-3. Still inside that same Stop hook: fan-out rewrites `~/.codex/AGENTS.md` from the updated hub.
+3. Still inside that same Stop hook: fan-out rewrites every tier of Codex's memory — shared content to `~/.codex/AGENTS.md` (section 0) and any Codex-scoped override into `~/.codex/AGENTS.override.md` (section 1).
 4. Next time you open Codex, the lesson is already there.
 
-No manual sync, no re-teaching. Same flow applies to per-project memory, skills, permissions, and hooks.
+No manual sync, no re-teaching. Same flow applies to per-project memory and skills. Hook configs and tool permissions stay machine-local — each adapter installs its own hooks during setup, and permissions live in the tool's native config untouched.
 
 ## The cross-machine story
 
@@ -44,11 +44,12 @@ Only the portable stuff. Machine-local noise (session transcripts, shell history
 
 | File | What it is |
 |---|---|
-| `CLAUDE.md` | Your global instructions (the preferences that apply to every project) |
+| `CLAUDE.md` (and `AGENTS.md` / `AGENTS.override.md` for Codex) | Your global instructions (the preferences that apply to every project) |
 | `projects/<name>/MEMORY.md` | Per-project memory index |
 | `projects/<name>/memory/*.md` | Individual per-project memory entries |
-| `skills/*/` | Claude Code's on-demand playbooks |
-| `settings.json` | Global hook + permission config |
+| `skills/*/` | On-demand playbooks the agent loads on matching triggers |
+
+Hook configs (`~/.claude/settings.json`, `~/.codex/hooks.json`) and tool permissions are **not** synced — they're managed locally by the adapter at install/upgrade time.
 
 The bundled `hive-mind` skill installs automatically — it teaches your agent to embed one-line commit markers in memory edits, which `sync.sh` extracts as the git commit message. Every change to your memory gets a real, meaningful commit in `git log`.
 
@@ -82,5 +83,5 @@ jq 'del(.hooks)' ~/.claude/settings.json > /tmp/s.json && mv /tmp/s.json ~/.clau
 Or stop pushing without removing hooks:
 
 ```bash
-git -C ~/.claude remote remove origin
+git -C ~/.hive-mind remote remove origin
 ```

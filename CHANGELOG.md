@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Codex adapter** (`adapters/codex/`) — attaches [OpenAI Codex CLI](https://github.com/openai/codex) to the hub. Syncs both `~/.codex/AGENTS.md` (shared tier) and `~/.codex/AGENTS.override.md` (Codex-scoped override tier) bidirectionally on every sync cycle. Installs SessionStart + Stop hooks via `~/.codex/hooks.json` gated by `[features].codex_hooks` in `~/.codex/config.toml`. Treats `auth.json` as a secret file so it never reaches the hub remote. (issue #11)
+- **Sectioned `content.md` hub format** — a single hub file can carry multiple memory tiers, delimited by `<!-- hive-mind:section=N START/END -->` paired HTML-comment markers. Unlocks multi-file tool surfaces (Codex's AGENTS.md + AGENTS.override.md split) without leaking adapter-specific filenames into the hub.
+- **`ADAPTER_HUB_MAP` section selectors** — bracket syntax on the hub-path side declares which tiers a tool file round-trips: `content.md[0]` (single section, plain), `content.md[0,1]` (multiple sections with markers), `content.md[*]` (all sections currently present — forward-compat for any future tier without an adapter update). Selector-less entries keep their legacy verbatim-copy semantics.
+- **Section id registry** in `docs/contributing.md` for cross-adapter coordination. Section 0 = shared tier (implicit, all adapters); section 1 = codex override layer.
+- Bundled adapter-scoped skills (`hive-mind-claude`, `hive-mind-codex`) so Claude and Codex can coexist on the same hub without overwriting each other's hub skill content.
+
+### Changed
+- Claude Code adapter's `ADAPTER_HUB_MAP` entry for `CLAUDE.md` migrates from the legacy verbatim form to `content.md[*]\tCLAUDE.md`, so Claude sees every tier of the hub's memory and auto-picks-up any new tier a future adapter introduces.
+- Claude Code no longer round-trips `settings.json` hooks or permissions through the shared hub. `CLAUDE.md`, project memory, and skills stay synced; hook installation and Claude permissions are now machine-local only.
+
+### Fixed
+- **Codex and Claude hook configs now enter through a native launcher instead of direct shell commands in their tool config.** `setup.sh` builds a small `hivemind-hook` binary and the adapters render their hook config against that single executable, which then shells into the existing bash scripts internally. This keeps the installed hook command surface down to one native entrypoint instead of fragile direct-bash or inline-shell invocations.
+- **`ADAPTER_DIR` leak across sequential adapter loads in hub sync.** `core/adapter-loader.sh` preserves `ADAPTER_DIR` across its clear step as a caller-override hook, but sync.sh's sequential multi-adapter loops treated adapter N's tool dir as a caller override for adapter N+1's load - so codex (loaded second) was writing its `hooks.json` and `AGENTS.override.md` under `~/.claude/` instead of `~/.codex/`. Fixed by `unset ADAPTER_DIR` at the top of each loop iteration in both harvest + fan-out phases.
+
+### Removed
+- `config/hooks/**` and `config/permissions/**` from the documented hub schema and hub whitelist. Those paths are no longer a source of truth for shared state.
+- `ADAPTER_MARKER_TARGETS` from the adapter contract. Declared and validated by the loader but never consumed by core — marker extraction runs from `HUB_MARKER_TARGETS` in `core/hub/sync.sh`. Removed from the loader, docs, fixtures, and both production adapters.
+- Claude Code adapter's `adapter_migrate` body and its dedicated test suite (including `tests/integration/claude-migration.bats`). hive-mind is pre-release with no known users carrying legacy settings.json shapes, so the v0.1/v0.2 → v0.3 hook-path rewriter has no audience. The `adapter_migrate` contract hook (and `PREV_HIVE_MIND_VERSION` plumbing in `setup.sh`) stays so future adapters can opt in to cross-version migrations.
+
 ## [0.3.0] - 2026-04-16
 
 ### Added

@@ -124,6 +124,75 @@ EOF
 # use (user edits one tool's memory at a time), last-writer-wins is
 # harmless; the constraint is documented here as the behavior pin.
 
+@test "edit to one tool survives a sync cycle with another adapter whose tool file is unchanged" {
+  # Regression guard for the cross-provider harvest-stomp: with two
+  # adapters attached and both tool files populated from a previous
+  # cycle, editing ONLY adapter A's file must propagate to adapter B.
+  # Prior behavior: adapter B's unchanged tool file overwrote the hub
+  # section that adapter A just updated (sequential LWW harvest).
+  # Fix: .hive-mind-state/fanout-snapshots — harvest skips when the
+  # tool file is byte-identical to its last fan-out snapshot.
+
+  # Seed both sides with identical content (simulates post-install
+  # steady state after a previous sync cycle).
+  printf 'shared baseline\n' > "$HOME/.fake-tool/MEMORY.md"
+  printf 'shared baseline\n' > "$HOME/.fake-b-tool/NOTES.md"
+  run run_sync
+  [ "$status" -eq 0 ]
+  grep -Fq 'shared baseline' "$HUB/content.md"
+
+  # Edit only fake-a's file; fake-b's file is untouched since the last
+  # fan-out (so a harvest-stomp would have it overwriting the hub).
+  printf 'shared baseline\nEDIT from fake-a\n' > "$HOME/.fake-tool/MEMORY.md"
+
+  run run_sync
+  [ "$status" -eq 0 ]
+
+  # Hub kept fake-a's edit (not stomped by fake-b's unchanged file).
+  grep -Fq 'EDIT from fake-a' "$HUB/content.md"
+  # And fake-b received it on fan-out.
+  grep -Fq 'EDIT from fake-a' "$HOME/.fake-b-tool/NOTES.md"
+}
+
+@test "ADAPTER_DIR does not leak across sequential adapter loads in sync" {
+  # Regression guard for a silent data-path bug: adapter-loader.sh
+  # preserves ADAPTER_DIR across its clear step (the supported caller-
+  # override hook). In sync.sh's sequential multi-adapter loop, that
+  # preservation was inheriting adapter N's tool_dir into adapter N+1's
+  # load — fallback `ADAPTER_DIR="${ADAPTER_DIR:-default}"` then saw a
+  # value and skipped the default, so adapter N+1 harvested + fanned
+  # out into adapter N's directory (e.g. Codex's hooks.json writing
+  # under ~/.claude after the Claude adapter loaded first).
+  #
+  # Both real shipped adapters use the `${ADAPTER_DIR:-default}`
+  # fallback idiom, so the leak only surfaces with that pattern.
+  # Rewrite both fake fixtures to use the same idiom, otherwise the
+  # test would pass trivially (fakes assign ADAPTER_DIR unconditionally
+  # and a leaked value would be overwritten on assignment).
+  sed -i.bak 's|^ADAPTER_DIR="\$FAKE_ADAPTER_HOME/\.fake-tool"$|ADAPTER_DIR="${ADAPTER_DIR:-$FAKE_ADAPTER_HOME/.fake-tool}"|' \
+    "$TEST_ADAPTERS_DIR/fake/adapter.sh"
+  sed -i.bak 's|^ADAPTER_DIR="\$FAKE_B_ADAPTER_HOME/\.fake-b-tool"$|ADAPTER_DIR="${ADAPTER_DIR:-$FAKE_B_ADAPTER_HOME/.fake-b-tool}"|' \
+    "$TEST_ADAPTERS_DIR/fake-b/adapter.sh"
+  rm -f "$TEST_ADAPTERS_DIR/fake/adapter.sh.bak" "$TEST_ADAPTERS_DIR/fake-b/adapter.sh.bak"
+
+  printf 'shared memory line\n' > "$HOME/.fake-tool/MEMORY.md"
+
+  run run_sync
+  [ "$status" -eq 0 ]
+
+  # Cross-contamination guard: neither tool dir contains the other's
+  # native file (proves adapter N+1 wrote to its own ADAPTER_DIR, not
+  # into adapter N's).
+  [ ! -e "$HOME/.fake-tool/NOTES.md" ]
+  [ ! -e "$HOME/.fake-b-tool/MEMORY.md" ]
+
+  # Sanity: each adapter got its own native file, content propagated.
+  [ -f "$HOME/.fake-tool/MEMORY.md" ]
+  [ -f "$HOME/.fake-b-tool/NOTES.md" ]
+  grep -q 'shared memory line' "$HOME/.fake-tool/MEMORY.md"
+  grep -q 'shared memory line' "$HOME/.fake-b-tool/NOTES.md"
+}
+
 @test "secret file declared by one adapter is gated on push even if the other adapter would allow it" {
   # Regression guard for the hub sync's secret-file gate being the
   # UNION of every attached adapter's ADAPTER_SECRET_FILES. Re-declare

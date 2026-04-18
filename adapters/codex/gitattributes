@@ -1,0 +1,10 @@
+# Reserved template for a tool-dir git repo. The hub topology does not
+# currently git-init ~/.codex/, but keeping these rules here documents
+# the intended conflict behavior if Codex-side files are ever versioned
+# directly.
+
+AGENTS.md           merge=union
+AGENTS.override.md  merge=union
+
+.gitignore          merge=union
+.gitattributes      merge=union

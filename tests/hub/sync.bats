@@ -6,9 +6,10 @@
 #   $HIVE_MIND_HUB_DIR     clone of the bare remote with the hub schema seeded
 #   $ADAPTER_DIR (tool)    fake adapter's tool dir, attached to the hub
 #
-# The fake adapter under tests/fixtures/adapters/fake/ ships a Claude-
-# shaped hub map + project-content rules, so the hub's generic harvest
-# / fan-out path is exercised end-to-end. No Claude binary required.
+# The fake adapter under tests/fixtures/adapters/fake/ ships a memory-
+# only map plus Claude-shaped project-content rules, so the hub's
+# generic harvest / fan-out path is exercised end-to-end. No Claude
+# binary required.
 
 REPO_ROOT="$BATS_TEST_DIRNAME/../.."
 HUB_SYNC="$REPO_ROOT/core/hub/sync.sh"
@@ -182,37 +183,6 @@ run_sync() {
   # The JSON file must NOT have its marker-like content stripped.
   run grep -F 'commit:' "$hub_proj/memory/data.json"
   [ "$status" -eq 0 ]
-}
-
-# === machine-local hook filtering =========================================
-
-@test "harvest skips machine-local hook entries while preserving tool-side local entries across sync" {
-  # Inject a machine-local hook AND a valid hook into the tool config.
-  cat > "$HOME/.fake-tool/hooks.json" <<EOF
-{
-  "hooks": {
-    "SessionStart": [
-      { "hooks": [ { "type": "command", "command": "/Applications/Local.app/open" } ] },
-      { "hooks": [ { "type": "command", "command": "echo-ok" } ] }
-    ]
-  }
-}
-EOF
-
-  run run_sync
-  [ "$status" -eq 0 ]
-
-  # Hub recorded only the non-local hook.
-  [ "$(find "$HUB/config/hooks/SessionStart" -name '*.json' | wc -l | tr -d ' ')" = "1" ]
-  grep -Fq 'echo-ok' "$HUB/config/hooks/SessionStart"/*.json
-  # Machine-local hook survived in the tool-side config (fan-out must not wipe it).
-  jq -e '.hooks.SessionStart | map(.hooks[0].command) | index("/Applications/Local.app/open")' \
-    "$HOME/.fake-tool/hooks.json" >/dev/null
-  # And the non-local one is also still there (came back via fan-out from hub).
-  jq -e '.hooks.SessionStart | map(.hooks[0].command) | index("echo-ok")' \
-    "$HOME/.fake-tool/hooks.json" >/dev/null
-  # Hub sync's log recorded the skip once.
-  grep -Fq 'skipped machine-local hook' "$HUB/.sync-error.log"
 }
 
 # === lock / safety gates ===================================================

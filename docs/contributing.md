@@ -26,7 +26,6 @@ Every adapter implements the shell contract defined in `core/adapter-loader.sh`.
 | `ADAPTER_MEMORY_MODEL` | `flat` or `hierarchical` |
 | `ADAPTER_GITIGNORE_TEMPLATE` | Path to the adapter's `.gitignore` template |
 | `ADAPTER_GITATTRIBUTES_TEMPLATE` | Path to the adapter's `.gitattributes` template |
-| `ADAPTER_MARKER_TARGETS` | Newline-separated globs of files that can host commit markers |
 | `ADAPTER_HAS_HOOK_SYSTEM` | `true` or `false` |
 | `ADAPTER_LOG_PATH` | Absolute path to the sync-error log |
 
@@ -85,24 +84,61 @@ Both `ADAPTER_HUB_MAP` and `ADAPTER_PROJECT_CONTENT_RULES` are newline-separated
 
 The engine dispatches on the shape of the two paths in each entry.
 
+The table below describes the engine's dispatch shapes. Only the file-to-file
+shape has a production user today; the JSON-subkey shapes are a reserved
+capability available to future adapters. Adding a new hub path to the shared
+schema also requires an explicit whitelist entry in `core/hub/gitignore`.
+
 | Hub path | Tool path | Meaning |
 |---|---|---|
-| `content.md` | `CLAUDE.md` | File-to-file rename. `_hub_sync_file` copies on harvest; reverse on fan-out. |
-| `config/permissions/allow.txt` | `settings.json#permissions.allow` | Tool-side JSON subkey ↔ hub-side text-lines. Harvest extracts the array and writes one entry per line; fan-out reads the lines and replaces the subkey. |
-| `config/hooks` | `settings.json#hooks` | Tool-side JSON subkey that's an event-keyed map of entry arrays ↔ hub-side per-event/per-entry JSON files. Harvest splits each entry into `config/hooks/<event>/<id>.json` where `<id>` is a deterministic content hash; fan-out reconstructs the map. Machine-local entries (commands containing `/Applications/`, `/opt/homebrew/`, Windows drive letters, …) are filtered from harvest and preserved through fan-out. |
+| `content.md` | `CLAUDE.md` | File-to-file rename. `_hub_sync_file` copies on harvest; reverse on fan-out. Used in production by every current adapter. |
+| `<path>.txt` | `<file>.json#<jsonpath>` | *(reserved)* Tool-side JSON subkey (array of strings) ↔ hub-side text-lines. Harvest extracts the array and writes one entry per line; fan-out reads the lines and replaces the subkey. |
+| `<path>` | `<file>.json#<jsonpath>` | *(reserved)* Tool-side JSON subkey whose value is an event-keyed map of entry arrays ↔ hub-side per-event/per-entry JSON files. Harvest splits each entry into `<path>/<event>/<id>.json`; fan-out reconstructs the map. Machine-local entries (commands referencing `/Applications/`, Windows drive letters, …) are filtered on harvest and preserved on fan-out. |
 
 Skills are NOT declared in `ADAPTER_HUB_MAP`. The engine syncs `$ADAPTER_SKILL_ROOT/` ↔ `hub/skills/` directly, renaming each skill's main content file: tool's `SKILL.md` → hub's `content.md` on harvest, and the reverse on fan-out. Other files in each skill dir pass through unchanged.
 
 The convention: hub paths with a file extension (`.md`, `.txt`, `.json`) are file-like; paths without an extension are directory-like. The `<file>#<jsonpath>` form on the tool side means "read/write a subkey of that JSON file"; the hub-side shape (file vs. dir) picks between text-lines and per-entry split.
 
+### Sectioned content files (`path[selector]`)
+
+A hub-side file can carry multiple tiers of content that round-trip into different tool-native files. This exists because some tools have more than one memory file that both need syncing — e.g. Codex natively reads `AGENTS.md` + `AGENTS.override.md` and concatenates them at runtime.
+
+Append a bracketed selector to the hub path to declare which tiers an entry claims:
+
+| Selector | Meaning |
+|---|---|
+| `content.md[0]` | Section 0 only — the default bucket (everything outside any marker block). Whole tool file plain round-trips to/from section 0. |
+| `content.md[1]` | A specific non-zero section. Whole tool file plain round-trips to/from that section's body. |
+| `content.md[0,1]` | Multiple sections. Fan-out writes section 0 plain + each non-zero section wrapped in `<!-- hive-mind:section=N START/END -->` markers (ascending id); harvest parses the tool file by those markers back into each selected section. |
+| `content.md[*]` | All sections currently present in the file. Forward-compatible — an adapter using `[*]` auto-picks-up any new tier a future adapter introduces. Goes through the section-aware parser (marker validation, per-section replace), unlike the selector-less form. |
+
+No selector (legacy `content.md\tCLAUDE.md`) takes the whole-file verbatim copy path (`_hub_sync_file`) in both directions — no marker parsing, no per-section routing, no marker-damage fallback. It's **not** a drop-in equivalent of `[*]`: they share the intent of "expose the full hub file" but differ in validation and failure handling. Prefer `[*]` for any adapter that writes markered content; use the selector-less form only for legacy single-tier setups.
+
+**Marker format** (paired, must balance, must not nest):
+
+```
+<!-- hive-mind:section=1 START -->
+body of section 1
+<!-- hive-mind:section=1 END -->
+```
+
+HTML comments so the markers render invisibly in markdown viewers. The `hive-mind:` prefix is distinctive enough that organic content won't collide.
+
+**Section id registry** — ids are shared across all adapters, so coordinate here before claiming a new one:
+
+| Id | Owner | Meaning |
+|---|---|---|
+| `0` | *(implicit, all adapters)* | Shared tier — every adapter reads and writes this. Content outside any marker block. |
+| `1` | codex | Codex-scoped override layer (`AGENTS.override.md`). |
+
+Claim a new id by adding a row and referencing the adapter that introduces it in the same PR.
+
+**Robustness** — harvest treats marker damage in a multi-section tool file (unmatched START/END, nested START, mismatched id) as a skip-this-cycle event: the hub state is preserved and a warning is logged. Content-outside-a-block always lands in section 0, so EOF-appends by an agent that didn't load the adapter's skill still sync to the shared tier.
+
 ### Example (the Claude Code adapter)
 
 ```bash
-ADAPTER_HUB_MAP=$'content.md\tCLAUDE.md
-config/hooks\tsettings.json#hooks
-config/permissions/allow.txt\tsettings.json#permissions.allow
-config/permissions/deny.txt\tsettings.json#permissions.deny
-config/permissions/ask.txt\tsettings.json#permissions.ask'
+ADAPTER_HUB_MAP=$'content.md[*]\tCLAUDE.md'
 
 # No `skills\tskills` — the engine handles skills directly, renaming
 # SKILL.md ↔ content.md per skill subdir.
@@ -121,7 +157,7 @@ memory\tmemory'
 
 ### Non-JSON config formats
 
-If your tool stores hooks or permissions outside JSON (e.g. Codex's `config.toml` with `[[hooks]]` blocks), the `<file>#<jsonpath>` notation still applies to the hub side — the file extension (`.toml`) tells your adapter's own shell code which parser to invoke. The MVP engine in `core/hub/harvest-fanout.sh` only understands JSON; TOML-shaped adapters will need to extend the dispatch (see issue [#11](https://github.com/tuahear/hive-mind/issues/11) for the Codex implementation plan).
+The shared hub does not currently sync hook configs or tool permissions — both live machine-local in their adapter's native file (e.g. `~/.claude/settings.json`, `~/.codex/hooks.json` + `~/.codex/config.toml`). If a future schema extension adds cross-provider state that needs to live in a non-JSON tool config, the `<file>#<jsonpath>` notation on the tool side is the intended extension point: the file extension (`.toml`, `.yaml`, …) tells the adapter's shell code which parser to invoke. The MVP engine in `core/hub/harvest-fanout.sh` only implements the JSON dispatch today; a TOML-shaped extension would plug in alongside it.
 
 ## PR checklist
 

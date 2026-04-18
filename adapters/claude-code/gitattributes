@@ -5,11 +5,6 @@
 CLAUDE.md          merge=union
 projects/**/*.md   merge=union
 
-# Auto-resolve JSON config conflicts via the jsonmerge driver installed by
-# hive-mind setup.sh (git config merge.jsonmerge.driver ...). Deep-merges
-# objects and unions the known permission arrays. See core/jsonmerge.sh.
-settings.json      merge=jsonmerge
-
 # Line-based config files that are ok to union on conflict. setup.sh always
 # re-seeds them from the templates, so divergence windows are small anyway.
 # Union beats default 3-way merge here because these are append-style files

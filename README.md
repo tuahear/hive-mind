@@ -58,7 +58,7 @@ ADAPTER=codex bash ~/.hive-mind/hive-mind/setup.sh   # same memory, second tool
 - HTTPS: `https://<host>/you/repo.git`
 - Local: `/path/to/bare.git` or `file:///path/to/bare.git`
 
-Works on macOS, Linux, and Windows (Git Bash). You need: `git` and SSH access (or HTTPS credentials) for your memory-repo host. The installer itself clones hive-mind from GitHub over SSH once, so GitHub SSH access is required for this step only — not for ongoing sync.
+Works on macOS, Linux, and Windows (Git Bash). You need: `git`, a Go toolchain (≥1.20 — the installer builds the native `hivemind-hook` launcher from source), and SSH access (or HTTPS credentials) for your memory-repo host. The installer itself clones hive-mind from GitHub over SSH once, so GitHub SSH access is required for this step only — not for ongoing sync.
 
 ### 3. Reload Claude Code
 
@@ -84,7 +84,7 @@ Deeper explanations of each — plus the sync flow, conflict resolution, commit 
 | Adapter | Tool | Status |
 |---|---|---|
 | `claude-code` | [Claude Code](https://claude.com/claude-code) | Shipped |
-| `codex` | [OpenAI Codex CLI](https://github.com/openai/codex) | Planned ([#11](https://github.com/tuahear/hive-mind/issues/11)) |
+| `codex` | [OpenAI Codex CLI](https://github.com/openai/codex) | Shipped ([#11](https://github.com/tuahear/hive-mind/issues/11)) |
 | `qwen` | [Qwen CLI](https://github.com/QwenLM/qwen-code) | Planned ([#19](https://github.com/tuahear/hive-mind/issues/19)) |
 | `kimi` | [Kimi CLI](https://github.com/MoonshotAI/kimi-cli) | Planned ([#23](https://github.com/tuahear/hive-mind/issues/23)) |
 
@@ -98,7 +98,7 @@ This README is for end users. If you want to hack on hive-mind itself:
 
 1. Fork the repo and clone
 2. Run `scripts/install-dev-hooks.sh` once in your clone — installs a pre-commit hook that keeps bundled skills clean
-3. Edit `adapters/claude-code/skills/hive-mind/content.md` to change the bundled Claude skill (not the copy in `~/.claude/skills/hive-mind/` — that's a user-facing install target that gets refreshed each time setup.sh runs)
+3. Edit `adapters/claude-code/skills/hive-mind-claude/content.md` to change the bundled Claude skill (not the copy in `~/.claude/skills/hive-mind-claude/` — that's a user-facing install target that gets refreshed each time setup.sh runs)
 4. Install [bats-core](https://github.com/bats-core/bats-core) + GNU `parallel` — `brew install bats-core parallel` (macOS), `apt install bats parallel` (Linux). Run `./test` from the repo root.
 5. PRs welcome
 
