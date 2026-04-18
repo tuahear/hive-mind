@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
-import { hubDir, hubSrcDir, readAttachedAdapters, coreVersion, bundledAssetsDir } from "../paths.js";
+import { hubDir, hubSrcDir, readAttachedAdapters, coreVersion, bundledAssetsDir, isHubInstalled } from "../paths.js";
 import { run, which } from "../run.js";
 
 type Check = { name: string; ok: boolean; detail?: string };
@@ -15,7 +15,7 @@ export function doctorCmd(json: boolean): number {
   checks.push({ name: "jq on PATH", ok: which("jq") });
   checks.push({ name: "bundled assets present", ok: existsSync(resolve(bundledAssetsDir(), "setup.sh")) });
   checks.push({ name: "hub directory exists", ok: existsSync(hub), detail: hub });
-  checks.push({ name: "hub git initialized", ok: existsSync(resolve(hub, ".git")) });
+  checks.push({ name: "hub git initialized (as directory)", ok: isHubInstalled(hub) });
   checks.push({ name: "hub source staged", ok: existsSync(resolve(src, "core", "hub", "sync.sh")) });
   checks.push({ name: "core/VERSION readable", ok: coreVersion() !== null, detail: coreVersion() ?? undefined });
 
@@ -31,7 +31,7 @@ export function doctorCmd(json: boolean): number {
     checks.push({ name: `adapter ${a}: contract file present`, ok: existsSync(adapterSh) });
   }
 
-  if (existsSync(resolve(hub, ".git"))) {
+  if (isHubInstalled(hub)) {
     const remote = run("git", ["-C", hub, "remote", "get-url", "origin"], { stdio: ["ignore", "pipe", "pipe"] });
     checks.push({ name: "hub origin configured", ok: remote.status === 0 });
   }

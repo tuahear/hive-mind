@@ -166,6 +166,24 @@ assert(okAttach.status === 1 && okAttach.stderr.includes("hub not initialized"),
   assert(fsExists(resolve(hub, "hive-mind", "core", "hub", "sync.sh")), "restage populates core/hub/sync.sh");
 }
 
+// 4f. attach against an unknown adapter lists the available ones instead
+// of telling the user to run `ls` (which isn't universally available).
+{
+  const { rmSync, mkdirSync, cpSync } = await import("node:fs");
+  const hub = resolve(cliDir, ".smoke-hub-unknown-adapter");
+  rmSync(hub, { recursive: true, force: true });
+  mkdirSync(resolve(hub, "hive-mind"), { recursive: true });
+  // Drop setup.sh + adapters/ into the staged source so attach passes
+  // the hub-not-initialized check and fails specifically on the adapter.
+  cpSync(resolve(cliDir, "assets", "setup.sh"), resolve(hub, "hive-mind", "setup.sh"));
+  cpSync(resolve(cliDir, "assets", "adapters"), resolve(hub, "hive-mind", "adapters"), { recursive: true });
+  const r = node(["dist/cli.js", "attach", "nope-not-real"], { env: { ...process.env, HIVE_MIND_HUB_DIR: hub } });
+  assert(r.status === 1, `attach to unknown adapter exits 1 (got=${r.status})`);
+  assert(r.stderr.includes("Available:"), `error message lists Available: (stderr='${r.stderr}')`);
+  assert(r.stderr.includes("claude-code") && r.stderr.includes("codex"), `error lists real adapter names (stderr='${r.stderr}')`);
+  assert(!r.stderr.includes("see ls "), `error does not tell users to run ls (stderr='${r.stderr}')`);
+}
+
 // 5. npm pack stays under 2 MB (CLI spec cap).
 // --ignore-scripts so the prepack build doesn't mix its stdout into the
 // JSON response we're about to parse.

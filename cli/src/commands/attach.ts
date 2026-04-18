@@ -1,8 +1,25 @@
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 import { hubDir, hubSrcDir } from "../paths.js";
 import { runBash } from "../run.js";
 import { validateAdapterName } from "./validate.js";
+
+function listAdapters(adaptersDir: string): string[] {
+  if (!existsSync(adaptersDir)) return [];
+  try {
+    return readdirSync(adaptersDir)
+      .filter((n) => {
+        try {
+          return statSync(resolve(adaptersDir, n)).isDirectory();
+        } catch {
+          return false;
+        }
+      })
+      .sort();
+  } catch {
+    return [];
+  }
+}
 
 export function attachCmd(adapter: string): number {
   const nameErr = validateAdapterName(adapter);
@@ -16,8 +33,13 @@ export function attachCmd(adapter: string): number {
     console.error(`error: hub not initialized. Run \`hivemind init\` first.`);
     return 1;
   }
-  if (!existsSync(resolve(src, "adapters", adapter))) {
-    console.error(`error: unknown adapter '${adapter}'. Available: see ls ${resolve(src, "adapters")}`);
+  const adaptersDir = resolve(src, "adapters");
+  if (!existsSync(resolve(adaptersDir, adapter))) {
+    const available = listAdapters(adaptersDir);
+    console.error(
+      `error: unknown adapter '${adapter}'.\n` +
+        `  Available: ${available.length ? available.join(", ") : "(none — hub source is empty?)"}`
+    );
     return 1;
   }
   const env: NodeJS.ProcessEnv = {

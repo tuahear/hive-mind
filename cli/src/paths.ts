@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { resolve, dirname } from "node:path";
 
@@ -53,3 +53,18 @@ export function coreVersion(): string | null {
 }
 
 export { dirname };
+
+// Core scripts (setup.sh, core/hub/sync.sh) gate on `-d .git`, so any
+// "is this a real hub" check the CLI surfaces to the user must also
+// require `.git` to be a directory. A worktree's `.git` file or a
+// stale regular file would otherwise have the CLI report "installed"
+// while core bails on sync.
+export function isHubInstalled(dir: string): boolean {
+  const g = resolve(dir, ".git");
+  if (!existsSync(g)) return false;
+  try {
+    return statSync(g).isDirectory();
+  } catch {
+    return false;
+  }
+}

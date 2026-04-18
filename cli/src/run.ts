@@ -8,8 +8,23 @@ export function run(cmd: string, args: string[], opts: SpawnSyncOptions = {}): R
     stdio: opts.stdio ?? ["ignore", "pipe", "pipe"],
     ...opts,
   });
+  // spawnSync error path: res.status is null and res.error carries the
+  // reason. Collapse to POSIX-style exit codes the rest of the CLI can
+  // just forward to process.exit(). Empty stderr here would otherwise
+  // look like the command ran cleanly and exited -1.
+  if (res.error) {
+    const e = res.error as NodeJS.ErrnoException;
+    const enoent = e.code === "ENOENT";
+    return {
+      status: enoent ? 127 : 1,
+      stdout: (res.stdout as string | undefined) ?? "",
+      stderr:
+        (res.stderr as string | undefined) ||
+        (enoent ? `error: command not found on PATH: ${cmd}` : e.message ?? String(e)),
+    };
+  }
   return {
-    status: typeof res.status === "number" ? res.status : -1,
+    status: typeof res.status === "number" ? res.status : 1,
     stdout: (res.stdout as string | undefined) ?? "",
     stderr: (res.stderr as string | undefined) ?? "",
   };

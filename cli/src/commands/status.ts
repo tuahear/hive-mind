@@ -1,11 +1,11 @@
 import { existsSync, statSync } from "node:fs";
 import { resolve } from "node:path";
-import { hubDir, hubSrcDir, readAttachedAdapters, coreVersion } from "../paths.js";
+import { hubDir, hubSrcDir, readAttachedAdapters, coreVersion, isHubInstalled } from "../paths.js";
 import { run, runBash } from "../run.js";
 
 export function statusCmd(json: boolean): number {
   const hub = hubDir();
-  const installed = existsSync(resolve(hub, ".git"));
+  const installed = isHubInstalled(hub);
   const attached = readAttachedAdapters();
   const core = coreVersion();
 
@@ -85,7 +85,7 @@ export function syncCmd(force: boolean): number {
 
 export function pullCmd(): number {
   const hub = hubDir();
-  if (!existsSync(resolve(hub, ".git"))) {
+  if (!isHubInstalled(hub)) {
     console.error("error: hub not initialized. Run `hivemind init` first.");
     return 1;
   }
