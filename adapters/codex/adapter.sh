@@ -278,22 +278,39 @@ adapter_install_hooks() {
   # On Unix: cygpath is absent, bare `bash` is the correct dispatcher.
   bash_cmd=""
   if command -v cygpath >/dev/null 2>&1; then
-    local _unix_bash _candidate _candidates
+    local _unix_bash _win_bash _git_root _candidate _candidates
     _unix_bash="${BASH:-$(command -v bash 2>/dev/null)}"
     _candidates=""
-    if [ -n "${EXEPATH:-}" ]; then
-      _candidates+="$EXEPATH/bin/bash.exe"$'\n'
-      _candidates+="$EXEPATH/usr/bin/bash.exe"$'\n'
-    fi
     if [ -n "$_unix_bash" ]; then
+      _win_bash="$(cygpath -m "$_unix_bash" 2>/dev/null)"
+      if [ -n "$_win_bash" ]; then
+        # Derive the Git install root by stripping whichever tail the
+        # currently-running bash happens to have. Git Bash's wrapper
+        # lives under $GIT_ROOT/bin, the raw msys2 bash under
+        # $GIT_ROOT/usr/bin. cygpath of either gives us one of those
+        # absolute paths; strip it back to $GIT_ROOT so we can probe
+        # both candidates regardless of which one we happen to be
+        # running under right now.
+        _git_root="$_win_bash"
+        _git_root="${_git_root%.exe}"
+        _git_root="${_git_root%/bash}"
+        _git_root="${_git_root%/bin}"
+        _git_root="${_git_root%/usr}"
+        if [ -d "$_git_root" ]; then
+          # Wrapper first — handles PowerShell/cmd spawn quirks (signal
+          # pipe / stdin plumbing) where the raw msys2 binary fails.
+          _candidates+="$_git_root/bin/bash.exe"$'\n'
+          _candidates+="$_git_root/usr/bin/bash.exe"$'\n'
+        fi
+      fi
+      # Fallback: whatever $BASH / command -v happens to point at.
       _candidates+="${_unix_bash}.exe"$'\n'
       _candidates+="$_unix_bash"
     fi
     while IFS= read -r _candidate; do
       [ -n "$_candidate" ] && [ -f "$_candidate" ] || continue
-      # Paths from $EXEPATH are already Windows-style (C:/...); pass
-      # through. Unix-style paths ($BASH / command -v output) need
-      # cygpath conversion to a Windows path PowerShell can dispatch.
+      # Windows-style paths pass through; unix-style paths ($BASH output)
+      # go through cygpath.
       case "$_candidate" in
         [A-Za-z]:/*) bash_cmd="$_candidate" ;;
         *)           bash_cmd="$(cygpath -m "$_candidate" 2>/dev/null)" ;;
