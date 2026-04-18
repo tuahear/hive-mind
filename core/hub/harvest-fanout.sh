@@ -417,18 +417,47 @@ _hub_content_replace_section() {
 _hub_content_fanout_to_file() {
   local src="$1" sel="$2" dst="$3"
   [ -f "$src" ] || return 0
-  mkdir -p "$(dirname "$dst")" 2>/dev/null
+
+  # Marker-integrity check for selectors that drive a marker-based parse
+  # ("*" or explicit multi-id CSV). Symmetric with the harvest-side
+  # validation — if content.md has damaged markers, fan-out could
+  # silently mis-route content; skip + log and leave dst untouched.
+  # Single-id selectors read one whole section without parsing other
+  # markers, so they tolerate marker damage elsewhere in the file.
+  case "$sel" in
+    \*|*,*)
+      if ! _hub_content_markers_ok "$src"; then
+        _hub_log "fan-out: skipping sectioned fanout for $src (marker imbalance)"
+        return 0
+      fi
+      ;;
+  esac
 
   local ids count
   ids="$(_hub_expand_sections "$sel" "$src")"
   count="$(printf '%s\n' "$ids" | awk 'NF' | wc -l | tr -d ' ')"
 
+  # Nothing to fan out (empty src, or wildcard against a file with no
+  # sections at all). Skip rather than creating an empty dst file that
+  # would stomp whatever the tool already had.
+  [ "$count" = "0" ] && return 0
+
+  # Single-id selector: if that id is not present in src, skip so we
+  # don't overwrite the tool's file with an empty one. "Present but
+  # empty body" (START + END with nothing between) still counts as
+  # present — _hub_content_present_sections reports it — and that case
+  # legitimately writes an empty dst.
+  if [ "$count" = "1" ] \
+     && ! _hub_content_present_sections "$src" | grep -Fxq "$ids"; then
+    _hub_log "fan-out: skipping $dst (section $ids absent from $src)"
+    return 0
+  fi
+
+  mkdir -p "$(dirname "$dst")" 2>/dev/null
   local tmp
   tmp="$(mktemp)"
 
-  if [ "$count" = "0" ]; then
-    : > "$tmp"
-  elif [ "$count" = "1" ]; then
+  if [ "$count" = "1" ]; then
     _hub_content_read_section "$src" "$ids" > "$tmp"
   else
     {

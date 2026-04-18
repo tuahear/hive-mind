@@ -616,6 +616,60 @@ EOF
   done
 }
 
+@test "fan-out: single-id selector skips when section absent from hub (does not create empty tool file)" {
+  # Defense symmetric with harvest's early-return-on-absent-src: if the
+  # hub doesn't have the requested section, fan-out must not overwrite
+  # the tool's file with an empty one. The tool's existing file is
+  # preserved untouched until the hub actually has content to ship.
+  export ADAPTER_HUB_MAP=$'content.md[1]\tAGENTS.override.md'
+  # Hub has ONLY a section 0 — no section 1 block.
+  printf 'shared stuff only\n' > "$HUB/content.md"
+  # Tool already had content; must survive the fan-out pass.
+  printf 'tool-side pre-existing content\n' > "$TOOL/AGENTS.override.md"
+
+  hub_fan_out "$HUB" "$TOOL"
+
+  [ "$(cat "$TOOL/AGENTS.override.md")" = 'tool-side pre-existing content' ]
+}
+
+@test "fan-out: single-id selector writes empty dst when section is present but body empty" {
+  # Distinct from absence: if the hub explicitly declares section 1 with
+  # markers around an empty body, that IS an intentional signal ("this
+  # tier is empty on this machine"). Fan-out should honor it and write
+  # an empty file, not skip.
+  export ADAPTER_HUB_MAP=$'content.md[1]\tAGENTS.override.md'
+  cat > "$HUB/content.md" <<'EOF'
+shared stuff
+<!-- hive-mind:section=1 START -->
+<!-- hive-mind:section=1 END -->
+EOF
+  printf 'should be cleared by fan-out\n' > "$TOOL/AGENTS.override.md"
+
+  hub_fan_out "$HUB" "$TOOL"
+
+  [ -f "$TOOL/AGENTS.override.md" ]
+  [ ! -s "$TOOL/AGENTS.override.md" ]
+}
+
+@test "fan-out: damaged markers in hub content.md are skipped for marker-dependent selectors" {
+  # Symmetric with harvest-side marker validation. Fan-out with a
+  # multi-id or wildcard selector parses markers; if the hub has damage,
+  # silent mis-routing is possible. Skip + log and leave the tool file
+  # unchanged, matching the harvest robustness contract.
+  export ADAPTER_HUB_MAP=$'content.md[*]\tCLAUDE.md'
+  cat > "$HUB/content.md" <<'EOF'
+top
+<!-- hive-mind:section=1 START -->
+body (no matching END — damaged)
+EOF
+  printf 'pre-existing tool content\n' > "$TOOL/CLAUDE.md"
+
+  hub_fan_out "$HUB" "$TOOL"
+
+  # Tool file untouched — fan-out must not emit a corrupted rewrite.
+  [ "$(cat "$TOOL/CLAUDE.md")" = 'pre-existing tool content' ]
+}
+
 @test "harvest: damaged markers in multi-section tool file are skipped, hub preserved" {
   export ADAPTER_HUB_MAP=$'content.md[0,1]\tCLAUDE.md'
   # Seed hub with a clean two-section file.
