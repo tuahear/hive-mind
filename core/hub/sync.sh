@@ -148,7 +148,18 @@ declare -a HUB_PROJECT_CONTENT_RULES=()
 # projects/<encoded-cwd>/ tree, so mirror-projects is a clean no-op
 # for them (it exits when projects/ is absent).
 MIRROR_PROJECTS="$CORE_DIR/mirror-projects.sh"
+# IMPORTANT: unset ADAPTER_DIR before each load so adapter N+1 does NOT
+# inherit adapter N's tool directory. The loader preserves ADAPTER_DIR
+# across its clear step as the supported caller-override hook (tests,
+# alternative installs), but in sync.sh's sequential multi-adapter loop
+# that "override" is actually a leftover from the previous adapter — if
+# we don't clear it, adapter N+1's `ADAPTER_DIR="${ADAPTER_DIR:-default}"`
+# fallback silently inherits adapter N's path and every subsequent
+# harvest/fan-out writes adapter N+1's native files into adapter N's
+# directory (e.g. Codex's hooks.json + AGENTS.override.md appearing
+# under ~/.claude after Claude loaded first).
 for name in "${ATTACHED[@]}"; do
+  unset ADAPTER_DIR
   if ! load_adapter "$name" 2>>"$LOG"; then
     echo "$TS WARN hub-sync: failed to load adapter '$name' -- skipping" >>"$LOG"
     continue
@@ -466,6 +477,13 @@ while [ "$i" -lt "${#HUB_ADAPTER_NAMES[@]}" ]; do
   name="${HUB_ADAPTER_NAMES[$i]}"
   tool_dir="${HUB_TOOL_DIRS[$i]}"
   i=$((i + 1))
+  # Same unset-before-load dance as the harvest phase (see comment
+  # there). Without this, ADAPTER_DIR from the previous iteration leaks
+  # through the loader's caller-override preservation and the next
+  # adapter's internal state points at the wrong tool dir — harvest-
+  # sourced env vars (ADAPTER_HUB_MAP paths, ADAPTER_LOG_PATH, etc.)
+  # all derive from ADAPTER_DIR and would be silently wrong.
+  unset ADAPTER_DIR
   if ! load_adapter "$name" 2>>"$LOG"; then
     echo "$TS WARN hub-sync: failed to re-load adapter '$name' for fan-out -- skipping" >>"$LOG"
     continue
