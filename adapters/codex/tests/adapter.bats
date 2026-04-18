@@ -67,6 +67,40 @@ teardown() {
   [ "$sync_pos" -lt "$dupes_pos" ]
 }
 
+@test "install_hooks renders an absolute bash path on Windows (PowerShell cannot dispatch bare 'bash' without hitting WSL's bash.exe)" {
+  # On Windows, `bash` resolves via PATH to C:\Windows\System32\bash.exe
+  # (the WSL launcher) when invoked from PowerShell — not Git Bash.
+  # adapter_install_hooks detects the current shell's bash via cygpath
+  # and embeds the absolute path into the rendered hooks.json so
+  # PowerShell dispatches it directly. On Unix (no cygpath), the prefix
+  # stays as the bare word "bash" wrapped in double quotes, which is
+  # valid shell syntax in any POSIX shell.
+  mkdir -p "$ADAPTER_DIR"
+  adapter_install_hooks
+
+  local cmd
+  cmd="$(jq -r '.hooks.Stop[0].hooks[0].command' "$ADAPTER_DIR/hooks.json")"
+
+  # Must start with a quoted bash invocation — either "bash" on Unix or
+  # "C:/Program Files/Git/.../bash" (or similar absolute Windows path)
+  # on Windows. The leading char is `"` and the first token ends in
+  # `bash` or `bash.exe`.
+  [[ "$cmd" =~ ^\"[^\"]*bash(\.exe)?\"[[:space:]] ]] || {
+    echo "installed hooks.json Stop command must begin with a quoted bash executable, got: $cmd" >&2
+    return 1
+  }
+
+  # On Windows the quoted path must NOT be a bare 'bash' — that would
+  # regress to the WSL-launcher failure mode. Detect Windows by the
+  # presence of cygpath.
+  if command -v cygpath >/dev/null 2>&1; then
+    [[ "$cmd" =~ ^\"[A-Za-z]:/ ]] || {
+      echo "on Windows, installed hooks.json Stop command must use an absolute path (drive letter), got: $cmd" >&2
+      return 1
+    }
+  fi
+}
+
 @test "hooks.json commands are bash-dispatched and emit JSON (cross-shell Codex on Windows)" {
   # Codex on Windows executes hook commands under PowerShell 5.1, which
   # cannot dispatch extensionless Unix scripts (`& "$HOME/.hive-mind/bin/sync"`

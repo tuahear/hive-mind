@@ -244,7 +244,7 @@ _codex_restore_feature_state() {
 }
 
 adapter_install_hooks() {
-  local hooks template config rendered
+  local hooks template config rendered bash_cmd
 
   hooks="$(_codex_hooks_file)"
   template="${ADAPTER_ROOT}/hooks.json"
@@ -256,9 +256,50 @@ adapter_install_hooks() {
   _codex_record_feature_state "$config"
   _codex_set_feature_flag "$config" true
 
+  # Bare `bash` in a hooks.json command is not portable on Windows: when
+  # Codex's hook runner invokes the command under PowerShell, `bash`
+  # resolves via PATH to C:\Windows\System32\bash.exe (the WSL launcher),
+  # which fails with "Access is denied" long before Git Bash is reached.
+  #
+  # Resolve the current shell's bash (the one running setup.sh — Git Bash
+  # on Windows) to an absolute Windows path via cygpath. Prefer the
+  # `.exe` form so PowerShell can dispatch the call operator without
+  # relying on PATHEXT auto-resolution. Verify the file exists on disk
+  # before committing to it — a dangling path is worse than bare `bash`.
+  #
+  # On Unix: cygpath is absent, bare `bash` is the correct dispatcher.
+  bash_cmd=""
+  if command -v cygpath >/dev/null 2>&1; then
+    local _unix_bash _candidate
+    _unix_bash="${BASH:-$(command -v bash 2>/dev/null)}"
+    # Try the explicit .exe form first (so PowerShell dispatches without
+    # needing PATHEXT resolution); fall back to the literal if .exe isn't
+    # present on disk. Both paths must pass a real filesystem check —
+    # silently embedding a broken path in hooks.json would reproduce the
+    # exact regression we're fixing.
+    for _candidate in "${_unix_bash}.exe" "$_unix_bash"; do
+      [ -n "$_candidate" ] && [ -f "$_candidate" ] || continue
+      bash_cmd="$(cygpath -m "$_candidate" 2>/dev/null)"
+      [ -n "$bash_cmd" ] && break
+    done
+    if [ -z "$bash_cmd" ]; then
+      # Windows detected (cygpath present) but no resolvable bash path —
+      # warn loudly rather than silently shipping a hooks.json that will
+      # dispatch through WSL's bash.exe and fail on every session.
+      printf '%s\n' 'codex adapter: WARNING — could not resolve absolute Git Bash path on Windows; codex hooks may dispatch to WSL bash.exe and fail. Ensure Git Bash is installed and on PATH.' >&2
+    fi
+  fi
+  [ -n "$bash_cmd" ] || bash_cmd="bash"
+
   rendered="$(mktemp)"
-  jq --arg dir "$ADAPTER_DIR" --arg mem "$ADAPTER_GLOBAL_MEMORY" \
-    'walk(if type == "string" then gsub("[$]HOME/[.]codex/AGENTS[.]override[.]md"; $mem) | gsub("[$]HOME/[.]codex"; $dir) else . end)' \
+  jq --arg dir "$ADAPTER_DIR" \
+     --arg mem "$ADAPTER_GLOBAL_MEMORY" \
+     --arg bashcmd "$bash_cmd" \
+    'walk(if type == "string" then
+      gsub("[$]HOME/[.]codex/AGENTS[.]override[.]md"; $mem)
+      | gsub("[$]HOME/[.]codex"; $dir)
+      | sub("^bash "; "\"" + $bashcmd + "\" ")
+    else . end)' \
     "$template" > "$rendered"
 
   if [ ! -f "$hooks" ]; then
