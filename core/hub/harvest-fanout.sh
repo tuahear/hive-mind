@@ -135,6 +135,53 @@ _hub_is_filelike() {
   esac
 }
 
+# --- Fan-out snapshots (cross-provider harvest-stomp guard) ---------------
+# Prior shipped behavior: harvest unconditionally overwrote hub content
+# from a tool file, even when the tool file was identical to what the
+# previous sync fanned out. In a two-adapter install that's a silent
+# "last writer wins" stomp — the second adapter's harvest reverts the
+# first adapter's edits on every cycle because the second tool file,
+# unchanged since last fan-out, rewrites the hub section the first
+# adapter just updated.
+#
+# Fix: after every write to a tool file (fan-out or post-harvest), drop
+# a byte-for-byte snapshot under .hive-mind-state/fanout-snapshots/
+# keyed by <tool-dir-basename>/<tool-rel-path>. On the next harvest, if
+# the tool file is byte-identical to its snapshot, skip the harvest —
+# the user didn't edit it, so there's nothing to contribute to the hub.
+#
+# Only applies to file-like (content.md / content.md[...]) entries. JSON
+# subkey and directory entries keep their existing semantics (subkey
+# writes are already narrow; dir mirroring has its own diff behavior).
+
+_hub_snapshot_path() {
+  local tool_dir="$1" rel="$2"
+  local base="${tool_dir##*/}"
+  printf '%s/.hive-mind-state/fanout-snapshots/%s/%s' \
+    "${HIVE_MIND_HUB_DIR:-$HOME/.hive-mind}" "$base" "$rel"
+}
+
+# Return 0 (match) iff the tool file and its snapshot both exist and are
+# byte-identical. Any other case (missing file, missing snapshot,
+# content differs) returns non-zero so harvest proceeds as usual.
+_hub_tool_file_unchanged() {
+  local tool_file="$1" snap="$2"
+  [ -f "$tool_file" ] || return 1
+  [ -f "$snap" ] || return 1
+  cmp -s "$tool_file" "$snap"
+}
+
+# Record the current tool file as the "last-synced" snapshot. Creates
+# parent dirs as needed. If the tool file is missing (e.g. fan-out was
+# skipped for an absent section), leave any existing snapshot untouched
+# — the old snapshot still reflects the last state we actually synced.
+_hub_snapshot_write() {
+  local tool_file="$1" snap="$2"
+  [ -f "$tool_file" ] || return 0
+  mkdir -p "$(dirname "$snap")" 2>/dev/null
+  cp "$tool_file" "$snap"
+}
+
 # Split `<file>#<jsonpath>` into two fields on stdout (TAB-delimited).
 # Returns non-zero if no '#' is present.
 _hub_split_subkey() {
@@ -990,11 +1037,21 @@ hub_harvest() {
         _hub_harvest_hooks_dir "$tool_json" "$jq_path" "$hub_dir/$hub_rel"
       fi
     elif sec_pair="$(_hub_split_sections "$hub_rel")"; then
-      local hub_file sel
+      local hub_file sel snap
       hub_file="${sec_pair%%$'\t'*}"
       sel="${sec_pair#*$'\t'}"
-      _hub_content_harvest_from_file \
-        "$tool_dir/$tool_spec" "$sel" "$hub_dir/$hub_file"
+      snap="$(_hub_snapshot_path "$tool_dir" "$tool_spec")"
+      # Skip harvest when the tool file is byte-identical to its last
+      # fan-out snapshot — the user didn't edit this adapter's surface
+      # since the previous sync, so there's nothing to contribute. This
+      # is the guard against the cross-provider harvest-stomp: without
+      # it, the second adapter's unchanged tool file would blindly
+      # overwrite the hub section the first adapter just updated.
+      if ! _hub_tool_file_unchanged "$tool_dir/$tool_spec" "$snap"; then
+        _hub_content_harvest_from_file \
+          "$tool_dir/$tool_spec" "$sel" "$hub_dir/$hub_file"
+        _hub_snapshot_write "$tool_dir/$tool_spec" "$snap"
+      fi
     elif case "$hub_rel" in *'['*|*']'*) true ;; *) false ;; esac; then
       # Bracket-bearing hub path that failed selector validation. Covers
       # every typo shape where _hub_split_sections's strict `*'['*']'`
@@ -1009,7 +1066,14 @@ hub_harvest() {
       local src="$tool_dir/$tool_spec"
       local dst="$hub_dir/$hub_rel"
       if _hub_is_filelike "$hub_rel"; then
-        _hub_sync_file "$src" "$dst"
+        local snap
+        snap="$(_hub_snapshot_path "$tool_dir" "$tool_spec")"
+        # Same harvest-stomp guard as the sectioned path — skip when
+        # the tool file matches its last fan-out snapshot.
+        if ! _hub_tool_file_unchanged "$src" "$snap"; then
+          _hub_sync_file "$src" "$dst"
+          _hub_snapshot_write "$src" "$snap"
+        fi
       else
         _hub_sync_dir "$src" "$dst"
       fi
@@ -1085,6 +1149,14 @@ hub_fan_out() {
       sel="${sec_pair#*$'\t'}"
       _hub_content_fanout_to_file \
         "$hub_dir/$hub_file" "$sel" "$tool_dir/$tool_spec"
+      # Update the snapshot so the next harvest can tell whether the
+      # user edited this file between cycles (unchanged = skip harvest,
+      # preventing the cross-provider stomp). If the fan-out skipped
+      # because the section was absent, the tool file wasn't written
+      # and _hub_snapshot_write's [ -f ] guard leaves the old snapshot
+      # in place — still reflects the last actually-synced state.
+      _hub_snapshot_write "$tool_dir/$tool_spec" \
+        "$(_hub_snapshot_path "$tool_dir" "$tool_spec")"
     elif case "$hub_rel" in *'['*|*']'*) true ;; *) false ;; esac; then
       # Same malformed-selector guard as the harvest phase — any entry
       # containing `[` or `]` that failed _hub_split_sections validation
@@ -1097,6 +1169,10 @@ hub_fan_out() {
       local dst="$tool_dir/$tool_spec"
       if _hub_is_filelike "$hub_rel"; then
         _hub_sync_file "$src" "$dst"
+        # Same snapshot update as the sectioned path — the next harvest
+        # needs to know what was written here to detect real edits.
+        _hub_snapshot_write "$dst" \
+          "$(_hub_snapshot_path "$tool_dir" "$tool_spec")"
       else
         _hub_sync_dir "$src" "$dst"
       fi
