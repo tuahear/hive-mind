@@ -52,6 +52,32 @@ const doc = node(["dist/cli.js", "doctor", "--json"], {
 });
 assert(doc.stdout.includes('"checks"'), `doctor --json emits JSON (stderr='${doc.stderr}')`);
 
+// 4b. `hivemind init --yes` without a memory repo + no existing hub fails
+// fast rather than hanging on setup.sh's interactive read.
+const smokeHub = resolve(cliDir, ".smoke-hub-failfast");
+const failfast = node(["dist/cli.js", "init", "--yes", "--adapter", "claude-code"], {
+  env: { ...process.env, HIVE_MIND_HUB_DIR: smokeHub, MEMORY_REPO: "" },
+});
+assert(failfast.status !== 0, `init --yes without memory-repo exits non-zero (got status=${failfast.status})`);
+assert(
+  (failfast.stderr + failfast.stdout).includes("--memory-repo"),
+  `init --yes without memory-repo mentions --memory-repo in error (stderr='${failfast.stderr}')`
+);
+
+// 4c. `status` on a freshly-init-but-never-pushed-looking git repo reports
+// "no upstream" instead of silently saying 0 unpushed commits.
+{
+  const { rmSync, mkdirSync } = await import("node:fs");
+  const fakeHub = resolve(cliDir, ".smoke-hub-upstream");
+  rmSync(fakeHub, { recursive: true, force: true });
+  mkdirSync(fakeHub, { recursive: true });
+  const git = (args) => spawnSync("git", args, { cwd: fakeHub, stdio: ["ignore", "pipe", "pipe"], encoding: "utf8" });
+  git(["init", "-q"]);
+  git(["commit", "--allow-empty", "-m", "seed", "-q"]);
+  const s = node(["dist/cli.js", "status", "--json"], { env: { ...process.env, HIVE_MIND_HUB_DIR: fakeHub } });
+  assert(s.stdout.includes('"unpushedCommits": null'), `status reports null for unpushed when no upstream (got stdout='${s.stdout}')`);
+}
+
 // 5. npm pack stays under 2 MB (CLI spec cap).
 // --ignore-scripts so the prepack build doesn't mix its stdout into the
 // JSON response we're about to parse.

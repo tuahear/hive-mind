@@ -1,7 +1,7 @@
 import { existsSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 import { hubDir, hubSrcDir, readAttachedAdapters, coreVersion } from "../paths.js";
-import { run } from "../run.js";
+import { run, runBash } from "../run.js";
 
 export function statusCmd(json: boolean): number {
   const hub = hubDir();
@@ -19,11 +19,19 @@ export function statusCmd(json: boolean): number {
     } catch {}
   }
 
-  let unpushed = 0;
+  let unpushed: number | null = 0;
   let originUrl: string | null = null;
   if (installed) {
-    const rev = run("git", ["-C", hub, "rev-list", "--count", "@{u}..HEAD"], { stdio: ["ignore", "pipe", "pipe"] });
-    if (rev.status === 0) unpushed = parseInt(rev.stdout.trim() || "0", 10) || 0;
+    // Probe for an upstream first; without it `rev-list @{u}..HEAD` exits
+    // non-zero and we'd silently report "0 unpushed", which is misleading
+    // for a freshly-initialised hub that has never been pushed.
+    const upstream = run("git", ["-C", hub, "rev-parse", "--abbrev-ref", "@{u}"], { stdio: ["ignore", "pipe", "pipe"] });
+    if (upstream.status === 0) {
+      const rev = run("git", ["-C", hub, "rev-list", "--count", "@{u}..HEAD"], { stdio: ["ignore", "pipe", "pipe"] });
+      if (rev.status === 0) unpushed = parseInt(rev.stdout.trim() || "0", 10) || 0;
+    } else {
+      unpushed = null;
+    }
     const remote = run("git", ["-C", hub, "remote", "get-url", "origin"], { stdio: ["ignore", "pipe", "pipe"] });
     if (remote.status === 0) originUrl = sanitize(remote.stdout.trim());
   }
@@ -49,7 +57,7 @@ export function statusCmd(json: boolean): number {
   console.log(`attached:        ${attached.length ? attached.join(", ") : "(none)"}`);
   console.log(`origin:          ${originUrl ?? "(unset)"}`);
   console.log(`last activity:   ${lastSyncIso ?? "(never)"}`);
-  console.log(`unpushed commits: ${unpushed}`);
+  console.log(`unpushed commits: ${unpushed === null ? "(no upstream)" : unpushed}`);
   return 0;
 }
 
@@ -66,8 +74,9 @@ export function syncCmd(force: boolean): number {
     return 1;
   }
   const args = force ? ["--force-push"] : [];
-  const res = run("bash", [target, ...args], { stdio: "inherit" });
-  return res.status;
+  // runBash (not raw run) so a missing bash emits the ENOENT guidance
+  // message other commands already use.
+  return runBash(target, args);
 }
 
 export function pullCmd(): number {

@@ -1,5 +1,5 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import { attachedAdaptersFile, hubDir, hubSrcDir, readAttachedAdapters } from "../paths.js";
 import { run } from "../run.js";
 
@@ -45,7 +45,14 @@ export function detachCmd(adapter: string): number {
 
   const remaining = attached.filter((a) => a !== adapter);
   const f = attachedAdaptersFile();
-  writeFileSync(f, remaining.length ? remaining.join("\n") + "\n" : "");
+  try {
+    mkdirSync(dirname(f), { recursive: true });
+    writeFileSync(f, remaining.length ? remaining.join("\n") + "\n" : "");
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`error: detach succeeded but failed to update ${f}: ${msg}`);
+    return 1;
+  }
   console.log(`[hivemind] detached ${adapter} (hub content preserved)`);
   return 0;
 }
