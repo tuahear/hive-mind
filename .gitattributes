@@ -3,3 +3,15 @@
 *.sh text eol=lf
 *.json text eol=lf
 *.md text eol=lf
+
+# Extension-less templates that setup.sh copies into the hub as
+# `.gitignore` / `.gitattributes`. Without a rule here Windows's
+# autocrlf=true converts them to CRLF on checkout, bundle-assets
+# ships the CRLF bytes in the npm tarball, and a Mac install running
+# with autocrlf=input normalizes them back to LF on its first
+# `git add -A` during attach — producing a spurious "hub: attach X
+# on <host>" commit whose patch is nothing but line-ending flips.
+# Pinning LF makes the bytes match whatever the repo tip already has,
+# so no platform's autocrlf setting ever sees a diff.
+core/hub/gitignore       text eol=lf
+core/hub/gitattributes   text eol=lf
