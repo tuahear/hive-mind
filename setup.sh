@@ -593,10 +593,18 @@ if [ -x "$HIVE_MIND_HUB_DIR/bin/sync" ]; then
     HIVE_MIND_FORCE_PUSH=1 \
         "$HIVE_MIND_HUB_DIR/bin/sync" || true
     rm -rf "$HIVE_MIND_HUB_DIR/.hive-mind-state/sync.lock" 2>/dev/null
-    if [ -s "$HIVE_MIND_HUB_DIR/.sync-error.log" ]; then
+    # Only trigger the WARNING banner on real severity — ERROR or WARN.
+    # sync.sh and project-gc.sh write informational lines (GC
+    # candidate counts, orphan-variant skips, fan-out section-absent
+    # skips) to the same log without a severity prefix; those aren't
+    # errors and shouldn't scare users every run. Real ERROR/WARN
+    # lines still surface. If a future log site forgets the severity
+    # prefix it won't cause a false positive here.
+    if [ -f "$HIVE_MIND_HUB_DIR/.sync-error.log" ] \
+            && grep -qE ' (ERROR|WARN) ' "$HIVE_MIND_HUB_DIR/.sync-error.log"; then
         echo
         echo "WARNING: sync produced errors:"
-        tail -5 "$HIVE_MIND_HUB_DIR/.sync-error.log" >&2
+        grep -E ' (ERROR|WARN) ' "$HIVE_MIND_HUB_DIR/.sync-error.log" | tail -5 >&2
     fi
 fi
 

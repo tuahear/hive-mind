@@ -9,7 +9,11 @@ import { stageAssets } from "./stage.js";
 // "refresh ~/.hive-mind/hive-mind/" step on its own. The captured
 // pre-stage VERSION is dropped into .hive-mind-state/prev-version so
 // a later `hivemind init` / `hivemind attach` can hand it to setup.sh.
-export function restageCmd(opts: { forceStage?: boolean }): number {
+// `quiet: true` skips the trailing caution paragraph — init calls
+// restage with quiet=true because init is about to refresh every
+// attached adapter's wiring itself, making the "re-run init/attach to
+// rebuild the launcher" advice actively misleading in that context.
+export function restageCmd(opts: { forceStage?: boolean; quiet?: boolean }): number {
   const assets = bundledAssetsDir();
   const src = hubSrcDir();
 
@@ -44,12 +48,14 @@ export function restageCmd(opts: { forceStage?: boolean }): number {
 
   console.log(`[hivemind] restaged bundled assets into ${src}`);
   console.log(`  previous core version: ${staged.prevVersion}`);
-  console.log(
-    `  Restage updates the staged hub sources only — it does NOT rebuild the\n` +
-      `  installed bin/hivemind-hook launcher under $HIVE_MIND_HUB_DIR/bin/. Hooks\n` +
-      `  and attached adapters stay wired to whatever launcher was built at the\n` +
-      `  last init/attach. Re-run \`hivemind init\` or \`hivemind attach <adapter>\`\n` +
-      `  to rebuild the launcher and refresh hook wiring.`
-  );
+  if (!opts.quiet) {
+    console.log(
+      `  Restage updates the staged hub sources only — it does NOT rebuild the\n` +
+        `  installed bin/hivemind-hook launcher under $HIVE_MIND_HUB_DIR/bin/. Hooks\n` +
+        `  and attached adapters stay wired to whatever launcher was built at the\n` +
+        `  last init/attach. Re-run \`hivemind init\` or \`hivemind attach <adapter>\`\n` +
+        `  to rebuild the launcher and refresh hook wiring.`
+    );
+  }
   return 0;
 }

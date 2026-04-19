@@ -64,7 +64,11 @@ export async function initCmd(opts: InitOpts): Promise<number> {
     // VERSION, giving adapter_migrate new=new instead of new=old.
     const prevVersion = capturePrevVersion(src);
 
-    const restageStatus = restageCmd({ forceStage: !!opts.forceStage });
+    // Quiet the "rebuild launcher / re-run attach" caution paragraph —
+    // init IS about to re-run attach for every attached adapter, which
+    // rebuilds the launcher. Leaving the paragraph visible made the
+    // upgrade output self-contradictory.
+    const restageStatus = restageCmd({ forceStage: !!opts.forceStage, quiet: true });
     if (restageStatus !== 0) return restageStatus;
 
     const attached = readAttachedAdapters();
