@@ -191,6 +191,15 @@ assert(okAttach.status === 1 && okAttach.stderr.includes("hub not initialized"),
   assert(r.status === 0, `restage into empty hub succeeds (status=${r.status}, stderr='${r.stderr}')`);
   assert(fsExists(resolve(hub, "hive-mind", "setup.sh")), "restage populates setup.sh");
   assert(fsExists(resolve(hub, "hive-mind", "core", "hub", "sync.sh")), "restage populates core/hub/sync.sh");
+  // On POSIX, every staged .sh should be chmod 0o755 so bin/sync can
+  // exec core/hub/sync.sh. On Windows chmod bits are advisory, so skip.
+  if (!isWin) {
+    const { statSync: sStat } = await import("node:fs");
+    const syncPath = resolve(hub, "hive-mind", "core", "hub", "sync.sh");
+    assert((sStat(syncPath).mode & 0o111) !== 0, `core/hub/sync.sh has +x after restage (mode=${(sStat(syncPath).mode & 0o777).toString(8)})`);
+    const setupPath = resolve(hub, "hive-mind", "setup.sh");
+    assert((sStat(setupPath).mode & 0o111) !== 0, `setup.sh has +x after restage (mode=${(sStat(setupPath).mode & 0o777).toString(8)})`);
+  }
 }
 
 // 4f. attach against an unknown adapter lists the available ones instead

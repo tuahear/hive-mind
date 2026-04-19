@@ -4,7 +4,7 @@
 // hook can still see the pre-upgrade version (it defaults to reading
 // $HIVE_MIND_SRC/VERSION, which we're about to overwrite).
 
-import { cpSync, existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 
 export type StageResult =
@@ -74,5 +74,32 @@ export function stageAssets(src: string, assets: string, hubStateDir?: string): 
     rmSync(dst, { recursive: true, force: true });
     cpSync(s, dst, { recursive: true });
   }
+
+  // Re-apply executable bits on every staged .sh. npm tarballs often
+  // lose mode bits when built/published on Windows, so a restage after
+  // an npm-published upgrade can otherwise leave sync.sh non-executable
+  // and silently break `~/.hive-mind/bin/sync`. Harmless no-op on
+  // MSYS/Windows where chmod bits are effectively advisory.
+  markShellScriptsExecutable(src);
+
   return { ok: true, prevVersion };
+}
+
+function markShellScriptsExecutable(root: string): void {
+  let entries: string[];
+  try {
+    entries = readdirSync(root);
+  } catch {
+    return;
+  }
+  for (const name of entries) {
+    const p = resolve(root, name);
+    let s;
+    try { s = statSync(p); } catch { continue; }
+    if (s.isDirectory()) {
+      markShellScriptsExecutable(p);
+    } else if (s.isFile() && name.endsWith(".sh")) {
+      try { chmodSync(p, 0o755); } catch {}
+    }
+  }
 }
