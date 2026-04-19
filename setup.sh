@@ -260,12 +260,12 @@ log "memory repo: $(sanitize_remote_url "$MEMORY_REPO")"
 # ---------- step-labelling helper ----------
 # setup.sh now serves three flows with different phase counts:
 #   default / curl|bash (legacy, one-shot install + attach): 6 phases
-#   HIVE_MIND_HUB_ONLY=1 (CLI `hivemind init`):              4 phases
+#   HIVE_MIND_HUB_ONLY=1 (CLI `hivemind init`):              3 phases
 #   HIVE_MIND_ATTACH_MODE=1 (CLI `hivemind attach <name>`):  3 phases
 # A shared `step()` helper renumbers on the fly so log lines stay
 # honest regardless of which flow is active.
 _STEP_INDEX=0
-if   [ "${HIVE_MIND_HUB_ONLY:-0}" = "1" ]; then _STEP_TOTAL=4
+if   [ "${HIVE_MIND_HUB_ONLY:-0}" = "1" ]; then _STEP_TOTAL=3
 elif [ "${HIVE_MIND_ATTACH_MODE:-0}" = "1" ]; then _STEP_TOTAL=3
 else _STEP_TOTAL=6
 fi
@@ -587,6 +587,13 @@ manage_bundled_skills
 fi  # HIVE_MIND_HUB_ONLY != 1 — end of attach+skills block
 
 # ---------- verify ----------
+# Skip in HUB_ONLY mode. There's nothing meaningful to verify — no
+# adapter is attached, so sync.sh just logs "no adapters attached --
+# bailing" and exits 0. That WARN line then triggers the error banner
+# below even though it's the expected state after `hivemind init`,
+# scaring users on a clean first install. `hivemind attach <name>`
+# runs setup.sh again without HUB_ONLY and verifies then.
+if [ "${HIVE_MIND_HUB_ONLY:-0}" != "1" ]; then
 step "running hub sync cycle to verify"
 if [ -x "$HIVE_MIND_HUB_DIR/bin/sync" ]; then
     HIVE_MIND_HUB_DIR="$HIVE_MIND_HUB_DIR" \
@@ -607,13 +614,22 @@ if [ -x "$HIVE_MIND_HUB_DIR/bin/sync" ]; then
         grep -E ' (ERROR|WARN) ' "$HIVE_MIND_HUB_DIR/.sync-error.log" | tail -5 >&2
     fi
 fi
+fi  # HIVE_MIND_HUB_ONLY != 1 — end of verify block
 
 # ---------- done ----------
 echo
 log "done."
 echo
-adapter_activation_instructions
-echo
+# adapter_activation_instructions is defined by the adapter's
+# adapter.sh — in HUB_ONLY mode we never sourced an adapter, so the
+# symbol doesn't exist. Only call it when an adapter was actually
+# attached this invocation; in init-only mode the CLI prints its own
+# "use `hivemind attach <name>`" hint in its own output.
+if [ "${HIVE_MIND_HUB_ONLY:-0}" != "1" ] \
+   && command -v adapter_activation_instructions >/dev/null 2>&1; then
+    adapter_activation_instructions
+    echo
+fi
 # Under `set -e`, a bare `[ -n "$X" ] && echo` at the top level exits
 # the script when X is empty/unset — which happens on every re-attach
 # where no new backup was taken. Use an explicit if/then/fi so an
