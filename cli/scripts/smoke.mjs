@@ -110,6 +110,33 @@ assert(
   assert(s.stdout.includes('"unpushedCommits": null'), `status reports null unpushed when hub missing (got='${s.stdout}')`);
 }
 
+// 4c-pre. status's lastSync picks the last-push file when present and
+// ignores later-touched sibling files in .hive-mind-state/.
+{
+  const { rmSync, mkdirSync, writeFileSync, utimesSync, statSync: s } = await import("node:fs");
+  const hub = resolve(cliDir, ".smoke-hub-lastsync");
+  rmSync(hub, { recursive: true, force: true });
+  mkdirSync(resolve(hub, ".hive-mind-state"), { recursive: true });
+  const lastPush = resolve(hub, ".hive-mind-state", "last-push");
+  writeFileSync(lastPush, "1000000000\n");
+  // Backdate last-push, then write a newer sibling so the state dir's
+  // mtime is newer than last-push.
+  const older = new Date("2001-09-09T01:46:40Z");
+  utimesSync(lastPush, older, older);
+  const sibling = resolve(hub, ".hive-mind-state", "prev-version");
+  writeFileSync(sibling, "0.3.0\n"); // touches dir mtime to 'now'
+
+  const r = node(["dist/cli.js", "status", "--json"], { env: { ...process.env, HIVE_MIND_HUB_DIR: hub } });
+  const parsed = JSON.parse(r.stdout);
+  assert(
+    parsed.lastSync && parsed.lastSync.startsWith("2001-09-09"),
+    `lastSync prefers last-push over state dir mtime (got=${parsed.lastSync})`
+  );
+  const pushMs = s(lastPush).mtimeMs;
+  const dirMs = s(resolve(hub, ".hive-mind-state")).mtimeMs;
+  assert(dirMs > pushMs, `fixture sanity: state dir mtime is newer than last-push (dir=${dirMs}, push=${pushMs})`);
+}
+
 // 4c3. readAttachedAdapters filters `#` comment lines so they don't show
 // up as fake adapters in status/version/doctor.
 {

@@ -11,10 +11,16 @@ export function statusCmd(json: boolean): number {
 
   let lastSyncMs: number | null = null;
   let lastSyncIso: string | null = null;
-  const lockOrLog = resolve(hub, ".hive-mind-state");
-  if (existsSync(lockOrLog)) {
+  // Prefer core/hub/sync.sh's last-push file (updated only on successful
+  // push) over the .hive-mind-state dir mtime, which also moves on
+  // unrelated activity like fanout snapshots, marker writes, and lock-
+  // dir creation/removal.
+  const stateDir = resolve(hub, ".hive-mind-state");
+  const lastPush = resolve(stateDir, "last-push");
+  const target = existsSync(lastPush) ? lastPush : stateDir;
+  if (existsSync(target)) {
     try {
-      lastSyncMs = statSync(lockOrLog).mtimeMs;
+      lastSyncMs = statSync(target).mtimeMs;
       lastSyncIso = new Date(lastSyncMs).toISOString();
     } catch {}
   }

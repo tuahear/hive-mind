@@ -61,10 +61,11 @@ export function attachCmd(adapter: string): number {
   // Only advertise CLI-staged state when the source tree is not a
   // normal git checkout with a real `.git` directory. This matches
   // setup.sh's `-d .git` gate: any non-directory `.git` state
-  // (missing, file-based worktree/submodule layout) takes the
-  // SKIP_CLONE branch because setup.sh can't git-pull a worktree
-  // from the outside anyway. Legacy curl|bash installs have a real
-  // `.git` dir so they take the `git pull` branch as expected.
+  // (missing, file-based worktree/submodule layout, etc.) takes the
+  // SKIP_CLONE branch because this installer flow only treats a real
+  // `.git` directory as pullable source. Legacy curl|bash installs
+  // have a real `.git` dir so they take the `git pull` branch as
+  // expected.
   if (!isDir(resolve(src, ".git"))) {
     env.HIVE_MIND_SKIP_CLONE = "1";
   }
