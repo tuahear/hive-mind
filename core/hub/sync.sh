@@ -188,10 +188,17 @@ for name in "${ATTACHED[@]}"; do
   # again. Stripping here means tool and hub are both marker-free after
   # the commit phase, and fan-out is a content-identical no-op.
   if [ -x "$CORE_DIR/marker-extract.sh" ]; then
-    while IFS= read -r -d '' mf; do
-      grep -q '<!--[[:space:]]*commit:' "$mf" 2>/dev/null \
-        && "$CORE_DIR/marker-extract.sh" "$mf" >/dev/null 2>>"$LOG" || true
-    done < <(find "$tool_dir" -name '*.md' -type f -print0 2>/dev/null)
+    # One recursive grep beats N per-file greps. On Windows/MSYS every
+    # subprocess spawn is ~30-50ms, and an adapter with ~1k .md files
+    # (Claude's projects/<variant>/memory/ accumulates across every repo
+    # the user has opened) turns an innocuous per-file grep loop into
+    # ~50s of pure subprocess overhead on every sync. `grep -rlE` scans
+    # the tree in a single invocation and emits only matching paths, so
+    # marker-extract.sh runs only on files that actually carry a marker.
+    while IFS= read -r mf; do
+      [ -n "$mf" ] || continue
+      "$CORE_DIR/marker-extract.sh" "$mf" >/dev/null 2>>"$LOG" || true
+    done < <(grep -rlE --include='*.md' '<!--[[:space:]]*commit:' "$tool_dir" 2>/dev/null)
   fi
 done
 
@@ -208,7 +215,36 @@ fi
 # `git log @{u}..` compares against a stale origin/<branch> and the
 # sync early-exits, leaving remote work invisible until the local tree
 # accidentally dirties.
-git fetch --quiet 2>>"$LOG" || true
+#
+# Throttle: on Windows/MSYS a single `git fetch` costs ~5s of network
+# wait. Back-to-back syncs (Stop hook + SessionStart hook + a manual
+# hivemind invocation) would each pay that cost even when nothing
+# could plausibly have changed upstream in the last few seconds.
+# HIVE_MIND_MIN_FETCH_INTERVAL_SEC caps the rate; default 30s is short
+# enough that cross-machine propagation still feels instant within the
+# same work session. Set to 0 to force a fetch every sync.
+: "${HIVE_MIND_MIN_FETCH_INTERVAL_SEC:=30}"
+case "$HIVE_MIND_MIN_FETCH_INTERVAL_SEC" in
+  ''|*[!0-9]*) HIVE_MIND_MIN_FETCH_INTERVAL_SEC=30 ;;
+esac
+LAST_FETCH_FILE="${HIVE_MIND_STATE_DIR}/last-fetch"
+_should_fetch=1
+if [ -f "$LAST_FETCH_FILE" ] && [ "$HIVE_MIND_MIN_FETCH_INTERVAL_SEC" -gt 0 ]; then
+  _last_fetch="$(cat "$LAST_FETCH_FILE" 2>/dev/null)"
+  case "$_last_fetch" in
+    ''|*[!0-9]*) ;;
+    *)
+      _now="$(date +%s)"
+      if [ "$((_now - _last_fetch))" -lt "$HIVE_MIND_MIN_FETCH_INTERVAL_SEC" ]; then
+        _should_fetch=0
+      fi
+      ;;
+  esac
+fi
+if [ "$_should_fetch" -eq 1 ]; then
+  git fetch --quiet 2>>"$LOG" || true
+  date +%s > "$LAST_FETCH_FILE" 2>>"$LOG" || true
+fi
 
 _early_unpushed=0
 _remote_ahead=0

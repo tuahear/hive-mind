@@ -1,0 +1,122 @@
+// Shared staging helper used by init and restage. Copies the CLI's
+// bundled assets over the hub source tree, but first captures the
+// currently-installed VERSION string so setup.sh's adapter_migrate
+// hook can still see the pre-upgrade version (it defaults to reading
+// $HIVE_MIND_SRC/VERSION, which we're about to overwrite).
+
+import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
+import { resolve } from "node:path";
+
+export type StageResult =
+  | { ok: true; prevVersion: string }
+  | { ok: false; code: number };
+
+export const STAGE_REQUIRED = ["core", "adapters", "cmd", "setup.sh", "VERSION", "go.mod"];
+// Optional: prebuilt hivemind-hook binaries (present in release tarballs,
+// absent when bundle-assets.mjs ran on a host without Go).
+export const STAGE_OPTIONAL = ["prebuilt"];
+
+export function capturePrevVersion(src: string, hubStateDir?: string): string {
+  // Prefer an earlier-persisted marker (written by `hivemind restage`) —
+  // without it, a restage-then-init sequence would read the already-
+  // overwritten VERSION and lose the real previous version.
+  if (hubStateDir) {
+    const marker = resolve(hubStateDir, "prev-version");
+    if (existsSync(marker)) {
+      try {
+        const raw = readFileSync(marker, "utf8").trim();
+        if (raw.length) return raw;
+      } catch {
+        // fall through to file probe
+      }
+    }
+  }
+  const v = resolve(src, "VERSION");
+  if (!existsSync(v)) return "0.1.0"; // matches setup.sh's sentinel
+  try {
+    const raw = readFileSync(v, "utf8").trim();
+    return raw.length ? raw : "0.1.0";
+  } catch {
+    return "0.1.0";
+  }
+}
+
+// One-shot reader for the restage-written prev-version marker. Consumes
+// the file (deletes after read) so a stale value can't contaminate a
+// future unrelated upgrade. Returns null when the marker is absent or
+// unreadable.
+export function consumePrevVersionMarker(hubStateDir: string): string | null {
+  const marker = resolve(hubStateDir, "prev-version");
+  if (!existsSync(marker)) return null;
+  let value: string | null = null;
+  try {
+    const raw = readFileSync(marker, "utf8").trim();
+    if (raw.length) value = raw;
+  } catch {
+    return null;
+  }
+  try { rmSync(marker, { force: true }); } catch {}
+  return value;
+}
+
+export function stageAssets(src: string, assets: string, hubStateDir?: string): StageResult {
+  if (!existsSync(resolve(assets, "setup.sh"))) {
+    console.error(`error: bundled assets missing at ${assets}. CLI build is broken.`);
+    return { ok: false, code: 1 };
+  }
+  const prevVersion = capturePrevVersion(src, hubStateDir);
+
+  mkdirSync(src, { recursive: true });
+  for (const item of STAGE_REQUIRED) {
+    const s = resolve(assets, item);
+    if (!existsSync(s)) {
+      console.error(`error: bundled asset '${item}' missing from ${assets}. CLI build is incomplete.`);
+      return { ok: false, code: 1 };
+    }
+    const dst = resolve(src, item);
+    rmSync(dst, { recursive: true, force: true });
+    cpSync(s, dst, { recursive: true });
+  }
+  for (const item of STAGE_OPTIONAL) {
+    const s = resolve(assets, item);
+    if (!existsSync(s)) continue;
+    const dst = resolve(src, item);
+    rmSync(dst, { recursive: true, force: true });
+    cpSync(s, dst, { recursive: true });
+  }
+
+  // Re-apply executable bits on every staged .sh. npm tarballs often
+  // lose mode bits when built/published on Windows, so a restage after
+  // an npm-published upgrade can otherwise leave sync.sh non-executable
+  // and silently break `~/.hive-mind/bin/sync`. Harmless no-op on
+  // MSYS/Windows where chmod bits are effectively advisory.
+  markShellScriptsExecutable(src);
+
+  return { ok: true, prevVersion };
+}
+
+function markShellScriptsExecutable(root: string): void {
+  let entries: string[];
+  try {
+    entries = readdirSync(root);
+  } catch {
+    return;
+  }
+  for (const name of entries) {
+    const p = resolve(root, name);
+    let s;
+    try { s = statSync(p); } catch { continue; }
+    if (s.isDirectory()) {
+      markShellScriptsExecutable(p);
+    } else if (s.isFile()) {
+      // .sh scripts, and any prebuilt hivemind-hook-* binary (Linux/macOS
+      // binaries have no suffix; Windows is .exe and doesn't care about
+      // the mode bit anyway).
+      const isShell = name.endsWith(".sh");
+      const isPrebuiltHook = name.startsWith("hivemind-hook-");
+      if (isShell || isPrebuiltHook) {
+        try { chmodSync(p, 0o755); } catch {}
+      }
+    }
+  }
+}
