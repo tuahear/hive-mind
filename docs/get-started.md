@@ -17,9 +17,9 @@ Download the latest release tarball and install it globally with npm:
 
 ```bash
 curl -L -o /tmp/hive-mind.tgz \
-  https://github.com/tuahear/hive-mind/releases/download/cli-v0.3.0/hive-mind-0.3.0.tgz
+  https://github.com/tuahear/hive-mind/releases/download/cli-v0.3.1/hive-mind-0.3.1.tgz
 npm install -g /tmp/hive-mind.tgz
-hivemind --version                        # 0.3.0
+hivemind --version                        # 0.3.1
 ```
 
 The tarball ships the bash `core/` + `adapters/` + prebuilt `hivemind-hook` binaries for macOS (arm64/amd64), Linux (amd64/arm64), and Windows (amd64). No repo clone, no Go toolchain, no compile step — `git` and Node 18+ are all you need.
