@@ -33,10 +33,17 @@ setup_machine() {
   printf 'fake\n' > "$hub/.install-state/attached-adapters"
 
   # Stage any changes so the first sync isn't trapped by "dirty".
+  # `git status --porcelain` can flag files as dirty purely because
+  # of autocrlf normalization (Windows: LF in working tree but index
+  # would write CRLF, or vice versa). `git add -A` then stages
+  # nothing content-wise, so `git commit` exits non-zero. Tolerate
+  # the no-op commit and keep going.
   if [ -n "$(git -C "$hub" status --porcelain 2>/dev/null)" ]; then
     git -C "$hub" add -A
-    git -C "$hub" commit -q -m "seed whitelist for $M"
-    git -C "$hub" push -q 2>/dev/null || true
+    if ! git -C "$hub" diff --cached --quiet; then
+      git -C "$hub" commit -q -m "seed whitelist for $M"
+      git -C "$hub" push -q 2>/dev/null || true
+    fi
   fi
 
   eval "${M}_HOME=\"$machine_home\""
