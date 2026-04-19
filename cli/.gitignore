@@ -2,3 +2,7 @@ node_modules/
 dist/
 assets/
 *.tgz
+# Release-notes drafts produced by scripts/release.sh. Kept locally as
+# a write-it-once-per-release log; never committed (each release body
+# ends up on the GitHub Release anyway).
+.release-notes/

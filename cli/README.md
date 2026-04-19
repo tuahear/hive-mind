@@ -48,11 +48,22 @@ cli/
 ```bash
 cd cli/
 npm install
-npm run build          # tsc + shebang + bundle-assets
-npm pack               # -> hive-mind-<version>.tgz  (~70 KB)
+npm run build          # tsc + shebang + bundle-assets (cross-builds 5 prebuilts; needs Go)
+npm pack               # -> hive-mind-<version>.tgz
 npm install -g ./hive-mind-*.tgz
 hivemind --version
 ```
+
+## Cut a release
+
+```bash
+cd cli/
+npm run release 0.3.0-prototype.N     # bumps version, clean-builds, smoke, packs
+# then edit .release-notes/cli-v0.3.0-prototype.N.md and run the `gh release create`
+# command the script prints at the end
+```
+
+The script enforces `HIVE_MIND_REQUIRE_PREBUILT=1` so a release can never ship without all 5 prebuilt `hivemind-hook` binaries. Release-notes drafts are scaffolded into `.release-notes/` (gitignored) for you to polish before the actual `gh release create` call — no auto-publish.
 
 ## Not yet implemented (deferred)
 

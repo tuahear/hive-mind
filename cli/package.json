@@ -14,7 +14,8 @@
     "build": "tsc -p tsconfig.json && node scripts/shebang.mjs && node scripts/bundle-assets.mjs",
     "prepack": "npm run build",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true});require('fs').rmSync('assets',{recursive:true,force:true})\"",
-    "test:smoke": "node scripts/smoke.mjs"
+    "test:smoke": "node scripts/smoke.mjs",
+    "release": "bash scripts/release.sh"
   },
   "engines": {
     "node": ">=18"
