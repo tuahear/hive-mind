@@ -33,36 +33,58 @@ Only using one AI tool on one computer today? hive-mind still earns its keep: au
 
 ---
 
-## Get started in 3 steps
+## Get started
 
 ### 1. Make an empty private git repo
 
 Any git host works — GitHub, GitLab, Bitbucket, Codeberg, self-hosted, even a local bare repo on another machine. No README, no license, no `.gitignore`. Just an empty box to hold your memory. Name it whatever feels right — `claude-memory`, `brain`, `second-brain`.
 
-### 2. Run the installer
+### 2. Install the `hivemind` CLI
+
+Download the latest release tarball and install it globally with npm:
+
+```bash
+curl -L -o /tmp/hive-mind.tgz \
+  https://github.com/tuahear/hive-mind/releases/download/cli-v0.3.0/hive-mind-0.3.0.tgz
+npm install -g /tmp/hive-mind.tgz
+hivemind --version                        # 0.3.0
+```
+
+The tarball ships the bash `core/` + `adapters/` + prebuilt `hivemind-hook` binaries for macOS (arm64/amd64), Linux (amd64/arm64), and Windows (amd64), so there's no repo clone, no Go toolchain required, and no compile step.
+
+### 3. Initialize your hub and attach your first tool
+
+```bash
+hivemind init --memory-repo git@github.com:YOU/your-memory.git   # creates ~/.hive-mind/
+hivemind attach claude-code                                      # wires Claude Code's hooks + skills
+```
+
+Want a second tool on the same hub? One `attach` per tool — each one is an explicit, separate call so hive-mind only modifies tool dirs you've consented to:
+
+```bash
+hivemind attach codex                                            # same memory, second tool
+```
+
+`--memory-repo` accepts any URL `git` understands:
+
+- SSH: `git@<host>:you/repo.git` (GitHub, GitLab, Bitbucket, self-hosted…)
+- HTTPS: `https://<host>/you/repo.git`
+- Local: `/path/to/bare.git` or `file:///path/to/bare.git`
+
+Works on macOS, Linux, and Windows (Git Bash). Prereqs: Node 18+, `git`, and SSH access (or HTTPS credentials) for your memory-repo host.
+
+#### Legacy `curl | bash` installer
+
+If you'd rather not install via npm, the bash installer still works:
 
 ```bash
 MEMORY_REPO=<your-memory-repo-url> \
   bash -c "$(curl -fsSL https://raw.githubusercontent.com/tuahear/hive-mind/main/setup.sh)"
 ```
 
-**Or (prototype, not yet on npm) — via the `hivemind` CLI:** see [`cli/README.md`](cli/README.md). Goal: `npm install -g hive-mind && hivemind init` with no repo clone required. Tracking [#13](https://github.com/tuahear/hive-mind/issues/13).
+This clones hive-mind from GitHub once and attaches Claude Code in one shot. It also builds the `hivemind-hook` launcher from source, so you need a Go toolchain (≥1.20) on this path. To attach a second tool: `ADAPTER=codex bash ~/.hive-mind/hive-mind/setup.sh`. The CLI path avoids both the repo clone and the Go dependency.
 
-That attaches Claude Code to your hub. To attach a second tool later (once its adapter ships) it's the same installer, different `ADAPTER=`:
-
-```bash
-ADAPTER=codex bash ~/.hive-mind/hive-mind/setup.sh   # same memory, second tool
-```
-
-`MEMORY_REPO` accepts any URL `git` understands:
-
-- SSH: `git@<host>:you/repo.git` (GitHub, GitLab, Bitbucket, self-hosted…)
-- HTTPS: `https://<host>/you/repo.git`
-- Local: `/path/to/bare.git` or `file:///path/to/bare.git`
-
-Works on macOS, Linux, and Windows (Git Bash). You need: `git`, a Go toolchain (≥1.20 — the installer builds the native `hivemind-hook` launcher from source), and SSH access (or HTTPS credentials) for your memory-repo host. The **legacy `curl | bash` installer above** clones hive-mind from GitHub once — by default over SSH, but you can point `HIVE_MIND_REPO` at an `https://` URL instead (no SSH key required). Ongoing sync only uses your `MEMORY_REPO`, and the CLI path doesn't clone the hive-mind repo at all (the source ships inside the npm tarball).
-
-### 3. Reload Claude Code
+### 4. Reload Claude Code
 
 Type `/hooks` in any session or start a fresh one — the sync hooks activate. That's it. Every future edit to your memory gets committed and pushed automatically.
 
