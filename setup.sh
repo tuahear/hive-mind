@@ -228,9 +228,19 @@ mkdir -p "$HIVE_MIND_HUB_DIR"
 # receives the pre-upgrade string and can gate any future migration
 # on a specific version transition. A missing VERSION file falls back
 # to the documented "0.1.0" sentinel the contract recognizes.
-PREV_HIVE_MIND_VERSION="0.1.0"
-if [ -f "$HIVE_MIND_SRC/VERSION" ]; then
-    PREV_HIVE_MIND_VERSION="$(tr -d '[:space:]' < "$HIVE_MIND_SRC/VERSION" 2>/dev/null || echo "0.1.0")"
+#
+# When invoked via `hivemind init`, the CLI has already overwritten
+# $HIVE_MIND_SRC/VERSION with the bundled version — reading the file
+# here would yield the new version, not the previous one. The CLI
+# passes the pre-stage VERSION through $HIVE_MIND_PREV_VERSION for
+# exactly this case; prefer it when set.
+if [ -n "${HIVE_MIND_PREV_VERSION:-}" ]; then
+    PREV_HIVE_MIND_VERSION="$HIVE_MIND_PREV_VERSION"
+else
+    PREV_HIVE_MIND_VERSION="0.1.0"
+    if [ -f "$HIVE_MIND_SRC/VERSION" ]; then
+        PREV_HIVE_MIND_VERSION="$(tr -d '[:space:]' < "$HIVE_MIND_SRC/VERSION" 2>/dev/null || echo "0.1.0")"
+    fi
 fi
 if [ "${HIVE_MIND_SKIP_CLONE:-0}" = "1" ] \
         && [ -f "$HIVE_MIND_SRC/setup.sh" ] \

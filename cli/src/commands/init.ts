@@ -1,4 +1,5 @@
-import { cpSync, existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, rmSync } from "node:fs";
+import { stageAssets } from "./stage.js";
 import { createInterface } from "node:readline/promises";
 import { resolve } from "node:path";
 import { bundledAssetsDir, hubDir, hubSrcDir } from "../paths.js";
@@ -84,23 +85,17 @@ export async function initCmd(opts: InitOpts): Promise<number> {
     rmSync(src, { recursive: true, force: true });
   }
 
-  // Stage bundled assets into ~/.hive-mind/hive-mind/. Required roots must
-  // exist — skipping silently would let a broken CLI build "succeed" with
-  // half a core tree. For each root, clear the destination first so
-  // upstream file deletions/renames don't leave stale files behind.
-  mkdirSync(src, { recursive: true });
-  // cmd + go.mod are required: setup.sh always builds the native
-  // hivemind-hook launcher for the shipped adapters.
-  const required = ["core", "adapters", "cmd", "setup.sh", "VERSION", "go.mod"];
-  for (const item of required) {
-    const s = resolve(assets, item);
-    if (!existsSync(s)) {
-      console.error(`error: bundled asset '${item}' missing from ${assets}. CLI build is incomplete.`);
-      return 1;
-    }
-    const dst = resolve(src, item);
-    rmSync(dst, { recursive: true, force: true });
-    cpSync(s, dst, { recursive: true });
+  // Stage bundled assets into ~/.hive-mind/hive-mind/. Captures the
+  // pre-stage VERSION so setup.sh can still see the previous install
+  // version even though we're about to overwrite the file.
+  const hubStateDir = resolve(hub, ".hive-mind-state");
+  const staged = stageAssets(src, assets, hubStateDir);
+  if (!staged.ok) return staged.code;
+  // Consume the restage-written marker (if any) once we've captured it
+  // so it doesn't linger into an unrelated future upgrade.
+  const marker = resolve(hubStateDir, "prev-version");
+  if (existsSync(marker)) {
+    try { rmSync(marker, { force: true }); } catch {}
   }
 
   if (!which("bash")) {
@@ -116,6 +111,9 @@ export async function initCmd(opts: InitOpts): Promise<number> {
     HIVE_MIND_HUB_DIR: hub,
     // Tell setup.sh not to git-clone over the top of what we just staged.
     HIVE_MIND_SKIP_CLONE: "1",
+    // Hand setup.sh the pre-staged VERSION so adapter_migrate sees the
+    // real previous version, not the one we just wrote.
+    HIVE_MIND_PREV_VERSION: staged.prevVersion,
   };
   if (memoryRepo) env.MEMORY_REPO = memoryRepo;
 

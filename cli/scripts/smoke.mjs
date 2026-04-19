@@ -5,7 +5,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { resolve, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const cliDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const isWin = process.platform === "win32";
@@ -222,6 +222,41 @@ assert(okAttach.status === 1 && okAttach.stderr.includes("hub not initialized"),
   assert(out.split("\n").some((l) => l === ""), "detach preserves the blank separator line");
   assert(out.includes("claude-code"), "detach preserves the other adapter");
   assert(!out.split("\n").some((l) => l === "codex"), "detach dropped the exact adapter line");
+}
+
+// 4h. capturePrevVersion / stageAssets preserve the pre-stage VERSION
+// so setup.sh's adapter_migrate hook can still see the real previous
+// version after the CLI overwrites the bundled VERSION file.
+{
+  const { mkdirSync, writeFileSync, readFileSync, rmSync } = await import("node:fs");
+  const { capturePrevVersion } = await import(pathToFileURL(resolve(cliDir, "dist", "commands", "stage.js")).href);
+
+  // Case A: existing VERSION file, no marker → read the file.
+  const src1 = resolve(cliDir, ".smoke-stage-a");
+  rmSync(src1, { recursive: true, force: true });
+  mkdirSync(src1, { recursive: true });
+  writeFileSync(resolve(src1, "VERSION"), "0.2.5\n");
+  assert(capturePrevVersion(src1) === "0.2.5", `capturePrevVersion reads VERSION (got=${capturePrevVersion(src1)})`);
+
+  // Case B: marker file exists → marker wins over the (newer) VERSION file.
+  const src2 = resolve(cliDir, ".smoke-stage-b");
+  const state2 = resolve(cliDir, ".smoke-stage-b-state");
+  rmSync(src2, { recursive: true, force: true });
+  rmSync(state2, { recursive: true, force: true });
+  mkdirSync(src2, { recursive: true });
+  mkdirSync(state2, { recursive: true });
+  writeFileSync(resolve(src2, "VERSION"), "0.4.0\n");
+  writeFileSync(resolve(state2, "prev-version"), "0.3.0\n");
+  assert(
+    capturePrevVersion(src2, state2) === "0.3.0",
+    `marker file wins over overwritten VERSION (got=${capturePrevVersion(src2, state2)})`
+  );
+
+  // Case C: nothing → sentinel.
+  const src3 = resolve(cliDir, ".smoke-stage-c");
+  rmSync(src3, { recursive: true, force: true });
+  mkdirSync(src3, { recursive: true });
+  assert(capturePrevVersion(src3) === "0.1.0", `missing VERSION falls back to 0.1.0 sentinel (got=${capturePrevVersion(src3)})`);
 }
 
 // 5. npm pack stays under 2 MB (CLI spec cap).

@@ -1,19 +1,17 @@
-import { cpSync, existsSync, mkdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { bundledAssetsDir, hubSrcDir } from "../paths.js";
+import { bundledAssetsDir, hubDir, hubSrcDir } from "../paths.js";
+import { stageAssets } from "./stage.js";
 
 // Minimal upgrade path: copy the CLI's freshly-bundled assets over the
 // existing hub source tree, honoring the same "not over a git checkout"
 // guard as init. No adapter attach, no memory-repo prompt — just the
-// "refresh ~/.hive-mind/hive-mind/" step on its own.
+// "refresh ~/.hive-mind/hive-mind/" step on its own. The captured
+// pre-stage VERSION is dropped into .hive-mind-state/prev-version so
+// a later `hivemind init` / `hivemind attach` can hand it to setup.sh.
 export function restageCmd(opts: { forceStage?: boolean }): number {
   const assets = bundledAssetsDir();
   const src = hubSrcDir();
-
-  if (!existsSync(resolve(assets, "setup.sh"))) {
-    console.error(`error: bundled assets missing at ${assets}. CLI build is broken.`);
-    return 1;
-  }
 
   if (existsSync(resolve(src, ".git")) && !opts.forceStage) {
     console.error(
@@ -24,23 +22,28 @@ export function restageCmd(opts: { forceStage?: boolean }): number {
     return 1;
   }
   if (opts.forceStage) {
-    rmSync(src, { recursive: true, force: true });
+    // rmSync via stageAssets' internal per-root clean doesn't touch
+    // `.git`; for --force-stage we want the whole src gone.
+    try {
+      const { rmSync } = require("node:fs") as typeof import("node:fs");
+      rmSync(src, { recursive: true, force: true });
+    } catch {}
   }
 
-  mkdirSync(src, { recursive: true });
-  const required = ["core", "adapters", "cmd", "setup.sh", "VERSION", "go.mod"];
-  for (const item of required) {
-    const s = resolve(assets, item);
-    if (!existsSync(s)) {
-      console.error(`error: bundled asset '${item}' missing from ${assets}.`);
-      return 1;
-    }
-    const dst = resolve(src, item);
-    rmSync(dst, { recursive: true, force: true });
-    cpSync(s, dst, { recursive: true });
+  const staged = stageAssets(src, assets);
+  if (!staged.ok) return staged.code;
+
+  // Persist prev version so the next init/attach can forward it.
+  const stateDir = resolve(hubDir(), ".hive-mind-state");
+  try {
+    mkdirSync(stateDir, { recursive: true });
+    writeFileSync(resolve(stateDir, "prev-version"), staged.prevVersion + "\n");
+  } catch {
+    // Non-fatal — logging only.
   }
 
   console.log(`[hivemind] restaged bundled assets into ${src}`);
+  console.log(`  previous core version: ${staged.prevVersion}`);
   console.log(
     `  Restage updates the staged hub sources only — it does NOT rebuild the\n` +
       `  installed bin/hivemind-hook launcher under $HIVE_MIND_HUB_DIR/bin/. Hooks\n` +
