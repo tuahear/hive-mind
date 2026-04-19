@@ -284,22 +284,16 @@ if [ "${HIVE_MIND_ATTACH_MODE:-0}" = "1" ]; then
         || die "hub source missing at $HIVE_MIND_SRC. Reinstall the CLI or re-run \`hivemind restage\`."
 fi
 
-# ---------- install/refresh hive-mind source ----------
-# Skip in attach-mode: init staged the source, nothing to do here.
-if [ "${HIVE_MIND_ATTACH_MODE:-0}" != "1" ]; then
-step "staging hive-mind source at $HIVE_MIND_SRC"
-mkdir -p "$HIVE_MIND_HUB_DIR"
-# Capture the previously-installed hive-mind version BEFORE `git pull`
-# rewrites $HIVE_MIND_SRC/VERSION to the latest, so adapter_migrate
-# receives the pre-upgrade string and can gate any future migration
-# on a specific version transition. A missing VERSION file falls back
-# to the documented "0.1.0" sentinel the contract recognizes.
-#
+# ---------- capture PREV_HIVE_MIND_VERSION (every flow needs it) ----------
+# Must run BEFORE any stage/clone/pull touches $HIVE_MIND_SRC/VERSION.
+# adapter_migrate (called in the attach phase) reads this to gate
+# version-transition logic, so attach-mode reaches this code path too.
 # When invoked via `hivemind init`, the CLI has already overwritten
 # $HIVE_MIND_SRC/VERSION with the bundled version — reading the file
 # here would yield the new version, not the previous one. The CLI
 # passes the pre-stage VERSION through $HIVE_MIND_PREV_VERSION for
-# exactly this case; prefer it when set.
+# exactly this case; prefer it when set. Missing VERSION file falls
+# back to the "0.1.0" sentinel the contract recognizes.
 PREV_HIVE_MIND_VERSION="0.1.0"
 if [ -n "${HIVE_MIND_PREV_VERSION:-}" ]; then
     # Normalize the env-var path the same way as the file path so an
@@ -311,6 +305,12 @@ if [ -n "${HIVE_MIND_PREV_VERSION:-}" ]; then
 elif [ -f "$HIVE_MIND_SRC/VERSION" ]; then
     PREV_HIVE_MIND_VERSION="$(tr -d '[:space:]' < "$HIVE_MIND_SRC/VERSION" 2>/dev/null || echo "0.1.0")"
 fi
+
+# ---------- install/refresh hive-mind source ----------
+# Skip in attach-mode: init staged the source, nothing to do here.
+if [ "${HIVE_MIND_ATTACH_MODE:-0}" != "1" ]; then
+step "staging hive-mind source at $HIVE_MIND_SRC"
+mkdir -p "$HIVE_MIND_HUB_DIR"
 if [ "${HIVE_MIND_SKIP_CLONE:-0}" = "1" ] \
         && [ -f "$HIVE_MIND_SRC/setup.sh" ] \
         && [ ! -d "$HIVE_MIND_SRC/.git" ]; then

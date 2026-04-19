@@ -1,5 +1,5 @@
-import { existsSync, readFileSync, rmSync } from "node:fs";
-import { consumePrevVersionMarker, stageAssets } from "./stage.js";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { capturePrevVersion, consumePrevVersionMarker, stageAssets } from "./stage.js";
 import { createInterface } from "node:readline/promises";
 import { resolve } from "node:path";
 import { bundledAssetsDir, hubDir, hubSrcDir, isHubInstalled, readAttachedAdapters } from "../paths.js";
@@ -56,6 +56,14 @@ export async function initCmd(opts: InitOpts): Promise<number> {
     && run("git", ["-C", hub, "remote", "get-url", "origin"], { stdio: ["ignore", "pipe", "pipe"] }).status === 0;
   if (hubHasOriginPresent) {
     console.log(`[hivemind] existing hub detected at ${hub} — refreshing staged assets.`);
+    // Capture pre-stage VERSION NOW (before restage overwrites it) so we
+    // can re-inject it as the prev-version marker before each attach in
+    // the upgrade loop. restageCmd writes the marker too, but attach
+    // consumes+deletes it on first use — the second adapter in the loop
+    // would otherwise see no marker and read the already-overwritten
+    // VERSION, giving adapter_migrate new=new instead of new=old.
+    const prevVersion = capturePrevVersion(src);
+
     const restageStatus = restageCmd({ forceStage: !!opts.forceStage });
     if (restageStatus !== 0) return restageStatus;
 
@@ -68,8 +76,17 @@ export async function initCmd(opts: InitOpts): Promise<number> {
     }
 
     console.log(`[hivemind] refreshing attached adapters: ${attached.join(", ")}`);
+    const stateDir = resolve(hub, ".hive-mind-state");
     for (const adapter of attached) {
       console.log(`[hivemind]   -> ${adapter}`);
+      // Re-write the prev-version marker before every attach so each
+      // adapter's adapter_migrate hook sees the real previous version.
+      try {
+        mkdirSync(stateDir, { recursive: true });
+        writeFileSync(resolve(stateDir, "prev-version"), prevVersion + "\n");
+      } catch {
+        // Non-fatal — adapter_migrate will just get 0.1.0 fallback.
+      }
       const s = attachCmd(adapter);
       if (s !== 0) {
         console.error(`[hivemind] refresh of '${adapter}' failed (status=${s}). Remaining adapters not refreshed.`);
