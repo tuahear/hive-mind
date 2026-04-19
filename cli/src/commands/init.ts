@@ -5,6 +5,8 @@ import { resolve } from "node:path";
 import { bundledAssetsDir, hubDir, hubSrcDir, isHubInstalled, readAttachedAdapters } from "../paths.js";
 import { detectUnattachedProviders, printAttachSuggestions } from "./detect.js";
 import { run, runBash, which } from "../run.js";
+import { attachCmd } from "./attach.js";
+import { restageCmd } from "./restage.js";
 
 type InitOpts = {
   memoryRepo?: string;
@@ -22,10 +24,14 @@ async function prompt(question: string): Promise<string> {
 }
 
 export async function initCmd(opts: InitOpts): Promise<number> {
-  // init is hub-only now: no default adapter, no automatic modification
-  // of any tool dir. Users explicitly attach adapters afterward via
-  // `hivemind attach <name>`. That makes every write to ~/.claude/
-  // ~/.codex/ ~/.agents/ the consequence of an explicit user command.
+  // init is the single "set up / keep up to date" entry point:
+  //   - fresh machine (no hub):  stage source, seed hub, clone memory repo
+  //   - existing hub:            restage bundled assets, refresh every
+  //                              already-attached adapter's hook wiring
+  //                              and skills. Fully idempotent upgrade.
+  // On first install, users still run `hivemind attach <name>` to wire
+  // their tools — init does not implicitly attach anything it wasn't
+  // already tracking.
   const hub = hubDir();
   const src = hubSrcDir();
   const assets = bundledAssetsDir();
@@ -37,13 +43,45 @@ export async function initCmd(opts: InitOpts): Promise<number> {
     return 1;
   }
 
-  // Must probe the actual remote, not just `.git` presence: an init'd hub
-  // without an origin still prompts inside setup.sh, which would deadlock
-  // a --yes run. Also require `.git` to BE a directory, matching setup.sh's
-  // origin-reuse gate (a worktree-style `.git` file would otherwise look
-  // like a normal install here).
-  const hubHasOrigin = isHubInstalled(hub)
+  // Upgrade branch: hub already exists AND has an origin configured.
+  // Restage bundled assets, then re-run each currently-attached
+  // adapter's install so its hooks, skills, and launcher binary match
+  // the new release. No MEMORY_REPO prompt, no fresh clone — existing
+  // hub is preserved.
+  //
+  // We require origin-present to distinguish "real hub" from "orphan
+  // `.git` dir someone created by hand" — the latter should fall
+  // through to fresh-init so --memory-repo gets demanded.
+  const hubHasOriginPresent = isHubInstalled(hub)
     && run("git", ["-C", hub, "remote", "get-url", "origin"], { stdio: ["ignore", "pipe", "pipe"] }).status === 0;
+  if (hubHasOriginPresent) {
+    console.log(`[hivemind] existing hub detected at ${hub} — refreshing staged assets.`);
+    const restageStatus = restageCmd({ forceStage: !!opts.forceStage });
+    if (restageStatus !== 0) return restageStatus;
+
+    const attached = readAttachedAdapters();
+    if (attached.length === 0) {
+      console.log(`[hivemind] hub has no attached adapters — nothing further to refresh.`);
+      console.log(`  Attach a tool with \`hivemind attach <name>\` when ready.`);
+      printAttachSuggestions(detectUnattachedProviders([]));
+      return 0;
+    }
+
+    console.log(`[hivemind] refreshing attached adapters: ${attached.join(", ")}`);
+    for (const adapter of attached) {
+      console.log(`[hivemind]   -> ${adapter}`);
+      const s = attachCmd(adapter);
+      if (s !== 0) {
+        console.error(`[hivemind] refresh of '${adapter}' failed (status=${s}). Remaining adapters not refreshed.`);
+        return s;
+      }
+    }
+    console.log(`[hivemind] done. All attached adapters are up to date.`);
+    return 0;
+  }
+
+  // Reuse the same probe for the fresh-init branch's --yes failfast.
+  const hubHasOrigin = hubHasOriginPresent;
   let memoryRepo = opts.memoryRepo || process.env.MEMORY_REPO || "";
   if (!memoryRepo && !opts.yes) {
     if (hubHasOrigin) {

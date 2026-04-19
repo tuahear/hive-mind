@@ -7,17 +7,18 @@
 ## What it does today
 
 ```
-hivemind init [--memory-repo URL]  # set up the hub only — no adapter attached
+hivemind init [--memory-repo URL]  # install or upgrade — smart about existing state
 hivemind attach <adapter>          # wire an adapter (claude-code, codex, ...) to the hub
 hivemind detach <adapter>          # remove an adapter's hooks (preserves hub content)
 hivemind status [--json]           # attached adapters, origin, unpushed commits
 hivemind sync [--force-push]       # run the hub's sync flow
 hivemind pull                      # git pull --rebase --autostash
-hivemind restage [--force-stage]   # refresh staged core from the CLI's bundled assets (upgrade step)
 hivemind doctor [--json]           # diagnostic checks
 hivemind version [--json]          # CLI + bundled core + installed core
 hivemind assets-path               # print the directory holding the CLI's bundled assets
 ```
+
+`hivemind init` is upgrade-aware: on a fresh machine it sets up the hub, on an existing install it restages the bundled assets and refreshes every currently-attached adapter's hook wiring. One command for install and upgrade.
 
 A typical first-run flow is three commands:
 
@@ -35,7 +36,7 @@ The legacy path (`bash setup.sh`) requires a full `git clone` of the `hive-mind`
 
 This CLI ships the bash `core/`, `adapters/`, `cmd/`, and prebuilt `hivemind-hook` launchers for macOS (arm64/amd64), Linux (amd64/arm64), and Windows (amd64) **inside the npm tarball** (~4 MB gzipped). `hivemind init` copies those bundled assets into `~/.hive-mind/hive-mind/` and runs `setup.sh` with `HIVE_MIND_SKIP_CLONE=1`, which short-circuits the clone/pull branch. setup.sh picks the matching prebuilt launcher for the user's OS/arch, so **users don't need Go installed** — Go is only required when building the CLI from source (`npm run build`).
 
-Upgrade flow: `npm install -g hive-mind@latest` refreshes the CLI's *bundled* assets, then `hivemind restage` copies them over `~/.hive-mind/hive-mind/`. Hooks and attached adapters stay put — re-run `hivemind init` / `hivemind attach` only if hook wiring changed. No user-side `git clone` or `git pull` anywhere in the loop.
+Upgrade flow is one command: `npm install -g hive-mind@latest` to refresh the CLI's bundled assets, then `hivemind init` to restage those assets over `~/.hive-mind/hive-mind/` and re-install every currently-attached adapter's hook wiring + launcher. No user-side `git clone` or `git pull` anywhere in the loop.
 
 ## Layout
 

@@ -56,7 +56,7 @@ assert(ver.status === 0 && ver.stdout.trim().length > 0, `--version (got='${ver.
 // 3. --help lists every subcommand.
 const help = node(["dist/cli.js", "--help"]);
 assert(help.status === 0, `--help status (stderr='${help.stderr}')`);
-for (const cmd of ["init", "attach", "detach", "restage", "status", "sync", "pull", "doctor", "version"]) {
+for (const cmd of ["init", "attach", "detach", "status", "sync", "pull", "doctor", "version"]) {
   assert(help.stdout.includes(cmd), `--help lists '${cmd}'`);
 }
 
@@ -203,23 +203,40 @@ const okAttach = node(["dist/cli.js", "attach", "codex"], { env: { ...process.en
 // Valid name, but no hub → must fail with the 'hub not initialized' message, not the validator.
 assert(okAttach.status === 1 && okAttach.stderr.includes("hub not initialized"), `attach codex with no hub hits hub-init error, not validator (status=${okAttach.status}, stderr='${okAttach.stderr}')`);
 
-// 4e. restage into an empty hub succeeds and populates core/.
+// 4e. `hivemind restage` is no longer a user-facing command (init is
+// the single entry point for both fresh installs and upgrades).
+{
+  const r = node(["dist/cli.js", "restage"]);
+  assert(r.status !== 0, `hivemind restage is not a recognized command (got status=${r.status})`);
+}
+
+// 4e2. restageCmd (the internal helper initCmd delegates to on upgrade)
+// still stages assets correctly when called directly.
 {
   const { rmSync, existsSync: fsExists } = await import("node:fs");
-  const hub = resolve(cliDir, ".smoke-hub-restage");
+  const { restageCmd } = await import(pathToFileURL(resolve(cliDir, "dist", "commands", "restage.js")).href);
+  const hub = resolve(cliDir, ".smoke-hub-restage-helper");
   rmSync(hub, { recursive: true, force: true });
-  const r = node(["dist/cli.js", "restage"], { env: { ...process.env, HIVE_MIND_HUB_DIR: hub } });
-  assert(r.status === 0, `restage into empty hub succeeds (status=${r.status}, stderr='${r.stderr}')`);
-  assert(fsExists(resolve(hub, "hive-mind", "setup.sh")), "restage populates setup.sh");
-  assert(fsExists(resolve(hub, "hive-mind", "core", "hub", "sync.sh")), "restage populates core/hub/sync.sh");
-  // On POSIX, every staged .sh should be chmod 0o755 so bin/sync can
-  // exec core/hub/sync.sh. On Windows chmod bits are advisory, so skip.
-  if (!isWin) {
-    const { statSync: sStat } = await import("node:fs");
-    const syncPath = resolve(hub, "hive-mind", "core", "hub", "sync.sh");
-    assert((sStat(syncPath).mode & 0o111) !== 0, `core/hub/sync.sh has +x after restage (mode=${(sStat(syncPath).mode & 0o777).toString(8)})`);
-    const setupPath = resolve(hub, "hive-mind", "setup.sh");
-    assert((sStat(setupPath).mode & 0o111) !== 0, `setup.sh has +x after restage (mode=${(sStat(setupPath).mode & 0o777).toString(8)})`);
+  // Redirect HOME + USERPROFILE so paths.hubDir() resolves to the
+  // fixture and restageCmd doesn't touch the user's real hub.
+  const prevHome = process.env.HOME;
+  const prevUser = process.env.USERPROFILE;
+  const prevHub = process.env.HIVE_MIND_HUB_DIR;
+  process.env.HIVE_MIND_HUB_DIR = hub;
+  try {
+    const status = restageCmd({});
+    assert(status === 0, `restageCmd returns 0 on empty hub (got ${status})`);
+    assert(fsExists(resolve(hub, "hive-mind", "setup.sh")), "restageCmd populates setup.sh");
+    assert(fsExists(resolve(hub, "hive-mind", "core", "hub", "sync.sh")), "restageCmd populates core/hub/sync.sh");
+    if (!isWin) {
+      const { statSync: sStat } = await import("node:fs");
+      const syncPath = resolve(hub, "hive-mind", "core", "hub", "sync.sh");
+      assert((sStat(syncPath).mode & 0o111) !== 0, `core/hub/sync.sh has +x after restageCmd (mode=${(sStat(syncPath).mode & 0o777).toString(8)})`);
+    }
+  } finally {
+    if (prevHub === undefined) delete process.env.HIVE_MIND_HUB_DIR; else process.env.HIVE_MIND_HUB_DIR = prevHub;
+    if (prevHome !== undefined) process.env.HOME = prevHome;
+    if (prevUser !== undefined) process.env.USERPROFILE = prevUser;
   }
 }
 
