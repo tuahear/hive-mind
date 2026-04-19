@@ -1037,6 +1037,29 @@ _hub_sync_skills() {
          && _hub_tool_file_unchanged "$f" "$snap"; then
         continue
       fi
+      # Fan-out guards. Runs after commit + push, with the hub as the
+      # source and the tool as the destination.
+      #
+      # (1) No-op skip: tool already byte-identical to hub. Avoids a
+      #     pointless cp that churns mtime every cycle (and in a loop
+      #     of N skills produces N needless filesystem writes).
+      # (2) Mid-sync edit guard: if the tool file has diverged from its
+      #     snapshot (the byte image fan-out wrote last cycle), the user
+      #     edited it AFTER harvest ran in this cycle. Skipping the cp
+      #     preserves the live edit — the next sync's harvest will see
+      #     tool != snapshot and propagate the edit to the hub.
+      if [ "$direction" = "fanout" ] && [ -f "$skill_dst/$dst_name" ]; then
+        if cmp -s "$f" "$skill_dst/$dst_name"; then
+          # Keep the snapshot aligned so the next harvest's unchanged-
+          # guard can still recognize the tool file.
+          [ -n "$snap" ] && _hub_snapshot_write "$tool_file_for_snap" "$snap"
+          continue
+        fi
+        if [ -n "$snap" ] && [ -f "$snap" ] \
+           && ! cmp -s "$skill_dst/$dst_name" "$snap"; then
+          continue
+        fi
+      fi
       mkdir -p "$(dirname "$skill_dst/$dst_name")" 2>/dev/null
       cp "$f" "$skill_dst/$dst_name"
       # Refresh the snapshot so the next harvest can tell real edits

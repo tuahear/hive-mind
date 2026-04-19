@@ -97,6 +97,56 @@ seed_two_adapter_skill() {
   [ "$output" = "new" ]
 }
 
+@test "fan-out: mid-sync edit (tool diverged from snapshot) is not stomped" {
+  # Seed a synced state: tool == hub == snapshot.
+  mkdir -p "$HUB/skills/abac" "$TOOL_A/skills/abac"
+  printf 'v1\n' > "$HUB/skills/abac/content.md"
+  printf 'v1\n' > "$TOOL_A/skills/abac/SKILL.md"
+  snap="$(_hub_snapshot_path "$TOOL_A" "skills/abac/SKILL.md")"
+  mkdir -p "$(dirname "$snap")"
+  cp "$TOOL_A/skills/abac/SKILL.md" "$snap"
+
+  # User edits the tool file mid-sync (after harvest ran, before fan-out).
+  # Hub still reflects the old state from this cycle's harvest.
+  printf 'user-edit-mid-sync\n' > "$TOOL_A/skills/abac/SKILL.md"
+
+  # Fan-out must NOT stomp the live edit.
+  ADAPTER_SKILL_ROOT="$TOOL_A/skills" hub_fan_out "$HUB" "$TOOL_A"
+
+  run cat "$TOOL_A/skills/abac/SKILL.md"
+  [ "$output" = "user-edit-mid-sync" ]
+}
+
+@test "fan-out: remote hub change still propagates when tool matches snapshot" {
+  # Seed: tool == snapshot, hub has a newer value (came from a remote pull).
+  mkdir -p "$HUB/skills/abac" "$TOOL_A/skills/abac"
+  printf 'v1\n' > "$TOOL_A/skills/abac/SKILL.md"
+  snap="$(_hub_snapshot_path "$TOOL_A" "skills/abac/SKILL.md")"
+  mkdir -p "$(dirname "$snap")"
+  cp "$TOOL_A/skills/abac/SKILL.md" "$snap"
+  printf 'v2-from-remote\n' > "$HUB/skills/abac/content.md"
+
+  ADAPTER_SKILL_ROOT="$TOOL_A/skills" hub_fan_out "$HUB" "$TOOL_A"
+
+  run cat "$TOOL_A/skills/abac/SKILL.md"
+  [ "$output" = "v2-from-remote" ]
+}
+
+@test "fan-out: skips cp when tool already matches hub (no mtime churn)" {
+  mkdir -p "$HUB/skills/abac" "$TOOL_A/skills/abac"
+  printf 'same\n' > "$HUB/skills/abac/content.md"
+  printf 'same\n' > "$TOOL_A/skills/abac/SKILL.md"
+  # Record mtime before fan-out runs. Sleep 1s so a cp would produce a
+  # distinguishable mtime (1s resolution on FAT/NTFS via msys).
+  pre_mtime="$(stat -c %Y "$TOOL_A/skills/abac/SKILL.md")"
+  sleep 1
+
+  ADAPTER_SKILL_ROOT="$TOOL_A/skills" hub_fan_out "$HUB" "$TOOL_A"
+
+  post_mtime="$(stat -c %Y "$TOOL_A/skills/abac/SKILL.md")"
+  [ "$pre_mtime" = "$post_mtime" ]
+}
+
 @test "fan-out writes a snapshot so the next harvest skips unchanged files" {
   mkdir -p "$HUB/skills/foo"
   printf 'hub-content\n' > "$HUB/skills/foo/content.md"
