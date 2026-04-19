@@ -684,6 +684,16 @@ _hub_sync_file() {
   local src="$1" dst="$2"
   [ -f "$src" ] || return 0
 
+  # No-op skip: if dst already matches src byte-for-byte, skip the cp.
+  # Every cp on Windows/MSYS costs ~150ms of subprocess startup, and a
+  # busy install with dozens of per-project files otherwise pays that
+  # cost on every sync even when nothing changed. cmp is cheap for the
+  # common case (sizes diverge → early exit). Also avoids the mtime
+  # churn that causes downstream tools to flag the file as "modified".
+  if [ -f "$dst" ] && cmp -s "$src" "$dst"; then
+    return 0
+  fi
+
   # Marker preservation: don't overwrite a marker-containing dst with
   # a marker-free src (prevents fan-out from erasing source markers).
   if [ -f "$dst" ] \
@@ -708,10 +718,15 @@ _hub_sync_dir() {
     return 0
   fi
   mkdir -p "$dst_dir"
-  # src → dst
+  # src → dst. Skip the cp when dst already matches — see _hub_sync_file
+  # for the rationale (Windows/MSYS cp is ~150ms and a dir tree easily
+  # fires dozens of redundant cp's per sync otherwise).
   (cd "$src_dir" && find . -type f -print0 2>/dev/null) \
     | while IFS= read -r -d '' rel; do
         rel="${rel#./}"
+        if [ -f "$dst_dir/$rel" ] && cmp -s "$src_dir/$rel" "$dst_dir/$rel"; then
+          continue
+        fi
         mkdir -p "$dst_dir/$(dirname "$rel")" 2>/dev/null
         cp "$src_dir/$rel" "$dst_dir/$rel"
       done

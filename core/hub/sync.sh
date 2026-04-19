@@ -188,10 +188,17 @@ for name in "${ATTACHED[@]}"; do
   # again. Stripping here means tool and hub are both marker-free after
   # the commit phase, and fan-out is a content-identical no-op.
   if [ -x "$CORE_DIR/marker-extract.sh" ]; then
-    while IFS= read -r -d '' mf; do
-      grep -q '<!--[[:space:]]*commit:' "$mf" 2>/dev/null \
-        && "$CORE_DIR/marker-extract.sh" "$mf" >/dev/null 2>>"$LOG" || true
-    done < <(find "$tool_dir" -name '*.md' -type f -print0 2>/dev/null)
+    # One recursive grep beats N per-file greps. On Windows/MSYS every
+    # subprocess spawn is ~30-50ms, and an adapter with ~1k .md files
+    # (Claude's projects/<variant>/memory/ accumulates across every repo
+    # the user has opened) turns an innocuous per-file grep loop into
+    # ~50s of pure subprocess overhead on every sync. `grep -rlE` scans
+    # the tree in a single invocation and emits only matching paths, so
+    # marker-extract.sh runs only on files that actually carry a marker.
+    while IFS= read -r mf; do
+      [ -n "$mf" ] || continue
+      "$CORE_DIR/marker-extract.sh" "$mf" >/dev/null 2>>"$LOG" || true
+    done < <(grep -rlE --include='*.md' '<!--[[:space:]]*commit:' "$tool_dir" 2>/dev/null)
   fi
 done
 
