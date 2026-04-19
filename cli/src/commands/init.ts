@@ -2,7 +2,8 @@ import { existsSync, readFileSync, rmSync } from "node:fs";
 import { consumePrevVersionMarker, stageAssets } from "./stage.js";
 import { createInterface } from "node:readline/promises";
 import { resolve } from "node:path";
-import { bundledAssetsDir, hubDir, hubSrcDir, isHubInstalled } from "../paths.js";
+import { bundledAssetsDir, hubDir, hubSrcDir, isHubInstalled, readAttachedAdapters } from "../paths.js";
+import { detectUnattachedProviders, printAttachSuggestions } from "./detect.js";
 import { run, runBash, which } from "../run.js";
 import { validateAdapterName } from "./validate.js";
 
@@ -121,7 +122,14 @@ export async function initCmd(opts: InitOpts): Promise<number> {
   if (memoryRepo) env.MEMORY_REPO = memoryRepo;
 
   console.log(`[hivemind] init: adapter=${adapter} hub=${hub}`);
-  return runBash(setupSh, [], env);
+  const status = runBash(setupSh, [], env);
+  if (status === 0) {
+    // Informational-only: tell the user which other providers they
+    // could attach. No side effects — user still runs `hivemind attach
+    // <name>` when they actually want a second adapter wired up.
+    printAttachSuggestions(detectUnattachedProviders(readAttachedAdapters()));
+  }
+  return status;
 }
 
 export function bundledCoreVersion(): string {

@@ -356,6 +356,63 @@ assert(okAttach.status === 1 && okAttach.stderr.includes("hub not initialized"),
   assert(bash({ HIVE_MIND_PREV_VERSION: "" }).stdout === "0.1.0", "empty env var falls back to sentinel");
 }
 
+// 4j. detectUnattachedProviders only flags providers whose marker
+// exists AND that aren't already attached; printAttachSuggestions is
+// silent when nothing to suggest.
+{
+  const { detectUnattachedProviders, printAttachSuggestions } = await import(
+    pathToFileURL(resolve(cliDir, "dist", "commands", "detect.js")).href
+  );
+  const fakeHome = resolve(cliDir, ".smoke-detect-home");
+  const { rmSync, mkdirSync, writeFileSync } = await import("node:fs");
+  rmSync(fakeHome, { recursive: true, force: true });
+  mkdirSync(fakeHome, { recursive: true });
+
+  // Redirect HOME so os.homedir() returns the fixture dir. (Only the
+  // detect module reads homedir; isolating it here keeps the test
+  // hermetic without touching the user's real ~/.claude or ~/.codex.)
+  const prevHome = process.env.HOME;
+  const prevUser = process.env.USERPROFILE;
+  process.env.HOME = fakeHome;
+  process.env.USERPROFILE = fakeHome;
+  try {
+    // Case A: nothing on the machine → no suggestions regardless of attached state.
+    assert(detectUnattachedProviders([]).length === 0, "no markers → no suggestions");
+
+    // Case B: codex config.toml present, codex not attached → suggested.
+    mkdirSync(resolve(fakeHome, ".codex"), { recursive: true });
+    writeFileSync(resolve(fakeHome, ".codex", "config.toml"), "# fixture\n");
+    const r1 = detectUnattachedProviders(["claude-code"]);
+    assert(r1.length === 1 && r1[0].adapter === "codex", `codex detected when present and unattached (got ${JSON.stringify(r1)})`);
+
+    // Case C: codex present AND attached → not suggested.
+    const r2 = detectUnattachedProviders(["claude-code", "codex"]);
+    assert(r2.length === 0, `already-attached codex not re-suggested (got ${JSON.stringify(r2)})`);
+
+    // Case D: ~/.claude dir + codex config both present, claude-code not attached → both suggested.
+    mkdirSync(resolve(fakeHome, ".claude"), { recursive: true });
+    const r3 = detectUnattachedProviders([]);
+    assert(
+      r3.length === 2 && r3.map((x) => x.adapter).sort().join(",") === "claude-code,codex",
+      `both markers present, neither attached → both suggested (got ${JSON.stringify(r3)})`
+    );
+
+    // printAttachSuggestions is silent when the input is empty.
+    const origLog = console.log;
+    const captured = [];
+    console.log = (...a) => captured.push(a.join(" "));
+    try {
+      printAttachSuggestions([]);
+      assert(captured.length === 0, `empty suggestions → no output (got ${JSON.stringify(captured)})`);
+    } finally {
+      console.log = origLog;
+    }
+  } finally {
+    if (prevHome === undefined) delete process.env.HOME; else process.env.HOME = prevHome;
+    if (prevUser === undefined) delete process.env.USERPROFILE; else process.env.USERPROFILE = prevUser;
+  }
+}
+
 // 5. npm pack stays under the size cap. The original CLI spec target
 // was 2 MB for a pure-TS bundle; since we also ship prebuilt Go
 // hivemind-hook binaries for 5 targets (~2 MB each compressed), the
