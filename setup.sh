@@ -606,4 +606,10 @@ log "done."
 echo
 adapter_activation_instructions
 echo
-[ -n "${BACKUP_DIR:-}" ] && echo "Backup preserved at: $BACKUP_DIR (delete once you've confirmed a clean session)"
+# Under `set -e`, a bare `[ -n "$X" ] && echo` at the top level exits
+# the script when X is empty/unset — which happens on every re-attach
+# where no new backup was taken. Use an explicit if/then/fi so an
+# empty BACKUP_DIR is a clean skip, not a fatal shell error.
+if [ -n "${BACKUP_DIR:-}" ]; then
+    echo "Backup preserved at: $BACKUP_DIR (delete once you've confirmed a clean session)"
+fi

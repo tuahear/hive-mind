@@ -152,3 +152,27 @@ SH
   uname() { case "$1" in -s) echo FreeBSD ;; -m) echo amd64 ;; esac; }
   [ -z "$(_prebuilt_hivemind_hook_name)" ]
 }
+
+# ============================================================
+# BACKUP_DIR trailer must not trip set -e when empty
+# ============================================================
+
+@test "end-of-run backup-preserved hint does not exit set -e script when BACKUP_DIR unset" {
+  # Regression for prototype.6: the trailing `[ -n "${BACKUP_DIR:-}" ] &&
+  # echo ...` line made setup.sh exit status 1 on every re-attach
+  # (no backup taken → empty var → && chain returns 1 at top level
+  # under `set -e`). Extract the block and confirm it runs cleanly
+  # whether BACKUP_DIR is set or not.
+  SNIPPET="$(awk '/^# Under `set -e`,/,/^fi$/' "$SETUP")"
+  [ -n "$SNIPPET" ] || skip "couldn't extract the trailer — refactor may have moved it"
+
+  # Unset case: must not exit.
+  run bash -euo pipefail -c "$SNIPPET"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+
+  # Set case: must echo the message.
+  run bash -euo pipefail -c "BACKUP_DIR=/tmp/xyz; $SNIPPET"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Backup preserved at: /tmp/xyz"* ]]
+}
