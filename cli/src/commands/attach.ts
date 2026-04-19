@@ -12,13 +12,7 @@ function listAdapters(adaptersDir: string): string[] {
   if (!existsSync(adaptersDir)) return [];
   try {
     return readdirSync(adaptersDir)
-      .filter((n) => {
-        try {
-          return statSync(resolve(adaptersDir, n)).isDirectory();
-        } catch {
-          return false;
-        }
-      })
+      .filter((n) => isDir(resolve(adaptersDir, n)) && existsSync(resolve(adaptersDir, n, "adapter.sh")))
       .sort();
   } catch {
     return [];
@@ -37,11 +31,18 @@ export function attachCmd(adapter: string): number {
     console.error(`error: hub not initialized. Run \`hivemind init\` first.`);
     return 1;
   }
+  // Match setup.sh's contract: adapter dir must exist AND be a directory
+  // AND ship an adapter.sh. A plain file or a directory missing the
+  // contract script would otherwise sail through the CLI and fail later
+  // with a less actionable error inside setup.sh.
   const adaptersDir = resolve(src, "adapters");
-  if (!existsSync(resolve(adaptersDir, adapter))) {
+  const adapterDir = resolve(adaptersDir, adapter);
+  const adapterOk =
+    isDir(adapterDir) && existsSync(resolve(adapterDir, "adapter.sh"));
+  if (!adapterOk) {
     const available = listAdapters(adaptersDir);
     console.error(
-      `error: unknown adapter '${adapter}'.\n` +
+      `error: unknown adapter '${adapter}' (missing ${adapter}/adapter.sh).\n` +
         `  Available: ${available.length ? available.join(", ") : "(none — hub source is empty?)"}`
     );
     return 1;

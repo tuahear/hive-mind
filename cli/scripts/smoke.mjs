@@ -182,6 +182,23 @@ assert(okAttach.status === 1 && okAttach.stderr.includes("hub not initialized"),
   assert(r.stderr.includes("Available:"), `error message lists Available: (stderr='${r.stderr}')`);
   assert(r.stderr.includes("claude-code") && r.stderr.includes("codex"), `error lists real adapter names (stderr='${r.stderr}')`);
   assert(!r.stderr.includes("see ls "), `error does not tell users to run ls (stderr='${r.stderr}')`);
+
+  // Tighter contract: an adapter directory that lacks adapter.sh is
+  // treated as unknown, and a plain file under adapters/ doesn't sneak
+  // past the check either.
+  const fsMod2 = await import("node:fs");
+  const adaptersDir = resolve(hub, "hive-mind", "adapters");
+  fsMod2.mkdirSync(resolve(adaptersDir, "broken"), { recursive: true });
+  const broken = node(["dist/cli.js", "attach", "broken"], { env: { ...process.env, HIVE_MIND_HUB_DIR: hub } });
+  assert(broken.status === 1 && broken.stderr.includes("missing broken/adapter.sh"), `attach rejects adapter dir without adapter.sh (status=${broken.status}, stderr='${broken.stderr}')`);
+  fsMod2.writeFileSync(resolve(adaptersDir, "rogue"), "not a directory");
+  const rogue = node(["dist/cli.js", "attach", "rogue"], { env: { ...process.env, HIVE_MIND_HUB_DIR: hub } });
+  assert(rogue.status === 1 && rogue.stderr.includes("unknown adapter"), `attach rejects file under adapters/ (status=${rogue.status}, stderr='${rogue.stderr}')`);
+  // And the Available: listing must skip the invalid entries (only
+  // dirs with adapter.sh count).
+  const availableLine = broken.stderr.split("\n").find((l) => l.includes("Available:")) || "";
+  assert(!availableLine.includes("broken"), `Available: listing hides dirs without adapter.sh (got='${availableLine}')`);
+  assert(!availableLine.includes("rogue"), `Available: listing hides plain files under adapters/ (got='${availableLine}')`);
 }
 
 // 4g. detach preserves user-authored comments + blanks in attached-adapters.
