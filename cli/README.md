@@ -23,7 +23,7 @@ hivemind assets-path           # print the directory holding the CLI's bundled a
 
 The legacy path (`bash setup.sh`) requires a full `git clone` of the `hive-mind` repo into `~/.hive-mind/hive-mind/`. That's a hard stop on machines without GitHub SSH, adds a ~MB transfer, and means every user has a mutable working copy of the source tree.
 
-This CLI ships the bash `core/`, `adapters/`, and `cmd/` trees **inside the npm tarball** (~70 KB gzipped). `hivemind init` copies those bundled assets into `~/.hive-mind/hive-mind/` and runs `setup.sh` with `HIVE_MIND_SKIP_CLONE=1`, which short-circuits the clone/pull branch.
+This CLI ships the bash `core/`, `adapters/`, `cmd/`, and prebuilt `hivemind-hook` launchers for macOS (arm64/amd64), Linux (amd64/arm64), and Windows (amd64) **inside the npm tarball** (~4 MB gzipped). `hivemind init` copies those bundled assets into `~/.hive-mind/hive-mind/` and runs `setup.sh` with `HIVE_MIND_SKIP_CLONE=1`, which short-circuits the clone/pull branch. setup.sh picks the matching prebuilt launcher for the user's OS/arch, so **users don't need Go installed** — Go is only required when building the CLI from source (`npm run build`).
 
 Upgrade flow: `npm install -g hive-mind@latest` refreshes the CLI's *bundled* assets, then `hivemind restage` copies them over `~/.hive-mind/hive-mind/`. Hooks and attached adapters stay put — re-run `hivemind init` / `hivemind attach` only if hook wiring changed. No user-side `git clone` or `git pull` anywhere in the loop.
 

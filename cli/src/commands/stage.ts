@@ -12,6 +12,9 @@ export type StageResult =
   | { ok: false; code: number };
 
 export const STAGE_REQUIRED = ["core", "adapters", "cmd", "setup.sh", "VERSION", "go.mod"];
+// Optional: prebuilt hivemind-hook binaries (present in release tarballs,
+// absent when bundle-assets.mjs ran on a host without Go).
+export const STAGE_OPTIONAL = ["prebuilt"];
 
 export function capturePrevVersion(src: string, hubStateDir?: string): string {
   // Prefer an earlier-persisted marker (written by `hivemind restage`) —
@@ -74,6 +77,13 @@ export function stageAssets(src: string, assets: string, hubStateDir?: string): 
     rmSync(dst, { recursive: true, force: true });
     cpSync(s, dst, { recursive: true });
   }
+  for (const item of STAGE_OPTIONAL) {
+    const s = resolve(assets, item);
+    if (!existsSync(s)) continue;
+    const dst = resolve(src, item);
+    rmSync(dst, { recursive: true, force: true });
+    cpSync(s, dst, { recursive: true });
+  }
 
   // Re-apply executable bits on every staged .sh. npm tarballs often
   // lose mode bits when built/published on Windows, so a restage after
@@ -98,8 +108,15 @@ function markShellScriptsExecutable(root: string): void {
     try { s = statSync(p); } catch { continue; }
     if (s.isDirectory()) {
       markShellScriptsExecutable(p);
-    } else if (s.isFile() && name.endsWith(".sh")) {
-      try { chmodSync(p, 0o755); } catch {}
+    } else if (s.isFile()) {
+      // .sh scripts, and any prebuilt hivemind-hook-* binary (Linux/macOS
+      // binaries have no suffix; Windows is .exe and doesn't care about
+      // the mode bit anyway).
+      const isShell = name.endsWith(".sh");
+      const isPrebuiltHook = name.startsWith("hivemind-hook-");
+      if (isShell || isPrebuiltHook) {
+        try { chmodSync(p, 0o755); } catch {}
+      }
     }
   }
 }

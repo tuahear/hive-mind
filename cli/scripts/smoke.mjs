@@ -34,6 +34,20 @@ function npm(args, opts = {}) {
 assert(existsSync(resolve(cliDir, "dist", "cli.js")), "dist/cli.js present (run `npm run build` first)");
 assert(existsSync(resolve(cliDir, "assets", "setup.sh")), "assets/setup.sh bundled");
 assert(existsSync(resolve(cliDir, "assets", "core", "hub", "sync.sh")), "assets/core/hub/sync.sh bundled");
+// Prebuilt hivemind-hook binaries for all 5 targets must be present in
+// release builds. Local dev without Go skips this (bundle-assets warns).
+const prebuiltDir = resolve(cliDir, "assets", "prebuilt");
+if (existsSync(prebuiltDir)) {
+  for (const name of [
+    "hivemind-hook-darwin-arm64",
+    "hivemind-hook-darwin-amd64",
+    "hivemind-hook-linux-amd64",
+    "hivemind-hook-linux-arm64",
+    "hivemind-hook-windows-amd64.exe",
+  ]) {
+    assert(existsSync(resolve(prebuiltDir, name)), `assets/prebuilt/${name} bundled`);
+  }
+}
 
 // 2. --version responds.
 const ver = node(["dist/cli.js", "--version"]);
@@ -342,13 +356,18 @@ assert(okAttach.status === 1 && okAttach.stderr.includes("hub not initialized"),
   assert(bash({ HIVE_MIND_PREV_VERSION: "" }).stdout === "0.1.0", "empty env var falls back to sentinel");
 }
 
-// 5. npm pack stays under 2 MB (CLI spec cap).
+// 5. npm pack stays under the size cap. The original CLI spec target
+// was 2 MB for a pure-TS bundle; since we also ship prebuilt Go
+// hivemind-hook binaries for 5 targets (~2 MB each compressed), the
+// tarball is larger. Keep a 20 MB hard cap so the overall download
+// stays reasonable and a regression in build-artifact size (e.g. a
+// debug-info strip regression) still fails loudly.
 // --ignore-scripts so the prepack build doesn't mix its stdout into the
 // JSON response we're about to parse.
 const pack = npm(["pack", "--dry-run", "--json", "--ignore-scripts"]);
 try {
   const info = JSON.parse(pack.stdout)[0];
-  assert(info.size < 2 * 1024 * 1024, `tarball under 2 MB (got ${(info.size / 1024).toFixed(1)} KB)`);
+  assert(info.size < 20 * 1024 * 1024, `tarball under 20 MB (got ${(info.size / 1024 / 1024).toFixed(2)} MB)`);
 } catch (e) {
   assert(false, `parse npm pack --json: ${e} stderr=${pack.stderr}`);
 }

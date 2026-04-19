@@ -123,3 +123,31 @@ SH
   eval "$(_prev_version_block)"
   [ "$PREV_HIVE_MIND_VERSION" = "0.1.0" ]
 }
+
+# ============================================================
+# Prebuilt hivemind-hook preference
+# ============================================================
+
+@test "_prebuilt_hivemind_hook_name maps Darwin+arm64 correctly" {
+  eval "$(awk '/^_prebuilt_hivemind_hook_name\(\)/,/^}$/' "$SETUP")"
+  uname() { case "$1" in -s) echo Darwin ;; -m) echo arm64 ;; esac; }
+  [ "$(_prebuilt_hivemind_hook_name)" = "hivemind-hook-darwin-arm64" ]
+}
+
+@test "_prebuilt_hivemind_hook_name maps Linux+x86_64 correctly" {
+  eval "$(awk '/^_prebuilt_hivemind_hook_name\(\)/,/^}$/' "$SETUP")"
+  uname() { case "$1" in -s) echo Linux ;; -m) echo x86_64 ;; esac; }
+  [ "$(_prebuilt_hivemind_hook_name)" = "hivemind-hook-linux-amd64" ]
+}
+
+@test "_prebuilt_hivemind_hook_name maps MINGW+x86_64 to windows .exe" {
+  eval "$(awk '/^_prebuilt_hivemind_hook_name\(\)/,/^}$/' "$SETUP")"
+  uname() { case "$1" in -s) echo MINGW64_NT-10.0 ;; -m) echo x86_64 ;; esac; }
+  [ "$(_prebuilt_hivemind_hook_name)" = "hivemind-hook-windows-amd64.exe" ]
+}
+
+@test "_prebuilt_hivemind_hook_name returns empty for unknown OS" {
+  eval "$(awk '/^_prebuilt_hivemind_hook_name\(\)/,/^}$/' "$SETUP")"
+  uname() { case "$1" in -s) echo FreeBSD ;; -m) echo amd64 ;; esac; }
+  [ -z "$(_prebuilt_hivemind_hook_name)" ]
+}

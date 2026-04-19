@@ -72,21 +72,58 @@ should_build_hivemind_hook() {
     [ -f "$HIVE_MIND_HUB_DIR/.install-state/attached-adapters" ] \
         && grep -Eq '^(codex|claude-code)$' "$HIVE_MIND_HUB_DIR/.install-state/attached-adapters"
 }
+# Map `uname -s` / `uname -m` to the GOOS-GOARCH tuple used in the
+# prebuilt filename (hivemind-hook-<goos>-<goarch>[.exe]). Prints the
+# filename when it can detect the pair, empty otherwise.
+_prebuilt_hivemind_hook_name() {
+    local os arch suffix
+    case "$(uname -s)" in
+        Darwin)               os="darwin" ;;
+        Linux)                os="linux" ;;
+        MINGW*|MSYS*|CYGWIN*) os="windows" ;;
+        *)                    return 0 ;;
+    esac
+    case "$(uname -m)" in
+        x86_64|amd64)         arch="amd64" ;;
+        arm64|aarch64)        arch="arm64" ;;
+        *)                    return 0 ;;
+    esac
+    suffix=""
+    [ "$os" = "windows" ] && suffix=".exe"
+    printf 'hivemind-hook-%s-%s%s' "$os" "$arch" "$suffix"
+}
+
 build_hivemind_hook_binary() {
-    local out tmp
+    local out tmp prebuilt_name prebuilt_path
 
     should_build_hivemind_hook || return 0
     out="$(hivemind_hook_binary_path)"
+
+    # Prefer a matching CLI-bundled prebuilt over a source build — that
+    # saves the user from needing the Go toolchain at install time.
+    prebuilt_name="$(_prebuilt_hivemind_hook_name)"
+    if [ -n "$prebuilt_name" ]; then
+        prebuilt_path="$HIVE_MIND_SRC/prebuilt/$prebuilt_name"
+        if [ -f "$prebuilt_path" ]; then
+            log "  using bundled prebuilt $prebuilt_name"
+            tmp="${out}.tmp"
+            rm -f "$tmp"
+            cp "$prebuilt_path" "$tmp"
+            chmod +x "$tmp" 2>/dev/null || true
+            mv "$tmp" "$out"
+            return 0
+        fi
+    fi
 
     if ! command -v go >/dev/null 2>&1; then
         if [ -f "$out" ]; then
             log "  go not found; keeping existing $(basename "$out")"
             return 0
         fi
-        die "Go is required to build hive-mind's native hook launcher. Install Go from https://go.dev/dl/ and rerun setup.sh."
+        die "Go is required to build hive-mind's native hook launcher. Install Go from https://go.dev/dl/ and rerun setup.sh, or install from a release tarball that bundles the prebuilt launcher for your platform."
     fi
 
-    log "  building native hivemind-hook launcher"
+    log "  building native hivemind-hook launcher from source"
     tmp="${out}.tmp"
     rm -f "$tmp"
     (
