@@ -145,9 +145,11 @@ $bad
   # forward on the sync line, OR any ADAPTER_DIR forward uses a fallback.
   setup="$BATS_TEST_DIRNAME/../setup.sh"
   [ -f "$setup" ]
-  # Isolate the verify-step block: everything from the `log "[6/6]`
-  # header through the matching `fi` close.
-  block="$(awk '/^log "\[6\/6\]/,/^fi$/' "$setup")"
+  # Isolate the verify-step block. setup.sh switched to a dynamic
+  # `step()` helper (step-index is computed at runtime, not hard-coded
+  # in the source) so the old `log "[6/6]"` literal no longer exists.
+  # Match on the step label instead — it's the stable contract.
+  block="$(awk '/^step "running hub sync/,/^fi$/' "$setup")"
   [ -n "$block" ]
   # bin/sync is what the block invokes.
   printf '%s\n' "$block" | grep -Fq 'bin/sync'

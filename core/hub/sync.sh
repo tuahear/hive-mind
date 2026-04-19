@@ -289,7 +289,14 @@ if [ -z "$upstream" ] && [ -n "$_fmt_current_branch" ] \
 fi
 remote_fmt=""
 if [ -n "$upstream" ]; then
-  remote_fmt="$(git show "$upstream:$FORMAT_FILE" 2>/dev/null | grep -oE '[0-9]+' | head -1)"
+  # MSYS_NO_PATHCONV=1: on Git Bash / MSYS the `<ref>:<path>` argument
+  # looks path-shaped to MSYS's path-translation pass, which rewrites
+  # the `/` in `origin/main` to `\` and the `:` separator to `;` before
+  # git sees it. Git then errors with "ambiguous argument
+  # 'origin\main;.hive-mind-format'", the stderr redirect swallows it,
+  # and the gate silently no-ops. Disabling translation for this one
+  # call keeps the ref:path literal on every platform.
+  remote_fmt="$(MSYS_NO_PATHCONV=1 git show "$upstream:$FORMAT_FILE" 2>/dev/null | grep -oE '[0-9]+' | head -1)"
 fi
 if [ -n "$remote_fmt" ] && [ "$remote_fmt" -gt "$HIVE_MIND_FORMAT_VERSION" ] 2>/dev/null; then
   echo "$TS ERROR hub-sync: remote is format $remote_fmt but this install only knows format $HIVE_MIND_FORMAT_VERSION -- upgrade hive-mind" >>"$LOG"

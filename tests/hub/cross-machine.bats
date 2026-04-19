@@ -33,10 +33,17 @@ setup_machine() {
   printf 'fake\n' > "$hub/.install-state/attached-adapters"
 
   # Stage any changes so the first sync isn't trapped by "dirty".
+  # `git status --porcelain` can flag files as dirty purely because
+  # of autocrlf normalization (Windows: LF in working tree but index
+  # would write CRLF, or vice versa). `git add -A` then stages
+  # nothing content-wise, so `git commit` exits non-zero. Tolerate
+  # the no-op commit and keep going.
   if [ -n "$(git -C "$hub" status --porcelain 2>/dev/null)" ]; then
     git -C "$hub" add -A
-    git -C "$hub" commit -q -m "seed whitelist for $M"
-    git -C "$hub" push -q 2>/dev/null || true
+    if ! git -C "$hub" diff --cached --quiet; then
+      git -C "$hub" commit -q -m "seed whitelist for $M"
+      git -C "$hub" push -q 2>/dev/null || true
+    fi
   fi
 
   eval "${M}_HOME=\"$machine_home\""
@@ -50,10 +57,15 @@ run_sync_on() {
   machine_home="$(dirname "$machine_hub")"
   # Redirect FAKE_ADAPTER_HOME so the fake adapter's ADAPTER_DIR points
   # at THIS machine's tool dir for the duration of the sync.
+  # Disable the git-fetch throttle so each run_sync_on actually talks
+  # to the remote — tests simulate rapid back-to-back cross-machine
+  # syncs, which the production 30s throttle would collapse into a
+  # single network round trip.
   FAKE_ADAPTER_HOME="$machine_home" \
   HIVE_MIND_HUB_DIR="$machine_hub" \
   HIVE_MIND_ADAPTERS_DIR="$HIVE_MIND_ADAPTERS_DIR" \
   HIVE_MIND_FORCE_PUSH=1 \
+  HIVE_MIND_MIN_FETCH_INTERVAL_SEC=0 \
     bash "$HUB_SYNC"
 }
 
