@@ -1,6 +1,6 @@
 {
   "name": "hive-mind",
-  "version": "0.3.0-prototype.6",
+  "version": "0.3.0-prototype.7",
   "description": "hivemind CLI — install, attach, and sync the hive-mind memory hub for AI coding agents",
   "bin": {
     "hivemind": "dist/cli.js"
