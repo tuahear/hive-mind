@@ -40,9 +40,10 @@ Shared hub conflicts are line-oriented by design: global/project markdown conten
 
 ```
 hive-mind/
+├── cli/                           ← TypeScript `hivemind` CLI (prototype, #13) — bundles core/adapters/setup.sh into its npm tarball; `hivemind init` stages them without a repo clone
 ├── cmd/
 │   └── hivemind-hook/            ← native hook launcher (Codex + Claude entrypoint)
-├── setup.sh                       ← installer: set up hub + attach an adapter
+├── setup.sh                       ← installer: set up hub + attach an adapter (also staged by the CLI and invoked with `HIVE_MIND_SKIP_CLONE=1`)
 ├── VERSION                        ← installed hive-mind version
 ├── core/
 │   ├── adapter-loader.sh          ← sources adapter.sh, validates contract surface

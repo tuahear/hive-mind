@@ -20,6 +20,8 @@ MEMORY_REPO=<your-memory-repo-url> \
 
 That creates `~/.hive-mind/`, clones your memory repo into it, and attaches Claude Code to the hub.
 
+**Or (prototype, not yet on npm) — `hivemind` CLI:** ships the bash core inside the npm tarball so install doesn't require cloning the hive-mind repo. `npm install -g hive-mind && hivemind init`. See [`cli/README.md`](https://github.com/tuahear/hive-mind/tree/main/cli) and issue [#13](https://github.com/tuahear/hive-mind/issues/13).
+
 `MEMORY_REPO` accepts any URL `git` understands:
 
 - SSH: `git@<host>:you/repo.git` (GitHub, GitLab, Bitbucket, self-hosted…)
@@ -34,6 +36,8 @@ Once another adapter ships, attach it to the same hub with a different `ADAPTER=
 
 ```bash
 ADAPTER=codex bash ~/.hive-mind/hive-mind/setup.sh   # same memory, second tool
+# or, via the CLI prototype:
+hivemind attach codex
 ```
 
 This does not touch the first adapter's install. Both tools then harvest and fan-out through the same `~/.hive-mind/` — memory edits in one tool appear in the other on the next sync cycle.
