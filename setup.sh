@@ -234,13 +234,16 @@ mkdir -p "$HIVE_MIND_HUB_DIR"
 # here would yield the new version, not the previous one. The CLI
 # passes the pre-stage VERSION through $HIVE_MIND_PREV_VERSION for
 # exactly this case; prefer it when set.
+PREV_HIVE_MIND_VERSION="0.1.0"
 if [ -n "${HIVE_MIND_PREV_VERSION:-}" ]; then
-    PREV_HIVE_MIND_VERSION="$HIVE_MIND_PREV_VERSION"
-else
-    PREV_HIVE_MIND_VERSION="0.1.0"
-    if [ -f "$HIVE_MIND_SRC/VERSION" ]; then
-        PREV_HIVE_MIND_VERSION="$(tr -d '[:space:]' < "$HIVE_MIND_SRC/VERSION" 2>/dev/null || echo "0.1.0")"
-    fi
+    # Normalize the env-var path the same way as the file path so an
+    # env value with a trailing newline (common from `printf` / heredocs)
+    # or stray spaces doesn't break adapter_migrate's version compares.
+    _prev_norm="$(printf '%s' "$HIVE_MIND_PREV_VERSION" | tr -d '[:space:]')"
+    [ -n "$_prev_norm" ] && PREV_HIVE_MIND_VERSION="$_prev_norm"
+    unset _prev_norm
+elif [ -f "$HIVE_MIND_SRC/VERSION" ]; then
+    PREV_HIVE_MIND_VERSION="$(tr -d '[:space:]' < "$HIVE_MIND_SRC/VERSION" 2>/dev/null || echo "0.1.0")"
 fi
 if [ "${HIVE_MIND_SKIP_CLONE:-0}" = "1" ] \
         && [ -f "$HIVE_MIND_SRC/setup.sh" ] \

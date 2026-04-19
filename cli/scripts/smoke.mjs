@@ -314,6 +314,25 @@ assert(okAttach.status === 1 && okAttach.stderr.includes("hub not initialized"),
   assert(second === null, `consumePrevVersionMarker deletes marker on first read (second call got=${second})`);
 }
 
+// 4i. setup.sh normalizes HIVE_MIND_PREV_VERSION (strips whitespace;
+// empty → 0.1.0 sentinel). Exercise the block directly via bash -c.
+{
+  const snippet = [
+    "set -eu",
+    'PREV_HIVE_MIND_VERSION="0.1.0"',
+    'if [ -n "${HIVE_MIND_PREV_VERSION:-}" ]; then',
+    "  _prev_norm=\"$(printf '%s' \"$HIVE_MIND_PREV_VERSION\" | tr -d '[:space:]')\"",
+    '  [ -n "$_prev_norm" ] && PREV_HIVE_MIND_VERSION="$_prev_norm"',
+    "fi",
+    'printf "%s" "$PREV_HIVE_MIND_VERSION"',
+  ].join("\n");
+  const bash = (env) => spawnSync("bash", ["-c", snippet], { encoding: "utf8", env: { ...process.env, ...env } });
+  assert(bash({ HIVE_MIND_PREV_VERSION: "  0.2.5  \n" }).stdout === "0.2.5", "trailing whitespace stripped");
+  assert(bash({ HIVE_MIND_PREV_VERSION: "0.3.0" }).stdout === "0.3.0", "already-clean value passes through");
+  assert(bash({ HIVE_MIND_PREV_VERSION: "   \n\t  " }).stdout === "0.1.0", "whitespace-only env var falls back to sentinel");
+  assert(bash({ HIVE_MIND_PREV_VERSION: "" }).stdout === "0.1.0", "empty env var falls back to sentinel");
+}
+
 // 5. npm pack stays under 2 MB (CLI spec cap).
 // --ignore-scripts so the prepack build doesn't mix its stdout into the
 // JSON response we're about to parse.
