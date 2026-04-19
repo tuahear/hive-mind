@@ -229,7 +229,7 @@ assert(okAttach.status === 1 && okAttach.stderr.includes("hub not initialized"),
 // version after the CLI overwrites the bundled VERSION file.
 {
   const { mkdirSync, writeFileSync, readFileSync, rmSync } = await import("node:fs");
-  const { capturePrevVersion } = await import(pathToFileURL(resolve(cliDir, "dist", "commands", "stage.js")).href);
+  const { capturePrevVersion, consumePrevVersionMarker } = await import(pathToFileURL(resolve(cliDir, "dist", "commands", "stage.js")).href);
 
   // Case A: existing VERSION file, no marker → read the file.
   const src1 = resolve(cliDir, ".smoke-stage-a");
@@ -257,6 +257,17 @@ assert(okAttach.status === 1 && okAttach.stderr.includes("hub not initialized"),
   rmSync(src3, { recursive: true, force: true });
   mkdirSync(src3, { recursive: true });
   assert(capturePrevVersion(src3) === "0.1.0", `missing VERSION falls back to 0.1.0 sentinel (got=${capturePrevVersion(src3)})`);
+
+  // Case D: consumePrevVersionMarker returns the value AND deletes the
+  // marker so a stale value can't contaminate a future attach.
+  const stateD = resolve(cliDir, ".smoke-stage-d-state");
+  rmSync(stateD, { recursive: true, force: true });
+  mkdirSync(stateD, { recursive: true });
+  writeFileSync(resolve(stateD, "prev-version"), "0.2.7\n");
+  const first = consumePrevVersionMarker(stateD);
+  assert(first === "0.2.7", `consumePrevVersionMarker reads value (got=${first})`);
+  const second = consumePrevVersionMarker(stateD);
+  assert(second === null, `consumePrevVersionMarker deletes marker on first read (second call got=${second})`);
 }
 
 // 5. npm pack stays under 2 MB (CLI spec cap).

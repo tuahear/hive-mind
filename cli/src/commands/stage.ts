@@ -38,6 +38,24 @@ export function capturePrevVersion(src: string, hubStateDir?: string): string {
   }
 }
 
+// One-shot reader for the restage-written prev-version marker. Consumes
+// the file (deletes after read) so a stale value can't contaminate a
+// future unrelated upgrade. Returns null when the marker is absent or
+// unreadable.
+export function consumePrevVersionMarker(hubStateDir: string): string | null {
+  const marker = resolve(hubStateDir, "prev-version");
+  if (!existsSync(marker)) return null;
+  let value: string | null = null;
+  try {
+    const raw = readFileSync(marker, "utf8").trim();
+    if (raw.length) value = raw;
+  } catch {
+    return null;
+  }
+  try { rmSync(marker, { force: true }); } catch {}
+  return value;
+}
+
 export function stageAssets(src: string, assets: string, hubStateDir?: string): StageResult {
   if (!existsSync(resolve(assets, "setup.sh"))) {
     console.error(`error: bundled assets missing at ${assets}. CLI build is broken.`);

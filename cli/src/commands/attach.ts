@@ -5,6 +5,7 @@ function isDir(p: string): boolean {
 import { resolve } from "node:path";
 import { hubDir, hubSrcDir } from "../paths.js";
 import { runBash } from "../run.js";
+import { consumePrevVersionMarker } from "./stage.js";
 import { validateAdapterName } from "./validate.js";
 
 function listAdapters(adaptersDir: string): string[] {
@@ -45,10 +46,17 @@ export function attachCmd(adapter: string): number {
     );
     return 1;
   }
+  const hub = hubDir();
   const env: NodeJS.ProcessEnv = {
     ADAPTER: adapter,
-    HIVE_MIND_HUB_DIR: hubDir(),
+    HIVE_MIND_HUB_DIR: hub,
   };
+  // If a prior `hivemind restage` persisted the pre-stage VERSION,
+  // forward it to setup.sh so adapter_migrate still sees the real
+  // previous version. Consume the marker on use so a stale value can't
+  // contaminate a future unrelated attach.
+  const prev = consumePrevVersionMarker(resolve(hub, ".hive-mind-state"));
+  if (prev) env.HIVE_MIND_PREV_VERSION = prev;
   // Only advertise CLI-staged state when the source tree is not a
   // normal git checkout with a real `.git` directory. This matches
   // setup.sh's `-d .git` gate: any non-directory `.git` state

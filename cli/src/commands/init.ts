@@ -1,8 +1,8 @@
 import { existsSync, readFileSync, rmSync } from "node:fs";
-import { stageAssets } from "./stage.js";
+import { consumePrevVersionMarker, stageAssets } from "./stage.js";
 import { createInterface } from "node:readline/promises";
 import { resolve } from "node:path";
-import { bundledAssetsDir, hubDir, hubSrcDir } from "../paths.js";
+import { bundledAssetsDir, hubDir, hubSrcDir, isHubInstalled } from "../paths.js";
 import { run, runBash, which } from "../run.js";
 import { validateAdapterName } from "./validate.js";
 
@@ -42,8 +42,10 @@ export async function initCmd(opts: InitOpts): Promise<number> {
 
   // Must probe the actual remote, not just `.git` presence: an init'd hub
   // without an origin still prompts inside setup.sh, which would deadlock
-  // a --yes run.
-  const hubHasOrigin = existsSync(resolve(hub, ".git"))
+  // a --yes run. Also require `.git` to BE a directory, matching setup.sh's
+  // origin-reuse gate (a worktree-style `.git` file would otherwise look
+  // like a normal install here).
+  const hubHasOrigin = isHubInstalled(hub)
     && run("git", ["-C", hub, "remote", "get-url", "origin"], { stdio: ["ignore", "pipe", "pipe"] }).status === 0;
   let memoryRepo = opts.memoryRepo || process.env.MEMORY_REPO || "";
   if (!memoryRepo && !opts.yes) {
@@ -91,12 +93,10 @@ export async function initCmd(opts: InitOpts): Promise<number> {
   const hubStateDir = resolve(hub, ".hive-mind-state");
   const staged = stageAssets(src, assets, hubStateDir);
   if (!staged.ok) return staged.code;
-  // Consume the restage-written marker (if any) once we've captured it
-  // so it doesn't linger into an unrelated future upgrade.
-  const marker = resolve(hubStateDir, "prev-version");
-  if (existsSync(marker)) {
-    try { rmSync(marker, { force: true }); } catch {}
-  }
+  // Consume the restage-written marker once stageAssets has captured it,
+  // so it doesn't linger into an unrelated future upgrade. stageAssets
+  // already read it via capturePrevVersion; this just removes it.
+  consumePrevVersionMarker(hubStateDir);
 
   if (!which("bash")) {
     console.error(
