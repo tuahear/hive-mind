@@ -1,7 +1,7 @@
 import { existsSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 import { hubDir, hubSrcDir, readAttachedAdapters, coreVersion, isHubInstalled } from "../paths.js";
-import { run, runBash } from "../run.js";
+import { run, runBash, which } from "../run.js";
 
 export function statusCmd(json: boolean): number {
   const hub = hubDir();
@@ -94,6 +94,13 @@ export function pullCmd(): number {
   if (!isHubInstalled(hub)) {
     console.error("error: hub not initialized. Run `hivemind init` first.");
     return 1;
+  }
+  // Preflight git, matching the bash-preflight pattern init/attach/detach
+  // use. stdio:inherit below would otherwise swallow run()'s ENOENT
+  // guidance and leave the user with a status 127 and no message.
+  if (!which("git")) {
+    console.error("error: git not found on PATH. Install git and rerun.");
+    return 127;
   }
   const res = run("git", ["-C", hub, "pull", "--rebase", "--autostash"], { stdio: "inherit" });
   return res.status;

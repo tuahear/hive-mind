@@ -53,9 +53,12 @@ export async function initCmd(opts: InitOpts): Promise<number> {
       // Reuse existing origin if the hub is already initialized.
     } else {
       console.log(
-        "\nNeed the SSH URL of your PRIVATE memory repo. Create an empty private repo\n" +
-          "on GitHub (no README, no .gitignore, no license), then paste its SSH URL.\n" +
-          "Example: git@github.com:you/claude-memory.git\n"
+        "\nNeed the git URL (or local path) of your memory repo. Use any host +\n" +
+          "format your git supports — SSH, HTTPS, or a local bare repo.\n" +
+          "Examples:\n" +
+          "  git@github.com:you/claude-memory.git       (SSH; any host)\n" +
+          "  https://git.example.com/you/claude-memory  (HTTPS)\n" +
+          "  /path/to/claude-memory.git                 (local bare repo)\n"
       );
       memoryRepo = await prompt("MEMORY_REPO: ");
     }
