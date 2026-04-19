@@ -982,8 +982,18 @@ _hub_apply_project_rules() {
 # in each skill folder pass through unchanged — skills are folders
 # specifically to allow helper scripts, configs, and assets alongside
 # the content file.
+#
+# tool_dir is the adapter's root (e.g. $HOME/.claude) and is used only
+# to namespace per-file fan-out snapshots. The snapshot pairs each
+# tool-side skill file with its post-fan-out byte image; harvest then
+# skips any tool file that's byte-identical to its snapshot. Without
+# this guard, a two-adapter install silently "last writer wins": the
+# second adapter's harvest copies its (unchanged since last fan-out)
+# SKILL.md over the hub content.md that the first adapter just
+# updated from a real user edit. Parallels the ADAPTER_HUB_MAP
+# harvest-stomp guard in hub_harvest's sectioned + plain-file paths.
 _hub_sync_skills() {
-  local direction="$1" src_root="$2" dst_root="$3"
+  local direction="$1" src_root="$2" dst_root="$3" tool_dir="${4:-}"
   [ -d "$src_root" ] || return 0
   mkdir -p "$dst_root" 2>/dev/null
   local skill_src skill_name skill_dst
@@ -1003,8 +1013,37 @@ _hub_sync_skills() {
       elif [ "$direction" = "fanout" ] && [ "$rel" = "content.md" ]; then
         dst_name="SKILL.md"
       fi
+      # Per-file snapshot key — keyed on the tool side of the pair.
+      # On harvest, $f is the tool file and rel is the tool-rel path.
+      # On fan-out, $skill_dst/$dst_name is the tool file and dst_name
+      # is the tool-rel path. Keep nested paths (rel / dst_name) so
+      # sub-sub-files with colliding basenames don't share a snapshot.
+      local tool_file_for_snap tool_rel_for_snap snap=""
+      if [ -n "$tool_dir" ]; then
+        if [ "$direction" = "harvest" ]; then
+          tool_file_for_snap="$f"
+          tool_rel_for_snap="$rel"
+        else
+          tool_file_for_snap="$skill_dst/$dst_name"
+          tool_rel_for_snap="$dst_name"
+        fi
+        snap="$(_hub_snapshot_path "$tool_dir" "skills/$skill_name/$tool_rel_for_snap")"
+      fi
+      # Harvest-stomp guard: if the tool file is byte-identical to its
+      # last fan-out snapshot, the user didn't edit this adapter's copy
+      # since the previous sync — skip the cp so we don't stomp a real
+      # edit another adapter may have just contributed to the hub.
+      if [ "$direction" = "harvest" ] && [ -n "$snap" ] \
+         && _hub_tool_file_unchanged "$f" "$snap"; then
+        continue
+      fi
       mkdir -p "$(dirname "$skill_dst/$dst_name")" 2>/dev/null
       cp "$f" "$skill_dst/$dst_name"
+      # Refresh the snapshot so the next harvest can tell real edits
+      # apart from unchanged files. On harvest, snapshot the tool file
+      # that just contributed. On fan-out, snapshot the tool file we
+      # just wrote so the next harvest skips it.
+      [ -n "$snap" ] && _hub_snapshot_write "$tool_file_for_snap" "$snap"
     done < <(find "$skill_src" -type f -print0 2>/dev/null)
     # Prune dst files not in src — fan-out only.
     if [ "$direction" = "fanout" ]; then
@@ -1105,7 +1144,7 @@ hub_harvest() {
   # instead of via an ADAPTER_HUB_MAP dir-mirror entry because the
   # generic _hub_sync_dir has no rename support.
   local tool_skills="${ADAPTER_SKILL_ROOT:-$tool_dir/skills}"
-  _hub_sync_skills harvest "$tool_skills" "$hub_dir/skills"
+  _hub_sync_skills harvest "$tool_skills" "$hub_dir/skills" "$tool_dir"
 
   # Per-project content. Claude uses projects/<encoded-cwd>/; the sidecar
   # at <variant>/memory/.hive-mind exposes project-id. Skip variants that
@@ -1202,7 +1241,7 @@ hub_fan_out() {
 
   # Skills: content-file rename (content.md → SKILL.md on fan-out).
   local tool_skills="${ADAPTER_SKILL_ROOT:-$tool_dir/skills}"
-  _hub_sync_skills fanout "$hub_dir/skills" "$tool_skills"
+  _hub_sync_skills fanout "$hub_dir/skills" "$tool_skills" "$tool_dir"
 
   # Per-project: walk the tool's variants. Each variant's sidecar
   # (at variant root or legacy memory/.hive-mind) maps it to a hub
