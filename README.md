@@ -60,7 +60,7 @@ ADAPTER=codex bash ~/.hive-mind/hive-mind/setup.sh   # same memory, second tool
 - HTTPS: `https://<host>/you/repo.git`
 - Local: `/path/to/bare.git` or `file:///path/to/bare.git`
 
-Works on macOS, Linux, and Windows (Git Bash). You need: `git`, a Go toolchain (≥1.20 — the installer builds the native `hivemind-hook` launcher from source), and SSH access (or HTTPS credentials) for your memory-repo host. The installer itself clones hive-mind from GitHub over SSH once, so GitHub SSH access is required for this step only — not for ongoing sync.
+Works on macOS, Linux, and Windows (Git Bash). You need: `git`, a Go toolchain (≥1.20 — the installer builds the native `hivemind-hook` launcher from source), and SSH access (or HTTPS credentials) for your memory-repo host. The **legacy `curl | bash` installer above** also clones hive-mind from GitHub over SSH once, so that path needs GitHub SSH access for this step only — not for ongoing sync, and not at all when you use the CLI path (which ships the hive-mind source inside the npm tarball).
 
 ### 3. Reload Claude Code
 
