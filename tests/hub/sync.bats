@@ -70,7 +70,12 @@ teardown() {
 }
 
 run_sync() {
-  HIVE_MIND_HUB_DIR="$HUB" bash "$HUB_SYNC"
+  # Disable the fetch throttle so tests that simulate rapid back-to-
+  # back sync cycles (format gate, remote-ahead flows) actually fetch
+  # remote refs on every call instead of reusing a ≤30s-old snapshot.
+  HIVE_MIND_HUB_DIR="$HUB" \
+  HIVE_MIND_MIN_FETCH_INTERVAL_SEC=0 \
+    bash "$HUB_SYNC"
 }
 
 # === basic flow ============================================================

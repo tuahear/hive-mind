@@ -234,6 +234,11 @@ while IFS= read -r key; do
       if [ "$modified_count" -eq 1 ]; then
         cp "$(printf '%s' "$modified_srcs" | awk 'NF' | head -n1)" "$merged"
       else
+        # Git Bash / MSYS can't stat /dev/null (mapped to NUL), so
+        # `git merge-file --union -p A /dev/null B` exits 255 silently
+        # and leaves the merge unpopulated. Use a real empty tempfile
+        # as the union base instead — portable across every shell.
+        empty_base="$(mktemp)"
         first=1
         while IFS= read -r src; do
           [ -z "$src" ] && continue
@@ -244,12 +249,13 @@ while IFS= read -r key; do
           fi
           cmp -s "$merged" "$src" && continue
           tmp="$(mktemp)"
-          if git merge-file --union -p "$merged" /dev/null "$src" > "$tmp" 2>/dev/null && [ -s "$tmp" ]; then
+          if git merge-file --union -p "$merged" "$empty_base" "$src" > "$tmp" 2>/dev/null && [ -s "$tmp" ]; then
             mv "$tmp" "$merged"
           else
             rm -f "$tmp"
           fi
         done <<<"$existing"
+        rm -f "$empty_base"
       fi
     else
       cp "$(printf '%s' "$existing" | awk 'NF' | head -n1)" "$merged"

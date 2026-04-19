@@ -37,11 +37,16 @@ has_dupes() {
 }
 
 flagged=()
+# Escape the tilde in the replacement — bash 5.2+ (and some earlier
+# builds) tilde-expand an unquoted `~` in `${var/pattern/replacement}`
+# back to $HOME, which silently no-ops this whole abbreviation pass
+# and leaves every flagged path as its full absolute form. Same
+# escape applied to the per-project file below.
 [ -f "$ADAPTER_GLOBAL_MEMORY" ] && has_dupes "$ADAPTER_GLOBAL_MEMORY" \
-  && flagged+=("${ADAPTER_GLOBAL_MEMORY/#$HOME/~}")
+  && flagged+=("${ADAPTER_GLOBAL_MEMORY/#$HOME/\~}")
 
 while IFS= read -r -d '' f; do
-  has_dupes "$f" && flagged+=("${f#$HOME/}")
+  has_dupes "$f" && flagged+=("${f/#$HOME/\~}")
 done < <(find "$ADAPTER_DIR/projects" -type f -name '*.md' -print0 2>/dev/null)
 
 if [ ${#flagged[@]} -gt 0 ]; then

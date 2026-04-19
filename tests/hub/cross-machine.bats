@@ -50,10 +50,15 @@ run_sync_on() {
   machine_home="$(dirname "$machine_hub")"
   # Redirect FAKE_ADAPTER_HOME so the fake adapter's ADAPTER_DIR points
   # at THIS machine's tool dir for the duration of the sync.
+  # Disable the git-fetch throttle so each run_sync_on actually talks
+  # to the remote — tests simulate rapid back-to-back cross-machine
+  # syncs, which the production 30s throttle would collapse into a
+  # single network round trip.
   FAKE_ADAPTER_HOME="$machine_home" \
   HIVE_MIND_HUB_DIR="$machine_hub" \
   HIVE_MIND_ADAPTERS_DIR="$HIVE_MIND_ADAPTERS_DIR" \
   HIVE_MIND_FORCE_PUSH=1 \
+  HIVE_MIND_MIN_FETCH_INTERVAL_SEC=0 \
     bash "$HUB_SYNC"
 }
 
