@@ -215,7 +215,36 @@ fi
 # `git log @{u}..` compares against a stale origin/<branch> and the
 # sync early-exits, leaving remote work invisible until the local tree
 # accidentally dirties.
-git fetch --quiet 2>>"$LOG" || true
+#
+# Throttle: on Windows/MSYS a single `git fetch` costs ~5s of network
+# wait. Back-to-back syncs (Stop hook + SessionStart hook + a manual
+# hivemind invocation) would each pay that cost even when nothing
+# could plausibly have changed upstream in the last few seconds.
+# HIVE_MIND_MIN_FETCH_INTERVAL_SEC caps the rate; default 30s is short
+# enough that cross-machine propagation still feels instant within the
+# same work session. Set to 0 to force a fetch every sync.
+: "${HIVE_MIND_MIN_FETCH_INTERVAL_SEC:=30}"
+case "$HIVE_MIND_MIN_FETCH_INTERVAL_SEC" in
+  ''|*[!0-9]*) HIVE_MIND_MIN_FETCH_INTERVAL_SEC=30 ;;
+esac
+LAST_FETCH_FILE="${HIVE_MIND_STATE_DIR}/last-fetch"
+_should_fetch=1
+if [ -f "$LAST_FETCH_FILE" ] && [ "$HIVE_MIND_MIN_FETCH_INTERVAL_SEC" -gt 0 ]; then
+  _last_fetch="$(cat "$LAST_FETCH_FILE" 2>/dev/null)"
+  case "$_last_fetch" in
+    ''|*[!0-9]*) ;;
+    *)
+      _now="$(date +%s)"
+      if [ "$((_now - _last_fetch))" -lt "$HIVE_MIND_MIN_FETCH_INTERVAL_SEC" ]; then
+        _should_fetch=0
+      fi
+      ;;
+  esac
+fi
+if [ "$_should_fetch" -eq 1 ]; then
+  git fetch --quiet 2>>"$LOG" || true
+  date +%s > "$LAST_FETCH_FILE" 2>>"$LOG" || true
+fi
 
 _early_unpushed=0
 _remote_ahead=0

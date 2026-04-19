@@ -1011,94 +1011,98 @@ _hub_sync_skills() {
   local direction="$1" src_root="$2" dst_root="$3" tool_dir="${4:-}"
   [ -d "$src_root" ] || return 0
   mkdir -p "$dst_root" 2>/dev/null
+
+  # Pre-create every dst skill dir so the per-file loop below never has
+  # to check or mkdir inside a hot path. One glob, N mkdirs, done.
   local skill_src skill_name skill_dst
   for skill_src in "$src_root"/*/; do
     [ -d "$skill_src" ] || continue
     skill_name="${skill_src%/}"
     skill_name="${skill_name##*/}"
+    mkdir -p "$dst_root/$skill_name" 2>/dev/null
+  done
+
+  # Single recursive find across the entire skills tree. Prior code
+  # spawned one `find` per skill — on Windows/MSYS that's ~200-300ms
+  # each, and a dozen skills × 2 passes × 2 adapters dominated sync
+  # wall time. Replacing with one `find -mindepth 2 -type f` and
+  # deriving skill_name from the first path segment eliminates those
+  # per-skill spawns entirely.
+  local rel first_slash dst_name tool_file_for_snap tool_rel_for_snap snap
+  while IFS= read -r -d '' f; do
+    rel="${f#"$src_root/"}"
+    first_slash="${rel%%/*}"
+    skill_name="$first_slash"
+    # Strip the leading "<skill>/" so rel is the in-skill relative path.
+    rel="${rel#"$skill_name/"}"
     skill_dst="$dst_root/$skill_name"
-    mkdir -p "$skill_dst" 2>/dev/null
-    # Recursive copy: walk all files in the skill tree.
-    while IFS= read -r -d '' f; do
-      local rel="${f#"$skill_src"}"
-      local dst_name="$rel"
-      # Rename only the root content file.
-      if [ "$direction" = "harvest" ] && [ "$rel" = "SKILL.md" ]; then
-        dst_name="content.md"
-      elif [ "$direction" = "fanout" ] && [ "$rel" = "content.md" ]; then
-        dst_name="SKILL.md"
+    dst_name="$rel"
+    # Rename only the root content file.
+    if [ "$direction" = "harvest" ] && [ "$rel" = "SKILL.md" ]; then
+      dst_name="content.md"
+    elif [ "$direction" = "fanout" ] && [ "$rel" = "content.md" ]; then
+      dst_name="SKILL.md"
+    fi
+    # Per-file snapshot key — keyed on the tool side of the pair. On
+    # harvest, $f is the tool file and rel is the tool-rel path. On
+    # fan-out, $skill_dst/$dst_name is the tool file and dst_name is
+    # the tool-rel path. Keep nested paths so sub-sub-files with
+    # colliding basenames don't share a snapshot.
+    snap=""
+    if [ -n "$tool_dir" ]; then
+      if [ "$direction" = "harvest" ]; then
+        tool_file_for_snap="$f"
+        tool_rel_for_snap="$rel"
+      else
+        tool_file_for_snap="$skill_dst/$dst_name"
+        tool_rel_for_snap="$dst_name"
       fi
-      # Per-file snapshot key — keyed on the tool side of the pair.
-      # On harvest, $f is the tool file and rel is the tool-rel path.
-      # On fan-out, $skill_dst/$dst_name is the tool file and dst_name
-      # is the tool-rel path. Keep nested paths (rel / dst_name) so
-      # sub-sub-files with colliding basenames don't share a snapshot.
-      local tool_file_for_snap tool_rel_for_snap snap=""
-      if [ -n "$tool_dir" ]; then
-        if [ "$direction" = "harvest" ]; then
-          tool_file_for_snap="$f"
-          tool_rel_for_snap="$rel"
-        else
-          tool_file_for_snap="$skill_dst/$dst_name"
-          tool_rel_for_snap="$dst_name"
-        fi
-        snap="$(_hub_snapshot_path "$tool_dir" "skills/$skill_name/$tool_rel_for_snap")"
-      fi
-      # Harvest-stomp guard: if the tool file is byte-identical to its
-      # last fan-out snapshot, the user didn't edit this adapter's copy
-      # since the previous sync — skip the cp so we don't stomp a real
-      # edit another adapter may have just contributed to the hub.
-      if [ "$direction" = "harvest" ] && [ -n "$snap" ] \
-         && _hub_tool_file_unchanged "$f" "$snap"; then
+      snap="$(_hub_snapshot_path "$tool_dir" "skills/$skill_name/$tool_rel_for_snap")"
+    fi
+    # Harvest-stomp guard: if the tool file is byte-identical to its
+    # last fan-out snapshot, the user didn't edit this adapter's copy
+    # since the previous sync — skip the cp so we don't stomp a real
+    # edit another adapter may have just contributed to the hub.
+    if [ "$direction" = "harvest" ] && [ -n "$snap" ] \
+       && _hub_tool_file_unchanged "$f" "$snap"; then
+      continue
+    fi
+    # Fan-out guards (see doc block above).
+    if [ "$direction" = "fanout" ] && [ -f "$skill_dst/$dst_name" ]; then
+      if cmp -s "$f" "$skill_dst/$dst_name"; then
+        [ -n "$snap" ] && _hub_snapshot_write "$tool_file_for_snap" "$snap"
         continue
       fi
-      # Fan-out guards. Runs after commit + push, with the hub as the
-      # source and the tool as the destination.
-      #
-      # (1) No-op skip: tool already byte-identical to hub. Avoids a
-      #     pointless cp that churns mtime every cycle (and in a loop
-      #     of N skills produces N needless filesystem writes).
-      # (2) Mid-sync edit guard: if the tool file has diverged from its
-      #     snapshot (the byte image fan-out wrote last cycle), the user
-      #     edited it AFTER harvest ran in this cycle. Skipping the cp
-      #     preserves the live edit — the next sync's harvest will see
-      #     tool != snapshot and propagate the edit to the hub.
-      if [ "$direction" = "fanout" ] && [ -f "$skill_dst/$dst_name" ]; then
-        if cmp -s "$f" "$skill_dst/$dst_name"; then
-          # Keep the snapshot aligned so the next harvest's unchanged-
-          # guard can still recognize the tool file.
-          [ -n "$snap" ] && _hub_snapshot_write "$tool_file_for_snap" "$snap"
-          continue
-        fi
-        if [ -n "$snap" ] && [ -f "$snap" ] \
-           && ! cmp -s "$skill_dst/$dst_name" "$snap"; then
-          continue
-        fi
+      if [ -n "$snap" ] && [ -f "$snap" ] \
+         && ! cmp -s "$skill_dst/$dst_name" "$snap"; then
+        continue
       fi
-      mkdir -p "$(dirname "$skill_dst/$dst_name")" 2>/dev/null
-      cp "$f" "$skill_dst/$dst_name"
-      # Refresh the snapshot so the next harvest can tell real edits
-      # apart from unchanged files. On harvest, snapshot the tool file
-      # that just contributed. On fan-out, snapshot the tool file we
-      # just wrote so the next harvest skips it.
-      [ -n "$snap" ] && _hub_snapshot_write "$tool_file_for_snap" "$snap"
-    done < <(find "$skill_src" -type f -print0 2>/dev/null)
-    # Prune dst files not in src — fan-out only.
-    if [ "$direction" = "fanout" ]; then
-      while IFS= read -r -d '' f; do
-        local rel="${f#"$skill_dst/"}"
-        local src_name="$rel"
-        if [ "$rel" = "SKILL.md" ]; then
-          src_name="content.md"
-        fi
-        [ -f "$skill_src/$src_name" ] || rm -f "$f"
-      done < <(find "$skill_dst" -type f -print0 2>/dev/null)
-      # Remove empty subdirs left by pruning.
-      find "$skill_dst" -mindepth 1 -type d -empty -delete 2>/dev/null || true
     fi
-  done
-  # Remove dst skill dirs not in src — fan-out only.
+    # Nested subdirs inside a skill need parent mkdirs on demand; the
+    # top-level skill dir was pre-created above.
+    case "$rel" in */*) mkdir -p "$(dirname "$skill_dst/$dst_name")" 2>/dev/null ;; esac
+    cp "$f" "$skill_dst/$dst_name"
+    [ -n "$snap" ] && _hub_snapshot_write "$tool_file_for_snap" "$snap"
+  done < <(find "$src_root" -mindepth 2 -type f -print0 2>/dev/null)
+
+  # Prune dst files/dirs not in src — fan-out only. Again: one find
+  # across the whole dst tree, not one per skill.
   if [ "$direction" = "fanout" ]; then
+    local src_name
+    while IFS= read -r -d '' f; do
+      rel="${f#"$dst_root/"}"
+      first_slash="${rel%%/*}"
+      skill_name="$first_slash"
+      rel="${rel#"$skill_name/"}"
+      src_name="$rel"
+      if [ "$rel" = "SKILL.md" ]; then
+        src_name="content.md"
+      fi
+      [ -f "$src_root/$skill_name/$src_name" ] || rm -f "$f"
+    done < <(find "$dst_root" -mindepth 2 -type f -print0 2>/dev/null)
+    # Remove empty subdirs across every skill in one pass.
+    find "$dst_root" -mindepth 2 -type d -empty -delete 2>/dev/null || true
+    # Remove dst skill dirs not in src.
     for skill_dst in "$dst_root"/*/; do
       [ -d "$skill_dst" ] || continue
       skill_name="${skill_dst%/}"
