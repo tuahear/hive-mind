@@ -23,6 +23,13 @@ adapter_list_memory_files() { :; }  # flat model — unused
 ADAPTER_GITIGNORE_TEMPLATE="${ADAPTER_ROOT}/gitignore"
 ADAPTER_GITATTRIBUTES_TEMPLATE="${ADAPTER_ROOT}/gitattributes"
 ADAPTER_SECRET_FILES=""
+# Files setup.sh backs up on first attach. Scope deliberately narrow:
+# Claude Code has `shell-snapshots/`, `file-history/`, `ide/`, and lock
+# files open at runtime; `cp -a` of the whole dir triggers "Device or
+# resource busy" on those live files. Only list paths the adapter
+# actually modifies — setup.sh falls back to a full-dir copy if this
+# var is empty.
+ADAPTER_BACKUP_PATHS="settings.json CLAUDE.md skills"
 # --- C. Lifecycle touchpoints ----------------------------------------------
 ADAPTER_HAS_HOOK_SYSTEM=true
 ADAPTER_EVENT_SESSION_START="SessionStart"

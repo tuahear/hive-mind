@@ -20,16 +20,15 @@ async function main(): Promise<number> {
 
   program
     .command("init")
-    .description("install the hub and attach an initial adapter (replaces `bash setup.sh`)")
-    .option("-a, --adapter <name>", "adapter to attach (claude-code, codex, ...)", "claude-code")
-    .option("-m, --memory-repo <url>", "SSH URL of your private memory repo")
+    .description("set up the memory hub (hub-only — attach adapters afterwards with `hivemind attach`)")
+    .option("-m, --memory-repo <url>", "SSH/HTTPS URL or local path of your private memory repo")
     .option("-y, --yes", "non-interactive (requires --memory-repo or existing origin)")
     .option("--force-stage", "replace an existing legacy git-cloned source with the CLI-bundled assets")
     .action(async (opts) => process.exit(await initCmd(opts)));
 
   program
     .command("attach <adapter>")
-    .description("attach an additional adapter to the existing hub")
+    .description("wire an AI-tool adapter (claude-code, codex, ...) to the hub")
     .action((adapter: string) => process.exit(attachCmd(adapter)));
 
   program

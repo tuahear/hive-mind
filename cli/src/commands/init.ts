@@ -5,10 +5,8 @@ import { resolve } from "node:path";
 import { bundledAssetsDir, hubDir, hubSrcDir, isHubInstalled, readAttachedAdapters } from "../paths.js";
 import { detectUnattachedProviders, printAttachSuggestions } from "./detect.js";
 import { run, runBash, which } from "../run.js";
-import { validateAdapterName } from "./validate.js";
 
 type InitOpts = {
-  adapter?: string;
   memoryRepo?: string;
   yes?: boolean;
   forceStage?: boolean;
@@ -24,12 +22,10 @@ async function prompt(question: string): Promise<string> {
 }
 
 export async function initCmd(opts: InitOpts): Promise<number> {
-  const adapter = opts.adapter || "claude-code";
-  const nameErr = validateAdapterName(adapter);
-  if (nameErr) {
-    console.error(`error: ${nameErr}`);
-    return 2;
-  }
+  // init is hub-only now: no default adapter, no automatic modification
+  // of any tool dir. Users explicitly attach adapters afterward via
+  // `hivemind attach <name>`. That makes every write to ~/.claude/
+  // ~/.codex/ ~/.agents/ the consequence of an explicit user command.
   const hub = hubDir();
   const src = hubSrcDir();
   const assets = bundledAssetsDir();
@@ -111,22 +107,28 @@ export async function initCmd(opts: InitOpts): Promise<number> {
 
   const setupSh = resolve(src, "setup.sh");
   const env: NodeJS.ProcessEnv = {
-    ADAPTER: adapter,
     HIVE_MIND_HUB_DIR: hub,
     // Tell setup.sh not to git-clone over the top of what we just staged.
     HIVE_MIND_SKIP_CLONE: "1",
-    // Hand setup.sh the pre-staged VERSION so adapter_migrate sees the
-    // real previous version, not the one we just wrote.
+    // Hub-only mode: skip the adapter-attach and bundled-skills phases.
+    // User attaches adapters explicitly via `hivemind attach <name>`.
+    HIVE_MIND_HUB_ONLY: "1",
+    // Hand setup.sh the pre-staged VERSION so adapter_migrate (when run
+    // on a later `hivemind attach`) sees the real previous version, not
+    // the one we just wrote during staging.
     HIVE_MIND_PREV_VERSION: staged.prevVersion,
   };
   if (memoryRepo) env.MEMORY_REPO = memoryRepo;
 
-  console.log(`[hivemind] init: adapter=${adapter} hub=${hub}`);
+  console.log(`[hivemind] init: hub=${hub} (no adapter attached — use \`hivemind attach <name>\`)`);
   const status = runBash(setupSh, [], env);
   if (status === 0) {
-    // Informational-only: tell the user which other providers they
-    // could attach. No side effects — user still runs `hivemind attach
-    // <name>` when they actually want a second adapter wired up.
+    console.log("");
+    console.log(`Hub ready at ${hub}. No adapters attached yet — the hub is idle`);
+    console.log(`until you wire up at least one tool.`);
+    // Informational detection: which adapters could the user attach?
+    // After a hub-only init, readAttachedAdapters() is empty, so every
+    // detected provider will surface in the suggestions.
     printAttachSuggestions(detectUnattachedProviders(readAttachedAdapters()));
   }
   return status;

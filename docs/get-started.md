@@ -20,7 +20,7 @@ MEMORY_REPO=<your-memory-repo-url> \
 
 That creates `~/.hive-mind/`, clones your memory repo into it, and attaches Claude Code to the hub.
 
-**Or (prototype, not yet on npm) — `hivemind` CLI:** ships the bash core inside the npm tarball so install doesn't require cloning the hive-mind repo. Today, use the local `npm pack` install flow in [`cli/README.md`](https://github.com/tuahear/hive-mind/tree/main/cli). Once the package is published to npm, the flow will be `npm install -g hive-mind && hivemind init`. See issue [#13](https://github.com/tuahear/hive-mind/issues/13).
+**Or (prototype) — `hivemind` CLI:** ships the bash core inside the npm tarball so install doesn't require cloning the hive-mind repo. Today the prereleases live on GitHub Releases — download the tarball, `npm install -g` it, then `hivemind init` + explicit `hivemind attach <name>` per tool you want wired up. See [`cli/README.md`](https://github.com/tuahear/hive-mind/tree/main/cli) and issue [#13](https://github.com/tuahear/hive-mind/issues/13).
 
 `MEMORY_REPO` accepts any URL `git` understands:
 
@@ -32,12 +32,15 @@ Works on macOS, Linux, and Windows (Git Bash). You need: `git`, a Go toolchain (
 
 ### Attaching a second tool
 
-Once another adapter ships, attach it to the same hub with a different `ADAPTER=` value:
+Once another adapter ships, attach it to the same hub with a different `ADAPTER=` value (legacy installer), or one `hivemind attach` call per tool (CLI prototype):
 
 ```bash
-ADAPTER=codex bash ~/.hive-mind/hive-mind/setup.sh   # same memory, second tool
-# or, once the CLI prototype ships on npm: `hivemind attach codex`
+ADAPTER=codex bash ~/.hive-mind/hive-mind/setup.sh   # legacy flow
+# CLI prototype flow:
+hivemind attach codex                                # explicit consent per adapter
 ```
+
+The CLI deliberately does not auto-attach adapters — `hivemind init` sets up the hub only, and each `hivemind attach <name>` explicitly modifies that tool's dir (hooks, skills, settings). This avoids surprise modifications to tools hive-mind doesn't own.
 
 This does not touch the first adapter's install. Both tools then harvest and fan-out through the same `~/.hive-mind/` — memory edits in one tool appear in the other on the next sync cycle.
 

@@ -20,6 +20,12 @@ adapter_list_memory_files() { :; }
 ADAPTER_GITIGNORE_TEMPLATE="${ADAPTER_ROOT}/gitignore"
 ADAPTER_GITATTRIBUTES_TEMPLATE="${ADAPTER_ROOT}/gitattributes"
 ADAPTER_SECRET_FILES="auth.json"
+# Files setup.sh backs up on first attach. Scope narrow: ~/.codex also
+# holds `tmp/`, `sessions/`, SQLite WAL files, and runtime lock files
+# that the live Codex process has open. `cp -a` of the whole dir fails
+# with "Device or resource busy" on those. Only list paths the adapter
+# actually writes.
+ADAPTER_BACKUP_PATHS="hooks.json config.toml AGENTS.md AGENTS.override.md"
 
 # --- C. Lifecycle touchpoints ----------------------------------------------
 # ADAPTER_EVENT_POST_EDIT is intentionally omitted: Codex's current hook

@@ -51,6 +51,11 @@ export function attachCmd(adapter: string): number {
   const env: NodeJS.ProcessEnv = {
     ADAPTER: adapter,
     HIVE_MIND_HUB_DIR: hub,
+    // Tell setup.sh this is an attach-only invocation: skip the source-
+    // staging, hub-seeding, and memory-repo-clone phases (init already
+    // did those). setup.sh's own preflight then verifies the hub really
+    // is installed and fails fast with "run init first" otherwise.
+    HIVE_MIND_ATTACH_MODE: "1",
   };
   // If a prior `hivemind restage` persisted the pre-stage VERSION,
   // forward it to setup.sh so adapter_migrate still sees the real

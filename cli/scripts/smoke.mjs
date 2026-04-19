@@ -69,7 +69,7 @@ assert(doc.stdout.includes('"checks"'), `doctor --json emits JSON (stderr='${doc
 // 4b. `hivemind init --yes` without a memory repo + no existing hub fails
 // fast rather than hanging on setup.sh's interactive read.
 const smokeHub = resolve(cliDir, ".smoke-hub-failfast");
-const failfast = node(["dist/cli.js", "init", "--yes", "--adapter", "claude-code"], {
+const failfast = node(["dist/cli.js", "init", "--yes"], {
   env: { ...process.env, HIVE_MIND_HUB_DIR: smokeHub, MEMORY_REPO: "" },
 });
 assert(failfast.status !== 0, `init --yes without memory-repo exits non-zero (got status=${failfast.status})`);
@@ -87,11 +87,18 @@ assert(
   rmSync(orphanHub, { recursive: true, force: true });
   mkdirSync(orphanHub, { recursive: true });
   spawnSync("git", ["init", "-q"], { cwd: orphanHub, stdio: "ignore" });
-  const r = node(["dist/cli.js", "init", "--yes", "--adapter", "claude-code"], {
+  const r = node(["dist/cli.js", "init", "--yes"], {
     env: { ...process.env, HIVE_MIND_HUB_DIR: orphanHub, MEMORY_REPO: "" },
   });
   assert(r.status !== 0 && (r.stderr + r.stdout).includes("--memory-repo"),
     `init --yes fails fast when .git exists but origin is unset (status=${r.status}, stderr='${r.stderr}')`);
+}
+
+// 4b3. `hivemind init` no longer accepts --adapter (hub-only semantics).
+{
+  const r = node(["dist/cli.js", "init", "--adapter", "claude-code"]);
+  assert(r.status !== 0 && (r.stderr + r.stdout).includes("unknown option"),
+    `init rejects --adapter flag (hub-only semantics): status=${r.status}, stderr='${r.stderr}'`);
 }
 
 // 4c. `status` on a freshly-init-but-never-pushed-looking git repo reports

@@ -257,8 +257,37 @@ fi
 [ -n "$MEMORY_REPO" ] || die "MEMORY_REPO is required"
 log "memory repo: $(sanitize_remote_url "$MEMORY_REPO")"
 
+# ---------- step-labelling helper ----------
+# setup.sh now serves three flows with different phase counts:
+#   default / curl|bash (legacy, one-shot install + attach): 6 phases
+#   HIVE_MIND_HUB_ONLY=1 (CLI `hivemind init`):              4 phases
+#   HIVE_MIND_ATTACH_MODE=1 (CLI `hivemind attach <name>`):  3 phases
+# A shared `step()` helper renumbers on the fly so log lines stay
+# honest regardless of which flow is active.
+_STEP_INDEX=0
+if   [ "${HIVE_MIND_HUB_ONLY:-0}" = "1" ]; then _STEP_TOTAL=4
+elif [ "${HIVE_MIND_ATTACH_MODE:-0}" = "1" ]; then _STEP_TOTAL=3
+else _STEP_TOTAL=6
+fi
+step() {
+    _STEP_INDEX=$((_STEP_INDEX + 1))
+    log "[$_STEP_INDEX/$_STEP_TOTAL] $*"
+}
+
+# attach-mode preflight: the hub must already exist — init is a
+# prerequisite. Fail fast with actionable guidance instead of silently
+# re-seeding an empty hub and producing confusing half-state.
+if [ "${HIVE_MIND_ATTACH_MODE:-0}" = "1" ]; then
+    [ -d "$HIVE_MIND_HUB_DIR/.git" ] \
+        || die "hub not initialized at $HIVE_MIND_HUB_DIR. Run \`hivemind init --memory-repo <url>\` first."
+    [ -f "$HIVE_MIND_SRC/setup.sh" ] \
+        || die "hub source missing at $HIVE_MIND_SRC. Reinstall the CLI or re-run \`hivemind restage\`."
+fi
+
 # ---------- install/refresh hive-mind source ----------
-log "[1/6] installing hive-mind source at $HIVE_MIND_SRC"
+# Skip in attach-mode: init staged the source, nothing to do here.
+if [ "${HIVE_MIND_ATTACH_MODE:-0}" != "1" ]; then
+step "staging hive-mind source at $HIVE_MIND_SRC"
 mkdir -p "$HIVE_MIND_HUB_DIR"
 # Capture the previously-installed hive-mind version BEFORE `git pull`
 # rewrites $HIVE_MIND_SRC/VERSION to the latest, so adapter_migrate
@@ -285,12 +314,10 @@ fi
 if [ "${HIVE_MIND_SKIP_CLONE:-0}" = "1" ] \
         && [ -f "$HIVE_MIND_SRC/setup.sh" ] \
         && [ ! -d "$HIVE_MIND_SRC/.git" ]; then
-    # npm-distributed CLI stages core/adapters into $HIVE_MIND_SRC before
-    # invoking setup.sh, so we skip both the clone and the pull — the CLI
-    # owns upgrading $HIVE_MIND_SRC by dropping newer bundled assets in.
-    # The absent-.git guard ensures we never pin a real git checkout just
-    # because the caller set the env var; bundled assets are a plain tree.
-    log "  source staged by CLI (HIVE_MIND_SKIP_CLONE=1, no .git); skipping git clone/pull"
+    # CLI-staged source: nothing to do. This is the normal `hivemind init`
+    # path — no log noise here since "skipped a step I didn't know existed"
+    # isn't useful information for end users.
+    :
 elif [ -d "$HIVE_MIND_SRC/.git" ]; then
     log "  source already present; pulling latest (previous version: $PREV_HIVE_MIND_VERSION)"
     git -C "$HIVE_MIND_SRC" pull --rebase --autostash --quiet || true
@@ -298,16 +325,24 @@ else
     rm -rf "$HIVE_MIND_SRC"
     git clone --quiet "$HIVE_MIND_REPO" "$HIVE_MIND_SRC"
 fi
+fi  # HIVE_MIND_ATTACH_MODE != 1 — end of staging block
 
-# ---------- load the adapter ----------
-ADAPTER_ROOT="$HIVE_MIND_SRC/adapters/$ADAPTER"
-[ -d "$ADAPTER_ROOT" ] || die "unknown adapter '$ADAPTER' (not found at $ADAPTER_ROOT)"
-export ADAPTER_ROOT
+# ---------- load the adapter (if one is requested) ----------
+# In HIVE_MIND_HUB_ONLY mode (CLI `hivemind init`) the caller does not
+# set ADAPTER — the hub is created empty and adapters are attached
+# later via `hivemind attach <name>`. In every other mode ADAPTER is
+# required and we load the adapter contract here so the downstream
+# seed / attach / skills phases can call its hooks.
+if [ "${HIVE_MIND_HUB_ONLY:-0}" != "1" ]; then
+    ADAPTER_ROOT="$HIVE_MIND_SRC/adapters/$ADAPTER"
+    [ -d "$ADAPTER_ROOT" ] || die "unknown adapter '$ADAPTER' (not found at $ADAPTER_ROOT)"
+    export ADAPTER_ROOT
 
-# shellcheck source=/dev/null
-source "$HIVE_MIND_SRC/core/adapter-loader.sh"
-if ! load_adapter "$ADAPTER"; then
-    die "failed to load adapter '$ADAPTER'"
+    # shellcheck source=/dev/null
+    source "$HIVE_MIND_SRC/core/adapter-loader.sh"
+    if ! load_adapter "$ADAPTER"; then
+        die "failed to load adapter '$ADAPTER'"
+    fi
 fi
 
 # ---------- merge driver registration (shared by hub init + upgrade) ----------
@@ -348,7 +383,10 @@ register_merge_drivers() {
 }
 
 # ---------- seed hub tree ----------
-log "[2/6] seeding hub at $HIVE_MIND_HUB_DIR"
+# Skip in attach-mode: init already seeded; re-writing the same symlinks,
+# templates, and launcher binary just produces noise.
+if [ "${HIVE_MIND_ATTACH_MODE:-0}" != "1" ]; then
+step "seeding hub at $HIVE_MIND_HUB_DIR"
 mkdir -p "$HIVE_MIND_HUB_DIR/bin" \
          "$HIVE_MIND_HUB_DIR/.install-state" \
          "$HIVE_MIND_HUB_DIR/.hive-mind-state"
@@ -375,7 +413,7 @@ fi
 
 # ---------- init hub git repo ----------
 if [ ! -d "$HIVE_MIND_HUB_DIR/.git" ]; then
-    log "[3/6] cloning memory repo into hub"
+    step "cloning memory repo into hub"
     TMP="$(mktemp -d)"
     if git clone --quiet "$MEMORY_REPO" "$TMP/memory" 2>/dev/null; then
         mv "$TMP/memory/.git" "$HIVE_MIND_HUB_DIR/.git"
@@ -397,26 +435,57 @@ if [ ! -d "$HIVE_MIND_HUB_DIR/.git" ]; then
         git -C "$HIVE_MIND_HUB_DIR" remote add origin "$MEMORY_REPO"
     fi
 else
-    log "[3/6] hub git repo already present; pulling latest"
+    step "memory repo already present; refreshing from origin"
     if git -C "$HIVE_MIND_HUB_DIR" rev-parse --abbrev-ref '@{u}' >/dev/null 2>&1; then
         git -C "$HIVE_MIND_HUB_DIR" pull --rebase --autostash --quiet || true
     fi
 fi
 
-register_merge_drivers "$HIVE_MIND_HUB_DIR"
+# register_merge_drivers needs the adapter loaded; in HUB_ONLY mode no
+# adapter is loaded, so there are no adapter-declared drivers to
+# register. sync-time fan-out will re-apply whatever the later-attached
+# adapter declares.
+if [ "${HIVE_MIND_HUB_ONLY:-0}" != "1" ]; then
+    register_merge_drivers "$HIVE_MIND_HUB_DIR"
+fi
+fi  # HIVE_MIND_ATTACH_MODE != 1 — end of seed+memory-clone block
 
 # ---------- attach adapter ----------
-log "[4/6] attaching adapter '$ADAPTER' (ADAPTER_DIR=$ADAPTER_DIR)"
+# Skip entirely in HUB_ONLY mode — `hivemind init` leaves the hub empty
+# of adapters; the user picks which ones to wire up via `hivemind
+# attach <name>`. Explicit consent boundary for modifying tool dirs.
+if [ "${HIVE_MIND_HUB_ONLY:-0}" != "1" ]; then
+step "attaching adapter '$ADAPTER' (ADAPTER_DIR=$ADAPTER_DIR)"
 
-# First-ever attach on this hub? Back up the tool dir if it has content.
+# First-ever attach on this hub? Back up the specific files the adapter
+# will modify. Previously we `cp -a`ed the entire ADAPTER_DIR, which
+# copied runtime tmp files, SQLite WAL files, and other live-open state
+# the underlying tool (Codex, Claude Code) was actively writing. That
+# triggered "Device or resource busy" errors and bloated the backup
+# with ephemera that was never hive-mind's concern.
+#
+# The adapter contract declares ADAPTER_BACKUP_PATHS — a space-separated
+# list of paths RELATIVE to ADAPTER_DIR that the adapter will write.
+# If an adapter doesn't declare it, fall back to the old full-dir copy
+# for safety.
 ATTACHED_FILE="$HIVE_MIND_HUB_DIR/.install-state/attached-adapters"
 touch "$ATTACHED_FILE"
 if ! grep -Fxq "$ADAPTER" "$ATTACHED_FILE" \
    && [ -d "$ADAPTER_DIR" ] \
    && [ -n "$(ls -A "$ADAPTER_DIR" 2>/dev/null)" ]; then
     BACKUP_DIR="${ADAPTER_DIR}.backup-$(date +%Y%m%d-%H%M%S)"
-    log "  backing up $ADAPTER_DIR to $BACKUP_DIR"
-    cp -a "$ADAPTER_DIR" "$BACKUP_DIR"
+    log "  backing up adapter files to $BACKUP_DIR"
+    if [ -n "${ADAPTER_BACKUP_PATHS:-}" ]; then
+        mkdir -p "$BACKUP_DIR"
+        for rel in $ADAPTER_BACKUP_PATHS; do
+            src="$ADAPTER_DIR/$rel"
+            [ -e "$src" ] || continue
+            mkdir -p "$BACKUP_DIR/$(dirname "$rel")"
+            cp -a "$src" "$BACKUP_DIR/$rel" 2>/dev/null || true
+        done
+    else
+        cp -a "$ADAPTER_DIR" "$BACKUP_DIR"
+    fi
 fi
 mkdir -p "$ADAPTER_DIR"
 
@@ -497,7 +566,7 @@ fi
 # ---------- install bundled skills ----------
 # Adapter ships a bundled hive-mind skill. Install into the hub's
 # skills/ (canonical), then fan-out relays it to the tool dir.
-log "[5/6] installing bundled skills"
+step "installing bundled skills"
 manage_bundled_skills() {
     local src="$HIVE_MIND_SRC/adapters/$ADAPTER/skills"
     [ -d "$src" ] || return 0
@@ -515,9 +584,10 @@ manage_bundled_skills() {
     [ "$count" -gt 0 ] && log "  installed/refreshed $count skill(s) under $hub_skills"
 }
 manage_bundled_skills
+fi  # HIVE_MIND_HUB_ONLY != 1 — end of attach+skills block
 
 # ---------- verify ----------
-log "[6/6] running hub sync cycle to verify"
+step "running hub sync cycle to verify"
 if [ -x "$HIVE_MIND_HUB_DIR/bin/sync" ]; then
     HIVE_MIND_HUB_DIR="$HIVE_MIND_HUB_DIR" \
     HIVE_MIND_FORCE_PUSH=1 \

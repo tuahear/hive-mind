@@ -7,17 +7,27 @@
 ## What it does today
 
 ```
-hivemind init                  # install hub, attach first adapter (default: claude-code)
-hivemind attach <adapter>      # attach additional adapter (codex, ...)
-hivemind detach <adapter>      # remove an adapter's hooks (preserves hub content)
-hivemind status [--json]       # attached adapters, origin, unpushed commits
-hivemind sync [--force-push]   # run the hub's sync flow
-hivemind pull                  # git pull --rebase --autostash
-hivemind restage [--force-stage]  # refresh staged core from the CLI's bundled assets (upgrade step)
-hivemind doctor [--json]       # diagnostic checks
-hivemind version [--json]      # CLI + bundled core + installed core
-hivemind assets-path           # print the directory holding the CLI's bundled assets
+hivemind init [--memory-repo URL]  # set up the hub only — no adapter attached
+hivemind attach <adapter>          # wire an adapter (claude-code, codex, ...) to the hub
+hivemind detach <adapter>          # remove an adapter's hooks (preserves hub content)
+hivemind status [--json]           # attached adapters, origin, unpushed commits
+hivemind sync [--force-push]       # run the hub's sync flow
+hivemind pull                      # git pull --rebase --autostash
+hivemind restage [--force-stage]   # refresh staged core from the CLI's bundled assets (upgrade step)
+hivemind doctor [--json]           # diagnostic checks
+hivemind version [--json]          # CLI + bundled core + installed core
+hivemind assets-path               # print the directory holding the CLI's bundled assets
 ```
+
+A typical first-run flow is three commands:
+
+```bash
+hivemind init --memory-repo git@github.com:YOU/brain.git
+hivemind attach claude-code     # installs ~/.claude/settings.json hooks + ~/.claude/skills
+hivemind attach codex           # optional: installs ~/.codex/hooks.json + ~/.agents/skills
+```
+
+`init` is hub-only on purpose — no automatic modification of `~/.claude/`, `~/.codex/`, or `~/.agents/`. Every tool-dir write is the direct consequence of an explicit `hivemind attach <name>` call.
 
 ## Why this fixes the install pain
 
