@@ -610,3 +610,188 @@ EOF
   run grep -F '<!-- commit:' "$bob/memory/notes.md"
   [ "$status" -ne 0 ]
 }
+
+# --- dirname-decode fallback (issue #32) ----------------------------------
+# When a variant has memory but no *.jsonl session files, derive_id_from_cwd
+# can't extract a cwd. derive_id_from_dirname decodes the variant directory
+# name back to a real path and reads the git remote from there. These tests
+# sandbox real git repos under $HOME and name the variant dir to match.
+
+@test "dirname fallback: Unix path with literal dash in segment" {
+  # Real repo under $HOME/Repo/my-project; variant dirname encodes that path.
+  proj_dir="$HOME/Repo/my-project"
+  mkdir -p "$proj_dir"
+  git -c init.defaultBranch=main init -q "$proj_dir"
+  git -C "$proj_dir" remote add origin git@github.com:alice/my-project.git
+
+  # Encoded variant dirname: leading '-' = '/', '-' elsewhere = path sep,
+  # literal '-' in 'my-project' decoded via greedy-longest-match.
+  variant_name="$(printf '%s' "$proj_dir" | tr '/' '-')"
+  mkvariant "$variant_name"
+  printf 'some memory\n' > "$HOME/.claude/projects/$variant_name/memory/MEMORY.md"
+
+  run run_mirror
+  [ "$status" -eq 0 ]
+
+  # Marker must now exist with id derived from origin.
+  [ -f "$HOME/.claude/projects/$variant_name/$MARKER" ]
+  grep -Fq "project-id=github.com/alice/my-project" \
+    "$HOME/.claude/projects/$variant_name/$MARKER"
+}
+
+@test "dirname fallback: Windows drive-prefix encoding is recognized (MSYS/Cygwin)" {
+  # Windows-encoded variant dirnames look like `c--Users-alice-Repo-foo`
+  # and must decode to `C:/Users/alice/Repo/foo`. This round-trip only
+  # has a real drive letter to resolve against on MSYS/Cygwin where
+  # `/c/` or `C:/` maps to the actual filesystem — skip elsewhere.
+  [ -n "${MSYSTEM:-}${CYGWIN:-}" ] || [ -d "/c" ] \
+    || skip "Windows drive-prefix resolution requires MSYS/Cygwin"
+
+  # Use the MSYS-translated $HOME (already under /c/...) as the real
+  # path; derive the encoded form from its Windows representation.
+  # `cygpath -m` returns forward-slash Windows form (C:/...).
+  if command -v cygpath >/dev/null 2>&1; then
+    real_win="$(cygpath -m "$HOME")/Repo/my-project"
+  else
+    # MSYS with no cygpath: map /c/... manually.
+    case "$HOME" in
+      /c/*) real_win="C:$(printf '%s' "$HOME" | sed 's|^/c||')/Repo/my-project" ;;
+      *)    skip "cannot derive Windows path form for $HOME" ;;
+    esac
+  fi
+  real_msys="$HOME/Repo/my-project"
+  mkdir -p "$real_msys"
+  git -c init.defaultBranch=main init -q "$real_msys"
+  git -C "$real_msys" remote add origin git@github.com:alice/win-proj.git
+
+  # Encode the Windows path the way Claude Code does: drop the ':',
+  # replace '/' with '-', drop the leading '/' from the drive form,
+  # and prepend the lowercase drive letter + '--'. Example:
+  #   C:/Users/alice/Repo/my-project → c--Users-alice-Repo-my-project
+  variant_name="$(printf '%s' "$real_win" | awk '
+    { sub(/^([A-Za-z]):/, tolower(substr($0,1,1)) "-")
+      gsub("/", "-")
+      print }')"
+  mkvariant "$variant_name"
+  printf 'win memory\n' > "$HOME/.claude/projects/$variant_name/memory/MEMORY.md"
+
+  run run_mirror
+  [ "$status" -eq 0 ]
+
+  # Marker with the derived project-id must exist — proves the
+  # Windows-drive regex + decode path resolved against the real dir.
+  [ -f "$HOME/.claude/projects/$variant_name/$MARKER" ]
+  grep -Fq "project-id=github.com/alice/win-proj" \
+    "$HOME/.claude/projects/$variant_name/$MARKER"
+}
+
+@test "dirname fallback: no git repo at decoded path → no marker written" {
+  # Path can be decoded but target isn't a git checkout.
+  mkdir -p "$HOME/Repo/plain-dir"
+  variant_name="$(printf '%s' "$HOME/Repo/plain-dir" | tr '/' '-')"
+  mkvariant "$variant_name"
+  printf 'x\n' > "$HOME/.claude/projects/$variant_name/memory/MEMORY.md"
+
+  run run_mirror
+  [ "$status" -eq 0 ]
+  [ ! -f "$HOME/.claude/projects/$variant_name/$MARKER" ]
+}
+
+@test "dirname fallback: unresolvable encoded name → no marker" {
+  # Variant dirname does not map to any real filesystem path.
+  mkvariant "-nonexistent-path-here-abc123"
+  printf 'x\n' > "$HOME/.claude/projects/-nonexistent-path-here-abc123/memory/MEMORY.md"
+
+  run run_mirror
+  [ "$status" -eq 0 ]
+  [ ! -f "$HOME/.claude/projects/-nonexistent-path-here-abc123/$MARKER" ]
+}
+
+@test "dirname fallback: glob-looking variant name does not expand against the cwd" {
+  # Regression for an unquoted array split in _decode_walk. An encoded
+  # dirname containing glob metacharacters must not pathname-expand
+  # against whatever cwd the script is in — mirror-projects cd's into
+  # $ADAPTER_DIR ($HOME/.claude here), so a buggy glob would expand
+  # against files there and could corrupt the token list or surface a
+  # matching git checkout that the walk might then mis-identify.
+  #
+  # Use a bracket-class `[m]` pattern rather than `*`. `*` isn't a
+  # legal NTFS filename character, so a `*`-bearing variant dir can't
+  # be created on Windows/MSYS/Cygwin and the test would vacuously
+  # pass without exercising anything. `[m]` is still a glob
+  # metacharacter under pathname expansion (a buggy unquoted split
+  # would expand `[m]atch` against cwd basenames and match the
+  # literal `match`), but `[` and `]` are legal in NTFS filenames.
+  variant='-tmp-does-not-exist-[m]atch'
+  mkvariant "$variant"
+  printf 'x\n' > "$HOME/.claude/projects/$variant/memory/MEMORY.md"
+
+  # Seed a decoy git checkout whose basename matches the bracket-class
+  # glob. With the bug, decoding could surface this directory and
+  # stamp its origin as the marker.
+  mkdir -p "$HOME/.claude/tmp-does-not-exist-match"
+  git -c init.defaultBranch=main init -q "$HOME/.claude/tmp-does-not-exist-match"
+  git -C "$HOME/.claude/tmp-does-not-exist-match" remote add origin git@github.com:decoy/match.git
+
+  run run_mirror
+  [ "$status" -eq 0 ]
+  # No marker — decoding must not have silently picked up the decoy.
+  [ ! -f "$HOME/.claude/projects/$variant/$MARKER" ]
+  # Decoy untouched.
+  [ -d "$HOME/.claude/tmp-does-not-exist-match" ]
+}
+
+@test "dirname fallback: ambiguous decoded path → no marker written" {
+  # Both of these real paths encode to the same variant dirname:
+  #   .../Repo/my-project   (literal '-' in segment)
+  #   .../Repo/my/project   (two nested segments)
+  # The fallback must detect the ambiguity and refuse to guess — silently
+  # picking one would stamp the variant with a wrong project-id.
+  proj_dir_dash="$HOME/Repo/my-project"
+  proj_dir_nested="$HOME/Repo/my/project"
+  mkdir -p "$proj_dir_dash" "$proj_dir_nested"
+  git -c init.defaultBranch=main init -q "$proj_dir_dash"
+  git -C "$proj_dir_dash" remote add origin git@github.com:alice/my-project.git
+  git -c init.defaultBranch=main init -q "$proj_dir_nested"
+  git -C "$proj_dir_nested" remote add origin git@github.com:bob/my-project.git
+
+  # Sanity check: both real paths encode to the same variant name.
+  variant_name="$(printf '%s' "$proj_dir_dash" | tr '/' '-')"
+  [ "$variant_name" = "$(printf '%s' "$proj_dir_nested" | tr '/' '-')" ]
+
+  mkvariant "$variant_name"
+  printf 'ambiguous memory\n' > "$HOME/.claude/projects/$variant_name/memory/MEMORY.md"
+
+  run run_mirror
+  [ "$status" -eq 0 ]
+  [ ! -f "$HOME/.claude/projects/$variant_name/$MARKER" ]
+}
+
+@test "dirname fallback: jsonl takes precedence when both are resolvable" {
+  # Variant has BOTH a jsonl (pointing at one repo) and a decodable
+  # dirname (pointing at another). jsonl-derived id must win — jsonl is
+  # authoritative; dirname is only a fallback when jsonl is absent.
+  jsonl_repo="$HOME/Repo/jsonl-repo"
+  mkdir -p "$jsonl_repo"
+  git -c init.defaultBranch=main init -q "$jsonl_repo"
+  git -C "$jsonl_repo" remote add origin git@github.com:alice/jsonl-repo.git
+
+  dirname_repo="$HOME/Repo/dirname-repo"
+  mkdir -p "$dirname_repo"
+  git -c init.defaultBranch=main init -q "$dirname_repo"
+  git -C "$dirname_repo" remote add origin git@github.com:alice/dirname-repo.git
+
+  # Variant dir is named after dirname_repo, but jsonl points at jsonl_repo.
+  variant_name="$(printf '%s' "$dirname_repo" | tr '/' '-')"
+  mkvariant "$variant_name"
+  # Emit a jsonl row with a cwd field pointing at jsonl_repo.
+  printf '{"cwd":"%s"}\n' "$jsonl_repo" \
+    > "$HOME/.claude/projects/$variant_name/session.jsonl"
+  printf 'x\n' > "$HOME/.claude/projects/$variant_name/memory/MEMORY.md"
+
+  run run_mirror
+  [ "$status" -eq 0 ]
+  # Marker must reflect the jsonl-derived id, not the dirname-derived one.
+  grep -Fq "project-id=github.com/alice/jsonl-repo" \
+    "$HOME/.claude/projects/$variant_name/$MARKER"
+}

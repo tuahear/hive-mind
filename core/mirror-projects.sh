@@ -89,6 +89,133 @@ derive_id_from_cwd() {
   return 1
 }
 
+# Decode a Claude-encoded variant dirname back to a real filesystem
+# path. The encoding (claude-code) replaces /, \, and : with `-`, which
+# is lossy when a path component itself contains `-` (e.g. `my-project`
+# and `my/project` encode to the same dirname). Enumerate every path
+# that resolves on disk; succeed only if exactly one does.
+#
+# Input:  "c--Users-alice-Repo-my-project"  or  "-Users-alice-Repo-my-project"
+# Output: "C:/Users/alice/Repo/my-project"  or  "/Users/alice/Repo/my-project"
+#
+# Returns empty on: no matching directory, ambiguous match (two or more
+# distinct full paths resolve), or encoding that doesn't start with a
+# recognized root prefix. Silence over guessing: a wrong decoding would
+# write a wrong project-id into the sidecar.
+_decode_variant_dirname() {
+  local name="$1"
+  local root rest results count
+
+  if [[ "$name" =~ ^([a-zA-Z])--(.*)$ ]]; then
+    # Windows: `c--Users-...` → root `C:/`, rest `Users-...`
+    local drive
+    drive="$(printf '%s' "${BASH_REMATCH[1]}" | tr '[:lower:]' '[:upper:]')"
+    root="${drive}:/"
+    rest="${BASH_REMATCH[2]}"
+  elif [[ "$name" == -* ]]; then
+    # Unix: `-Users-...` → root `/`, rest `Users-...`
+    root="/"
+    rest="${name#-}"
+  else
+    return 1
+  fi
+
+  # Enumerate every full-path decoding that resolves on disk. Dedup
+  # with bytewise collation (LC_ALL=C) — `sort -u` otherwise uses the
+  # locale's collation, which can treat distinct byte sequences as
+  # equal and collapse truly-ambiguous decodings into a single
+  # "unique" result. Require exactly one — anything else is ambiguous
+  # and must not silently pick a decoding.
+  results="$(_decode_walk "$root" "$rest" | awk 'NF' | LC_ALL=C sort -u)"
+  count="$(printf '%s\n' "$results" | awk 'NF' | wc -l | tr -d ' ')"
+  if [ "$count" = "1" ]; then
+    printf '%s' "$results"
+    return 0
+  fi
+  return 1
+}
+
+# Walk from $current down through the `-`-split tokens of $remaining,
+# emitting every full-path decoding that resolves on disk (one per
+# line). Explores all split points at each level, not just the greedy
+# longest — the caller decides whether >1 distinct result means the
+# encoding is ambiguous.
+_decode_walk() {
+  local current="$1" remaining="$2"
+
+  if [ -z "$remaining" ]; then
+    [ -d "$current" ] && printf '%s\n' "${current%/}"
+    return
+  fi
+
+  # Split remaining on '-' into an array. `read -a` respects IFS without
+  # triggering pathname expansion — an unquoted `local parts=($remaining)`
+  # would glob against the cwd if the encoded name contained `*`, `?`,
+  # or `[]`, corrupting the token list (and potentially reading files
+  # the caller didn't intend to touch).
+  local parts=()
+  IFS='-' read -r -a parts <<<"$remaining"
+  local n=${#parts[@]}
+  [ "$n" -eq 0 ] && return
+
+  local i j segment tail candidate sep
+  # Iteration order (longest-first) is not load-bearing — every split
+  # point is explored. Ambiguity is detected by emitting all resolved
+  # paths and letting the caller count distinct results.
+  for (( i = n; i >= 1; i-- )); do
+    segment=""
+    for (( j = 0; j < i; j++ )); do
+      if [ -z "$segment" ]; then
+        segment="${parts[j]}"
+      else
+        segment="${segment}-${parts[j]}"
+      fi
+    done
+    sep="/"
+    case "$current" in */) sep="" ;; esac
+    candidate="${current}${sep}${segment}"
+    [ -d "$candidate" ] || continue
+
+    if [ "$i" -eq "$n" ]; then
+      printf '%s\n' "${candidate%/}"
+      continue
+    fi
+
+    tail=""
+    for (( j = i; j < n; j++ )); do
+      if [ -z "$tail" ]; then
+        tail="${parts[j]}"
+      else
+        tail="${tail}-${parts[j]}"
+      fi
+    done
+    _decode_walk "$candidate" "$tail"
+  done
+}
+
+# Fallback identity path when no session jsonl is available. Decode the
+# variant's directory name to a real path, then resolve the git remote
+# the same way derive_id_from_cwd does. Keeps behaviour narrow: returns
+# empty unless the decode is unambiguous AND the path is a git checkout
+# with a usable `origin`.
+derive_id_from_dirname() {
+  local pdir="$1"
+  local variant_name cwd remote id
+  variant_name="${pdir##*/}"
+  [ -n "$variant_name" ] || return 1
+
+  cwd="$(_decode_variant_dirname "$variant_name")"
+  [ -z "$cwd" ] && return 1
+  [ -d "$cwd/.git" ] || [ -f "$cwd/.git" ] || return 1
+
+  remote="$(git -C "$cwd" remote get-url origin 2>/dev/null)"
+  [ -z "$remote" ] && return 1
+  id="$(normalize_remote "$remote")"
+  [ -z "$id" ] && return 1
+  printf '%s' "$id"
+  return 0
+}
+
 discover_id() {
   local pdir="$1"
   local known="$2"
@@ -115,7 +242,14 @@ discover_id() {
     fi
   fi
 
-  id="$(derive_id_from_cwd "$pdir")" || return 1
+  id="$(derive_id_from_cwd "$pdir")"
+  if [ -z "$id" ]; then
+    # No jsonl-based identity — common when sessions have been
+    # trimmed/cleared but memory files remain. Fall back to decoding
+    # the variant's encoded-cwd directory name. Only kicks in when
+    # jsonl discovery produced nothing; jsonl is authoritative.
+    id="$(derive_id_from_dirname "$pdir")" || return 1
+  fi
   [ -z "$id" ] && return 1
 
   local has_content=0
