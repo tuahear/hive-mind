@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-04-20
+
+### Fixed
+
+- **Orphan project variants now bootstrap their `.hive-mind` marker from the variant dirname when no session jsonl is available ([#32](https://github.com/tuahear/hive-mind/issues/32), [#34](https://github.com/tuahear/hive-mind/pull/34)).** `mirror-projects.sh`'s `derive_id_from_cwd` only scanned `*.jsonl` for a `cwd` field; variants with memory but no sessions (e.g. sessions trimmed by the tool, or memory copied from another machine) silently stayed unbootstrapped. `hub_harvest` then skipped them, and their memory never reached the hub. Added `derive_id_from_dirname` fallback that decodes the Claude-style encoded-cwd dirname (`/`, `\`, `:` → `-`) against the real filesystem, enumerating every path that resolves on disk and succeeding only when exactly one does (ambiguity fails closed; `LC_ALL=C` dedup). jsonl remains authoritative when present. Supports both Unix (`-Users-...`) and Windows drive-prefix (`c--Users-...`) encodings.
+- **Hub sync lock now self-heals stale locks instead of silent no-op for hours ([#33](https://github.com/tuahear/hive-mind/issues/33), [#35](https://github.com/tuahear/hive-mind/pull/35)).** Prior behavior: a sync killed uncleanly left `$HIVE_MIND_HUB_DIR/.hive-mind-state/sync.lock` behind; every subsequent sync hit the 5×2s retry cap and exited 0 with no log line — indistinguishable from a healthy no-op. Now `acquire_lock` writes a timestamp heartbeat inside the lock dir (rolls back the dir if the heartbeat write fails), the retry path breaks locks whose heartbeat is older than `HIVE_MIND_LOCK_STALE_SECS` (default 300s), missing-heartbeat locks get a dir-mtime-keyed grace window (`HIVE_MIND_LOCK_NO_HB_GRACE_SECS`, default 10s) to race-safely handle peers mid-acquire, and long-running syncs refresh the heartbeat at every phase boundary (harvest, pull-rebase, push, fan-out) so an in-progress sync can't be broken by a peer. Operates only on real directories (rejects symlinks + non-dir paths via `[ -d ] && [ ! -L ]` guards on both the lock dir and the heartbeat file). Log lines use `broke …` on successful break and a `could not remove …` warning on failure.
+
+### Added
+
+- **`HIVE_MIND_LOCK_STALE_SECS` / `HIVE_MIND_LOCK_NO_HB_GRACE_SECS`** env var escape hatches for deployments with unusually long phases (huge harvest corpora, very slow network).
+
+## [0.3.1] - 2026-04-19
+
 ### Added
 - **`hivemind init` is now upgrade-aware — one command for install and upgrade.** On a fresh machine it sets up the hub (unchanged). On an existing install it detects the hub + origin, restages the bundled assets over `~/.hive-mind/hive-mind/`, and re-runs each currently-attached adapter's install so hook wiring, launcher binary, and bundled skills all match the new release. The separate `hivemind restage` command has been removed from the CLI surface — `init` covers both cases.
 - **BREAKING (prototype only): `hivemind init` is now hub-only.** Previously `init` attached `claude-code` by default, silently modifying `~/.claude/settings.json` without the user ever typing "attach". Every tool-dir write now requires an explicit `hivemind attach <name>`, matching the consent boundary already applied to Codex. `--adapter` is removed from `init`. The new flow is `hivemind init --memory-repo <url>` followed by one `hivemind attach <name>` per tool. The post-init provider-detection hint (below) now surfaces every detected provider, since none are attached by default.
