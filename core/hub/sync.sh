@@ -62,18 +62,65 @@ export HIVE_MIND_HUB_LOG
 TS="$(date -u +%FT%TZ)"
 
 # --- locking ----------------------------------------------------------------
-# mkdir is atomic on all platforms. trap EXIT removes the lock
-# unconditionally — no PID checks, no stale-age heuristics. If another
-# sync is already running, we exit cleanly (it will handle the work).
+# mkdir is atomic on all platforms. On successful acquire, write a
+# heartbeat file inside the lock dir with the acquisition timestamp; on
+# clean exit, the trap removes the lock. If a prior sync crashed or was
+# killed before the trap could fire, the lock is left behind and every
+# subsequent sync would silently hit the retry cap (5 × 2s) and exit 0.
+# That turns a one-time crash into hours of invisible no-op syncs.
+#
+# Heartbeat-age check below breaks stale locks older than
+# HIVE_MIND_LOCK_STALE_SECS (default 300s). Timestamp only — no PID
+# liveness check, since PIDs aren't portable across shells/machines and
+# a process from another cron/shell may legitimately hold the lock.
+: "${HIVE_MIND_LOCK_STALE_SECS:=300}"
+LOCK_HEARTBEAT="$LOCK_DIR/heartbeat"
+
 acquire_lock() {
-  mkdir "$LOCK_DIR" 2>/dev/null
+  mkdir "$LOCK_DIR" 2>/dev/null || return 1
+  date +%s > "$LOCK_HEARTBEAT" 2>/dev/null
+  return 0
 }
 release_lock() {
   rm -rf "$LOCK_DIR" 2>/dev/null
 }
 
+# Break the lock if its heartbeat is older than the staleness threshold,
+# or if the heartbeat file is missing entirely (legacy lock from before
+# this change, or one created by a crash between mkdir and write). Logs
+# the break so operators can see why a lock disappeared.
+_break_stale_lock() {
+  local hb_age now hb_ts
+  now="$(date +%s 2>/dev/null)"
+  [ -z "$now" ] && return 1
+
+  if [ ! -f "$LOCK_HEARTBEAT" ]; then
+    echo "$TS WARN hub-sync: breaking lock with no heartbeat (legacy or crashed mid-acquire)" >>"$LOG"
+    release_lock
+    return 0
+  fi
+
+  hb_ts="$(cat "$LOCK_HEARTBEAT" 2>/dev/null)"
+  case "$hb_ts" in
+    ''|*[!0-9]*) hb_ts=0 ;;
+  esac
+  hb_age=$((now - hb_ts))
+  if [ "$hb_age" -gt "$HIVE_MIND_LOCK_STALE_SECS" ]; then
+    echo "$TS WARN hub-sync: breaking stale lock (age ${hb_age}s > ${HIVE_MIND_LOCK_STALE_SECS}s)" >>"$LOG"
+    release_lock
+    return 0
+  fi
+  return 1
+}
+
 _lock_retries=0
 while ! acquire_lock; do
+  # Before burning the next sleep, see if the lock is stale. If it is,
+  # break it and retry immediately (don't count the stale-break against
+  # the retry budget — the budget is for genuine contention).
+  if _break_stale_lock; then
+    continue
+  fi
   _lock_retries=$((_lock_retries + 1))
   [ "$_lock_retries" -ge 5 ] && exit 0
   sleep 2
