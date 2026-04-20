@@ -661,6 +661,24 @@ EOF
   [ ! -f "$HOME/.claude/projects/-nonexistent-path-here-abc123/$MARKER" ]
 }
 
+@test "dirname fallback: glob-looking variant name does not expand against the cwd" {
+  # Regression for an unquoted array split in _decode_walk. An encoded
+  # dirname containing glob metacharacters like `*` must not pathname-
+  # expand against whatever cwd the script is in — otherwise the token
+  # list gets corrupted and decoding can pick up unrelated files.
+  # Construct a variant with `*` in its name and seed a decoy file next
+  # to projects/ that a buggy glob would catch. The decode must fail
+  # closed (no marker), and the decoy must not be touched.
+  mkvariant '-tmp-does-not-exist-*'
+  printf 'x\n' > "$HOME/.claude/projects/-tmp-does-not-exist-*/memory/MEMORY.md"
+  printf 'decoy\n' > "$HOME/.claude/decoy-fingerprint.txt"
+
+  run run_mirror
+  [ "$status" -eq 0 ]
+  [ ! -f "$HOME/.claude/projects/-tmp-does-not-exist-*/$MARKER" ]
+  [ -f "$HOME/.claude/decoy-fingerprint.txt" ]
+}
+
 @test "dirname fallback: ambiguous decoded path → no marker written" {
   # Both of these real paths encode to the same variant dirname:
   #   .../Repo/my-project   (literal '-' in segment)

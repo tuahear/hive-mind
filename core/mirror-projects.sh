@@ -145,11 +145,13 @@ _decode_walk() {
     return
   fi
 
-  # Split remaining on '-' into an array.
-  local IFS='-'
-  # shellcheck disable=SC2206
-  local parts=($remaining)
-  unset IFS
+  # Split remaining on '-' into an array. `read -a` respects IFS without
+  # triggering pathname expansion — an unquoted `local parts=($remaining)`
+  # would glob against the cwd if the encoded name contained `*`, `?`,
+  # or `[]`, corrupting the token list (and potentially reading files
+  # the caller didn't intend to touch).
+  local parts=()
+  IFS='-' read -r -a parts <<<"$remaining"
   local n=${#parts[@]}
   [ "$n" -eq 0 ] && return
 
