@@ -164,6 +164,38 @@ _backdate_dir() {
   [ "$status" -ne 0 ]
 }
 
+@test "symlinked lock path is never traversed or broken" {
+  # If $LOCK_DIR is a symlink pointing at another directory, sync must
+  # not read through, write through, or rm -rf through it. `test -d`
+  # follows symlinks on its own, so the `! -L` guards in
+  # _break_stale_lock and refresh_lock_heartbeat are what keep us
+  # from chasing a symlink out of the lock path. Verify the target
+  # directory and its contents are completely untouched.
+  mkdir -p "$(dirname "$LOCK_DIR")"
+  victim="$HOME/victim-dir"
+  mkdir -p "$victim"
+  printf 'do not touch\n' > "$victim/canary.txt"
+
+  # Probe: skip if this platform can't make real symlinks (Windows
+  # without dev-mode / admin, some MSYS configurations).
+  ln -s "$victim" "$LOCK_DIR" 2>/dev/null || skip "ln -s not supported"
+  [ -L "$LOCK_DIR" ] || skip "symlink creation reported success but produced a non-symlink"
+
+  HIVE_MIND_LOCK_RETRY_SLEEP_SEC=0 run run_sync
+  [ "$status" -eq 0 ]
+  # Symlink itself must still be there (not removed).
+  [ -L "$LOCK_DIR" ]
+  # Victim dir and its file must be intact — no heartbeat written
+  # inside it, and the canary untouched.
+  [ -d "$victim" ]
+  [ -f "$victim/canary.txt" ]
+  [ "$(cat "$victim/canary.txt")" = "do not touch" ]
+  [ ! -f "$victim/heartbeat" ]
+
+  # Cleanup — otherwise `rm -rf $HOME` in teardown might refuse.
+  rm -f "$LOCK_DIR"
+}
+
 @test "pre-existing FILE at lock path is never mistaken for a lock" {
   # Smoke test for the "acquire failure leaves no stray state" branch.
   # Pre-seed $LOCK_DIR as a regular FILE. mkdir fails, so acquire_lock

@@ -77,11 +77,21 @@ TS="$(date -u +%FT%TZ)"
 # stale threshold reflects liveness, not just acquisition time.
 _hm_sanitize_int() {
   local name="$1" default="$2" val
-  val="$(eval "printf %s \"\${$name:-}\"")"
+  # sync.sh runs under bash (shebang + arrays/declare elsewhere), so
+  # use indirect expansion + printf -v instead of eval. Avoids any
+  # risk of a caller-chosen variable name being shell-interpreted.
+  case "$name" in
+    ''|[0-9]*|*[!A-Za-z0-9_]*) return 1 ;;
+  esac
+  if [ "${!name+x}" = x ]; then
+    val="${!name}"
+  else
+    val=""
+  fi
   case "$val" in
     ''|*[!0-9]*) val="$default" ;;
   esac
-  eval "$name=\"$val\""
+  printf -v "$name" '%s' "$val"
 }
 _hm_sanitize_int HIVE_MIND_LOCK_STALE_SECS 300
 # Test knob: override the retry sleep so bats can cover the
@@ -112,11 +122,15 @@ acquire_lock() {
   return 0
 }
 release_lock() {
+  local rm_status
   rm -rf "$LOCK_DIR" 2>/dev/null
-  # Report removal success so callers in the retry loop don't burn a
-  # tight `continue` spin when the unlink actually failed (readonly fs,
-  # permissions, path shadowed by a non-directory file).
-  [ ! -e "$LOCK_DIR" ]
+  rm_status=$?
+  # Report the removal operation's own result. An `[ ! -e ]` post-check
+  # looks simpler but is racy — a peer sync can recreate the lock dir
+  # between our rm and the test, producing a false failure + a
+  # misleading "could not remove" warning. rm's exit status reflects
+  # what *we* did, which is what the caller actually wants to know.
+  [ "$rm_status" -eq 0 ]
 }
 
 # Refresh the heartbeat so long-running phases (git fetch/pull/push,
@@ -124,7 +138,13 @@ release_lock() {
 # Safe to call from anywhere while the current process holds the lock;
 # a no-op if the lock was already released.
 refresh_lock_heartbeat() {
-  [ -d "$LOCK_DIR" ] || return 0
+  # Match _break_stale_lock's safety guard: `test -d` follows
+  # symlinks, so a symlinked $LOCK_DIR could have us writing the
+  # heartbeat through the link to an unintended location. Refuse a
+  # symlinked heartbeat path too (the file may be created fresh, but
+  # if something placed a symlink there, don't follow it).
+  [ -d "$LOCK_DIR" ] && [ ! -L "$LOCK_DIR" ] || return 0
+  [ ! -L "$LOCK_HEARTBEAT" ] || return 0
   date +%s > "$LOCK_HEARTBEAT" 2>/dev/null
 }
 
