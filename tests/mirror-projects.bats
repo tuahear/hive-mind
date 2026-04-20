@@ -610,3 +610,82 @@ EOF
   run grep -F '<!-- commit:' "$bob/memory/notes.md"
   [ "$status" -ne 0 ]
 }
+
+# --- dirname-decode fallback (issue #32) ----------------------------------
+# When a variant has memory but no *.jsonl session files, derive_id_from_cwd
+# can't extract a cwd. derive_id_from_dirname decodes the variant directory
+# name back to a real path and reads the git remote from there. These tests
+# sandbox real git repos under $HOME and name the variant dir to match.
+
+@test "dirname fallback: Unix path with literal dash in segment" {
+  # Real repo under $HOME/Repo/my-project; variant dirname encodes that path.
+  proj_dir="$HOME/Repo/my-project"
+  mkdir -p "$proj_dir"
+  git -c init.defaultBranch=main init -q "$proj_dir"
+  git -C "$proj_dir" remote add origin git@github.com:alice/my-project.git
+
+  # Encoded variant dirname: leading '-' = '/', '-' elsewhere = path sep,
+  # literal '-' in 'my-project' decoded via greedy-longest-match.
+  variant_name="$(printf '%s' "$proj_dir" | tr '/' '-')"
+  mkvariant "$variant_name"
+  printf 'some memory\n' > "$HOME/.claude/projects/$variant_name/memory/MEMORY.md"
+
+  run run_mirror
+  [ "$status" -eq 0 ]
+
+  # Marker must now exist with id derived from origin.
+  [ -f "$HOME/.claude/projects/$variant_name/$MARKER" ]
+  grep -Fq "project-id=github.com/alice/my-project" \
+    "$HOME/.claude/projects/$variant_name/$MARKER"
+}
+
+@test "dirname fallback: no git repo at decoded path → no marker written" {
+  # Path can be decoded but target isn't a git checkout.
+  mkdir -p "$HOME/Repo/plain-dir"
+  variant_name="$(printf '%s' "$HOME/Repo/plain-dir" | tr '/' '-')"
+  mkvariant "$variant_name"
+  printf 'x\n' > "$HOME/.claude/projects/$variant_name/memory/MEMORY.md"
+
+  run run_mirror
+  [ "$status" -eq 0 ]
+  [ ! -f "$HOME/.claude/projects/$variant_name/$MARKER" ]
+}
+
+@test "dirname fallback: unresolvable encoded name → no marker" {
+  # Variant dirname does not map to any real filesystem path.
+  mkvariant "-nonexistent-path-here-abc123"
+  printf 'x\n' > "$HOME/.claude/projects/-nonexistent-path-here-abc123/memory/MEMORY.md"
+
+  run run_mirror
+  [ "$status" -eq 0 ]
+  [ ! -f "$HOME/.claude/projects/-nonexistent-path-here-abc123/$MARKER" ]
+}
+
+@test "dirname fallback: jsonl takes precedence when both are resolvable" {
+  # Variant has BOTH a jsonl (pointing at one repo) and a decodable
+  # dirname (pointing at another). jsonl-derived id must win — jsonl is
+  # authoritative; dirname is only a fallback when jsonl is absent.
+  jsonl_repo="$HOME/Repo/jsonl-repo"
+  mkdir -p "$jsonl_repo"
+  git -c init.defaultBranch=main init -q "$jsonl_repo"
+  git -C "$jsonl_repo" remote add origin git@github.com:alice/jsonl-repo.git
+
+  dirname_repo="$HOME/Repo/dirname-repo"
+  mkdir -p "$dirname_repo"
+  git -c init.defaultBranch=main init -q "$dirname_repo"
+  git -C "$dirname_repo" remote add origin git@github.com:alice/dirname-repo.git
+
+  # Variant dir is named after dirname_repo, but jsonl points at jsonl_repo.
+  variant_name="$(printf '%s' "$dirname_repo" | tr '/' '-')"
+  mkvariant "$variant_name"
+  # Emit a jsonl row with a cwd field pointing at jsonl_repo.
+  printf '{"cwd":"%s"}\n' "$jsonl_repo" \
+    > "$HOME/.claude/projects/$variant_name/session.jsonl"
+  printf 'x\n' > "$HOME/.claude/projects/$variant_name/memory/MEMORY.md"
+
+  run run_mirror
+  [ "$status" -eq 0 ]
+  # Marker must reflect the jsonl-derived id, not the dirname-derived one.
+  grep -Fq "project-id=github.com/alice/jsonl-repo" \
+    "$HOME/.claude/projects/$variant_name/$MARKER"
+}

@@ -89,6 +89,124 @@ derive_id_from_cwd() {
   return 1
 }
 
+# Greedy-longest-match decode of a Claude-encoded variant dirname back to
+# a real filesystem path. The encoding (claude-code) replaces /, \, and :
+# with `-`, which is lossy when a path component itself contains `-`
+# (e.g. `my-project`). Recover by walking down from the filesystem root,
+# consuming the longest token-join that names a real subdir at each level.
+#
+# Input:  "c--Users-alice-Repo-my-project"  or  "-Users-alice-Repo-my-project"
+# Output: "C:/Users/alice/Repo/my-project"  or  "/Users/alice/Repo/my-project"
+#
+# Returns empty on: no matching directory, ambiguous match (two different
+# longest prefixes both resolve), or encoding that doesn't start with a
+# recognized root prefix. Silence over guessing: a wrong decoding would
+# write a wrong project-id into the sidecar.
+_decode_variant_dirname() {
+  local name="$1"
+  local root rest
+
+  if [[ "$name" =~ ^([a-zA-Z])--(.*)$ ]]; then
+    # Windows: `c--Users-...` → root `C:/`, rest `Users-...`
+    local drive
+    drive="$(printf '%s' "${BASH_REMATCH[1]}" | tr '[:lower:]' '[:upper:]')"
+    root="${drive}:/"
+    rest="${BASH_REMATCH[2]}"
+  elif [[ "$name" == -* ]]; then
+    # Unix: `-Users-...` → root `/`, rest `Users-...`
+    root="/"
+    rest="${name#-}"
+  else
+    return 1
+  fi
+
+  _decode_walk "$root" "$rest"
+}
+
+# Walk from $current down through the `-`-split tokens of $remaining.
+# At each level try the longest token-join first; on dead end, backtrack
+# to a shorter join. Emit the resolved path (without trailing slash) on
+# success; empty on failure.
+_decode_walk() {
+  local current="$1" remaining="$2"
+
+  if [ -z "$remaining" ]; then
+    [ -d "$current" ] && printf '%s' "${current%/}"
+    return
+  fi
+
+  # Split remaining on '-' into an array.
+  local IFS='-'
+  # shellcheck disable=SC2206
+  local parts=($remaining)
+  unset IFS
+  local n=${#parts[@]}
+  [ "$n" -eq 0 ] && return
+
+  local i segment joined tail candidate sep result
+  # Join the first $i tokens with '-', test if the resulting dir exists.
+  # Longest-first so deeper nested names like "my-project" win over
+  # a bare "my".
+  for (( i = n; i >= 1; i-- )); do
+    segment=""
+    local j
+    for (( j = 0; j < i; j++ )); do
+      if [ -z "$segment" ]; then
+        segment="${parts[j]}"
+      else
+        segment="${segment}-${parts[j]}"
+      fi
+    done
+    sep="/"
+    case "$current" in */) sep="" ;; esac
+    candidate="${current}${sep}${segment}"
+    [ -d "$candidate" ] || continue
+
+    if [ "$i" -eq "$n" ]; then
+      printf '%s' "${candidate%/}"
+      return 0
+    fi
+
+    tail=""
+    for (( j = i; j < n; j++ )); do
+      if [ -z "$tail" ]; then
+        tail="${parts[j]}"
+      else
+        tail="${tail}-${parts[j]}"
+      fi
+    done
+    result="$(_decode_walk "$candidate" "$tail")"
+    if [ -n "$result" ]; then
+      printf '%s' "$result"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# Fallback identity path when no session jsonl is available. Decode the
+# variant's directory name to a real path, then resolve the git remote
+# the same way derive_id_from_cwd does. Keeps behaviour narrow: returns
+# empty unless the decode is unambiguous AND the path is a git checkout
+# with a usable `origin`.
+derive_id_from_dirname() {
+  local pdir="$1"
+  local variant_name cwd remote id
+  variant_name="${pdir##*/}"
+  [ -n "$variant_name" ] || return 1
+
+  cwd="$(_decode_variant_dirname "$variant_name")"
+  [ -z "$cwd" ] && return 1
+  [ -d "$cwd/.git" ] || [ -f "$cwd/.git" ] || return 1
+
+  remote="$(git -C "$cwd" remote get-url origin 2>/dev/null)"
+  [ -z "$remote" ] && return 1
+  id="$(normalize_remote "$remote")"
+  [ -z "$id" ] && return 1
+  printf '%s' "$id"
+  return 0
+}
+
 discover_id() {
   local pdir="$1"
   local known="$2"
@@ -115,7 +233,14 @@ discover_id() {
     fi
   fi
 
-  id="$(derive_id_from_cwd "$pdir")" || return 1
+  id="$(derive_id_from_cwd "$pdir")"
+  if [ -z "$id" ]; then
+    # No jsonl-based identity — common when sessions have been
+    # trimmed/cleared but memory files remain. Fall back to decoding
+    # the variant's encoded-cwd directory name. Only kicks in when
+    # jsonl discovery produced nothing; jsonl is authoritative.
+    id="$(derive_id_from_dirname "$pdir")" || return 1
+  fi
   [ -z "$id" ] && return 1
 
   local has_content=0
