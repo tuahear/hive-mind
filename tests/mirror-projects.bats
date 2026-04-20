@@ -639,6 +639,52 @@ EOF
     "$HOME/.claude/projects/$variant_name/$MARKER"
 }
 
+@test "dirname fallback: Windows drive-prefix encoding is recognized (MSYS/Cygwin)" {
+  # Windows-encoded variant dirnames look like `c--Users-alice-Repo-foo`
+  # and must decode to `C:/Users/alice/Repo/foo`. This round-trip only
+  # has a real drive letter to resolve against on MSYS/Cygwin where
+  # `/c/` or `C:/` maps to the actual filesystem — skip elsewhere.
+  [ -n "${MSYSTEM:-}${CYGWIN:-}" ] || [ -d "/c" ] \
+    || skip "Windows drive-prefix resolution requires MSYS/Cygwin"
+
+  # Use the MSYS-translated $HOME (already under /c/...) as the real
+  # path; derive the encoded form from its Windows representation.
+  # `cygpath -m` returns forward-slash Windows form (C:/...).
+  if command -v cygpath >/dev/null 2>&1; then
+    real_win="$(cygpath -m "$HOME")/Repo/my-project"
+  else
+    # MSYS with no cygpath: map /c/... manually.
+    case "$HOME" in
+      /c/*) real_win="C:$(printf '%s' "$HOME" | sed 's|^/c||')/Repo/my-project" ;;
+      *)    skip "cannot derive Windows path form for $HOME" ;;
+    esac
+  fi
+  real_msys="$HOME/Repo/my-project"
+  mkdir -p "$real_msys"
+  git -c init.defaultBranch=main init -q "$real_msys"
+  git -C "$real_msys" remote add origin git@github.com:alice/win-proj.git
+
+  # Encode the Windows path the way Claude Code does: drop the ':',
+  # replace '/' with '-', drop the leading '/' from the drive form,
+  # and prepend the lowercase drive letter + '--'. Example:
+  #   C:/Users/alice/Repo/my-project → c--Users-alice-Repo-my-project
+  variant_name="$(printf '%s' "$real_win" | awk '
+    { sub(/^([A-Za-z]):/, tolower(substr($0,1,1)) "-")
+      gsub("/", "-")
+      print }')"
+  mkvariant "$variant_name"
+  printf 'win memory\n' > "$HOME/.claude/projects/$variant_name/memory/MEMORY.md"
+
+  run run_mirror
+  [ "$status" -eq 0 ]
+
+  # Marker with the derived project-id must exist — proves the
+  # Windows-drive regex + decode path resolved against the real dir.
+  [ -f "$HOME/.claude/projects/$variant_name/$MARKER" ]
+  grep -Fq "project-id=github.com/alice/win-proj" \
+    "$HOME/.claude/projects/$variant_name/$MARKER"
+}
+
 @test "dirname fallback: no git repo at decoded path → no marker written" {
   # Path can be decoded but target isn't a git checkout.
   mkdir -p "$HOME/Repo/plain-dir"

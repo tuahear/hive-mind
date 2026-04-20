@@ -120,10 +120,13 @@ _decode_variant_dirname() {
     return 1
   fi
 
-  # Enumerate every full-path decoding that resolves on disk. Dedup,
-  # then require exactly one — anything else is ambiguous and must not
-  # silently pick a decoding.
-  results="$(_decode_walk "$root" "$rest" | awk 'NF' | sort -u)"
+  # Enumerate every full-path decoding that resolves on disk. Dedup
+  # with bytewise collation (LC_ALL=C) — `sort -u` otherwise uses the
+  # locale's collation, which can treat distinct byte sequences as
+  # equal and collapse truly-ambiguous decodings into a single
+  # "unique" result. Require exactly one — anything else is ambiguous
+  # and must not silently pick a decoding.
+  results="$(_decode_walk "$root" "$rest" | awk 'NF' | LC_ALL=C sort -u)"
   count="$(printf '%s\n' "$results" | awk 'NF' | wc -l | tr -d ' ')"
   if [ "$count" = "1" ]; then
     printf '%s' "$results"
