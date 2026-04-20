@@ -164,6 +164,37 @@ _backdate_dir() {
   [ "$status" -ne 0 ]
 }
 
+@test "symlinked heartbeat is treated as missing (grace window applies)" {
+  # If a symlink lands at $LOCK_HEARTBEAT, `test -f` follows it and
+  # the subsequent `cat` would base stale-break decisions on
+  # whatever the target file contains. Treat a symlinked heartbeat
+  # as missing so the no-heartbeat grace-window path applies
+  # instead. With a fresh lock-dir mtime that falls inside the grace
+  # window, the lock must not be broken — and the target file must
+  # not be read or written through.
+  mkdir -p "$LOCK_DIR"
+  victim="$HOME/hb-target"
+  # A huge timestamp — if the symlinked heartbeat were read, the
+  # age calculation would be wildly negative and the stale-break
+  # branch would trigger.
+  echo "99999999999" > "$victim"
+  ln -s "$victim" "$LOCK_DIR/heartbeat" 2>/dev/null || skip "ln -s not supported"
+  [ -L "$LOCK_DIR/heartbeat" ] || skip "symlink creation reported success but produced a non-symlink"
+
+  HIVE_MIND_LOCK_RETRY_SLEEP_SEC=0 run run_sync
+  [ "$status" -eq 0 ]
+  # Lock still held; target file untouched.
+  [ -d "$LOCK_DIR" ]
+  [ "$(cat "$victim")" = "99999999999" ]
+  # No "broke" log line — the symlink was not followed.
+  run grep -E "broke stale lock|broke lock with no heartbeat" "$LOG"
+  [ "$status" -ne 0 ]
+
+  # Cleanup before teardown so rm -rf $HOME doesn't trip on the link.
+  rm -f "$LOCK_DIR/heartbeat"
+  rmdir "$LOCK_DIR"
+}
+
 @test "symlinked lock path is never traversed or broken" {
   # If $LOCK_DIR is a symlink pointing at another directory, sync must
   # not read through, write through, or rm -rf through it. `test -d`

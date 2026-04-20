@@ -93,6 +93,14 @@ _hm_sanitize_int() {
   esac
   printf -v "$name" '%s' "$val"
 }
+# Default 300s is sized to be comfortably longer than any realistic
+# single phase (harvest, fan-out, network git ops). A deployment with
+# unusually long phases — huge harvest corpora, very slow network, big
+# bundle push — must raise this explicitly, otherwise a peer could
+# consider the holder stale and break the lock mid-phase. If this
+# threshold proves insufficient in practice, the next step is a
+# background heartbeat refresher (subshell + trap-kill) rather than
+# more phase-boundary refresh calls.
 _hm_sanitize_int HIVE_MIND_LOCK_STALE_SECS 300
 # Test knob: override the retry sleep so bats can cover the
 # "fresh lock is respected" path without waiting ~10s on every run.
@@ -172,7 +180,12 @@ _break_stale_lock() {
   now="$(date +%s 2>/dev/null)"
   [ -z "$now" ] && return 1
 
-  if [ ! -f "$LOCK_HEARTBEAT" ]; then
+  # Treat a symlinked heartbeat the same as a missing one (fail closed,
+  # go down the grace-window path). `test -f` follows symlinks, so
+  # without this guard a symlink placed at the heartbeat path would
+  # cause the later `cat` to read from (and potentially base break
+  # decisions on) an arbitrary target file.
+  if [ ! -f "$LOCK_HEARTBEAT" ] || [ -L "$LOCK_HEARTBEAT" ]; then
     dir_mtime="$(_lock_dir_mtime)"
     case "$dir_mtime" in ''|*[!0-9]*) dir_mtime=0 ;; esac
     if [ "$dir_mtime" -eq 0 ]; then
