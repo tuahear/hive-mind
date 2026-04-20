@@ -168,24 +168,29 @@ _backdate_dir() {
   # If a symlink lands at $LOCK_HEARTBEAT, `test -f` follows it and
   # the subsequent `cat` would base stale-break decisions on
   # whatever the target file contains. Treat a symlinked heartbeat
-  # as missing so the no-heartbeat grace-window path applies
-  # instead. With a fresh lock-dir mtime that falls inside the grace
-  # window, the lock must not be broken — and the target file must
-  # not be read or written through.
+  # as missing so the no-heartbeat grace-window path (dir-mtime
+  # based) applies instead.
+  #
+  # Target contents are chosen to MAKE the test sensitive to the
+  # fix: the value `1` (epoch second 1) would produce
+  # hb_age = now - 1 = huge, WELL past the default 300s stale
+  # threshold, so if _break_stale_lock cat'd through the symlink
+  # the stale-break branch would fire and we'd see a "broke stale
+  # lock" log + the lock dir gone. With the fix in place the symlink
+  # is skipped, the dir-mtime grace window applies (mtime is "now",
+  # well inside 10s grace), and the lock stays intact.
   mkdir -p "$LOCK_DIR"
   victim="$HOME/hb-target"
-  # A huge timestamp — if the symlinked heartbeat were read, the
-  # age calculation would be wildly negative and the stale-break
-  # branch would trigger.
-  echo "99999999999" > "$victim"
+  echo "1" > "$victim"
   ln -s "$victim" "$LOCK_DIR/heartbeat" 2>/dev/null || skip "ln -s not supported"
   [ -L "$LOCK_DIR/heartbeat" ] || skip "symlink creation reported success but produced a non-symlink"
 
   HIVE_MIND_LOCK_RETRY_SLEEP_SEC=0 run run_sync
   [ "$status" -eq 0 ]
-  # Lock still held; target file untouched.
+  # Lock still held — if the symlink were followed, age=now-1 would
+  # trigger a stale break and $LOCK_DIR would be gone.
   [ -d "$LOCK_DIR" ]
-  [ "$(cat "$victim")" = "99999999999" ]
+  [ "$(cat "$victim")" = "1" ]
   # No "broke" log line — the symlink was not followed.
   run grep -E "broke stale lock|broke lock with no heartbeat" "$LOG"
   [ "$status" -ne 0 ]

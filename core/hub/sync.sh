@@ -124,7 +124,14 @@ LOCK_HEARTBEAT="$LOCK_DIR/heartbeat"
 acquire_lock() {
   mkdir "$LOCK_DIR" 2>/dev/null || return 1
   if ! date +%s > "$LOCK_HEARTBEAT" 2>/dev/null; then
-    rm -rf "$LOCK_DIR" 2>/dev/null
+    # Genuine acquire failure (read-only fs, permissions, disk full).
+    # Log a WARN so "silent no-op" can't mask this — otherwise we'd
+    # just hit the 5-retry cap and exit 0 indistinguishably from
+    # "peer is working."
+    echo "$TS WARN hub-sync: acquired lock dir but heartbeat write failed ($LOCK_HEARTBEAT) -- releasing and retrying" >>"$LOG"
+    if ! rm -rf "$LOCK_DIR" 2>/dev/null; then
+      echo "$TS WARN hub-sync: rollback rm -rf $LOCK_DIR after heartbeat failure also failed" >>"$LOG"
+    fi
     return 1
   fi
   return 0
@@ -153,7 +160,16 @@ refresh_lock_heartbeat() {
   # if something placed a symlink there, don't follow it).
   [ -d "$LOCK_DIR" ] && [ ! -L "$LOCK_DIR" ] || return 0
   [ ! -L "$LOCK_HEARTBEAT" ] || return 0
-  date +%s > "$LOCK_HEARTBEAT" 2>/dev/null
+  # Surface write failures — a silent heartbeat-refresh failure can
+  # let a peer consider the still-running sync stale and break the
+  # lock. Operator-visible WARN is enough here; we don't escalate to
+  # release+abort because a transient fs hiccup shouldn't kill an
+  # otherwise-healthy sync.
+  if ! date +%s > "$LOCK_HEARTBEAT" 2>/dev/null; then
+    echo "$TS WARN hub-sync: heartbeat refresh failed ($LOCK_HEARTBEAT) -- peer may break the lock if this persists" >>"$LOG"
+    return 1
+  fi
+  return 0
 }
 
 # Portable directory mtime — GNU uses `stat -c %Y`, BSD/macOS uses
