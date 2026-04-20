@@ -40,15 +40,21 @@ run_sync() {
   bash "$HUB_SYNC"
 }
 
-# Portable "set directory mtime to N minutes ago" for the grace-window
-# tests. GNU `touch -d "N min ago"` works on Linux/MSYS; BSD/macOS
-# needs the `-v-<N>M` flag via `date`.
+# Portable directory mtime backdating for the grace-window tests.
+# GNU `touch -d "$ago"` handles arbitrary relative strings on
+# Linux/MSYS. The BSD/macOS fallback currently only supports the
+# literal "1 hour ago" input; unsupported inputs return non-zero so
+# future callers don't get a false success from a silent no-op.
 _backdate_dir() {
   local path="$1" ago="$2"
   touch -d "$ago" "$path" 2>/dev/null && return 0
-  # BSD/macOS fallback — translate "1 hour ago" into -1H.
   case "$ago" in
-    "1 hour ago") touch -t "$(date -v-1H +%Y%m%d%H%M.%S 2>/dev/null)" "$path" 2>/dev/null ;;
+    "1 hour ago")
+      touch -t "$(date -v-1H +%Y%m%d%H%M.%S 2>/dev/null)" "$path" 2>/dev/null
+      ;;
+    *)
+      return 1
+      ;;
   esac
 }
 
