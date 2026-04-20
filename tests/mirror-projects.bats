@@ -664,19 +664,30 @@ EOF
 @test "dirname fallback: glob-looking variant name does not expand against the cwd" {
   # Regression for an unquoted array split in _decode_walk. An encoded
   # dirname containing glob metacharacters like `*` must not pathname-
-  # expand against whatever cwd the script is in — otherwise the token
-  # list gets corrupted and decoding can pick up unrelated files.
-  # Construct a variant with `*` in its name and seed a decoy file next
-  # to projects/ that a buggy glob would catch. The decode must fail
-  # closed (no marker), and the decoy must not be touched.
+  # expand against whatever cwd the script is in — mirror-projects cd's
+  # into $ADAPTER_DIR ($HOME/.claude here), so a buggy glob would
+  # expand `*` against files there and could corrupt the token list
+  # (or surface a matching git checkout that the walk might then
+  # mis-identify). Seed a real git checkout adjacent to projects/
+  # whose name MATCHES the glob pattern; with the bug, decoding could
+  # incorrectly succeed and write the decoy's project-id as the
+  # marker. The decode must fail closed (no marker written), and the
+  # decoy git checkout must be left intact.
   mkvariant '-tmp-does-not-exist-*'
   printf 'x\n' > "$HOME/.claude/projects/-tmp-does-not-exist-*/memory/MEMORY.md"
-  printf 'decoy\n' > "$HOME/.claude/decoy-fingerprint.txt"
+
+  # Seeded in $ADAPTER_DIR so a `*` glob expanded from the cwd would
+  # catch this basename. Name matches `tmp-does-not-exist-*`.
+  mkdir -p "$HOME/.claude/tmp-does-not-exist-match"
+  git -c init.defaultBranch=main init -q "$HOME/.claude/tmp-does-not-exist-match"
+  git -C "$HOME/.claude/tmp-does-not-exist-match" remote add origin git@github.com:decoy/match.git
 
   run run_mirror
   [ "$status" -eq 0 ]
+  # No marker — decoding must not have silently picked up the decoy.
   [ ! -f "$HOME/.claude/projects/-tmp-does-not-exist-*/$MARKER" ]
-  [ -f "$HOME/.claude/decoy-fingerprint.txt" ]
+  # Decoy untouched.
+  [ -d "$HOME/.claude/tmp-does-not-exist-match" ]
 }
 
 @test "dirname fallback: ambiguous decoded path → no marker written" {
