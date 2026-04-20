@@ -73,31 +73,88 @@ TS="$(date -u +%FT%TZ)"
 # HIVE_MIND_LOCK_STALE_SECS (default 300s). Timestamp only — no PID
 # liveness check, since PIDs aren't portable across shells/machines and
 # a process from another cron/shell may legitimately hold the lock.
-: "${HIVE_MIND_LOCK_STALE_SECS:=300}"
+# Long-running syncs refresh the heartbeat at phase boundaries so the
+# stale threshold reflects liveness, not just acquisition time.
+_hm_sanitize_int() {
+  local name="$1" default="$2" val
+  val="$(eval "printf %s \"\${$name:-}\"")"
+  case "$val" in
+    ''|*[!0-9]*) val="$default" ;;
+  esac
+  eval "$name=\"$val\""
+}
+_hm_sanitize_int HIVE_MIND_LOCK_STALE_SECS 300
+# Test knob: override the retry sleep so bats can cover the
+# "fresh lock is respected" path without waiting ~10s on every run.
+# Intentionally undocumented — sync.sh defaults to a human-timescale
+# 2s so real contention doesn't hammer the filesystem.
+_hm_sanitize_int HIVE_MIND_LOCK_RETRY_SLEEP_SEC 2
+# Grace period for a lock dir that has no heartbeat file. `mkdir`
+# is atomic but the heartbeat write is a separate syscall, so a
+# concurrent acquirer can momentarily observe `lock dir exists,
+# heartbeat absent` during a healthy acquire. Only treat the
+# heartbeat-absent state as stale once the lock dir itself is
+# older than this threshold.
+_hm_sanitize_int HIVE_MIND_LOCK_NO_HB_GRACE_SECS 10
 LOCK_HEARTBEAT="$LOCK_DIR/heartbeat"
 
+# Acquire the lock AND confirm the heartbeat landed. Without the
+# heartbeat, a concurrent sync's _break_stale_lock would legitimately
+# see an "abandoned" lock dir and break ours mid-run — release and
+# return failure so the retry loop either re-acquires after the break
+# or fails visibly.
 acquire_lock() {
   mkdir "$LOCK_DIR" 2>/dev/null || return 1
-  date +%s > "$LOCK_HEARTBEAT" 2>/dev/null
+  if ! date +%s > "$LOCK_HEARTBEAT" 2>/dev/null; then
+    rm -rf "$LOCK_DIR" 2>/dev/null
+    return 1
+  fi
   return 0
 }
 release_lock() {
   rm -rf "$LOCK_DIR" 2>/dev/null
 }
 
+# Refresh the heartbeat so long-running phases (git fetch/pull/push,
+# large adapter harvests) don't get their lock broken by a peer sync.
+# Safe to call from anywhere while the current process holds the lock;
+# a no-op if the lock was already released.
+refresh_lock_heartbeat() {
+  [ -d "$LOCK_DIR" ] || return 0
+  date +%s > "$LOCK_HEARTBEAT" 2>/dev/null
+}
+
+# Portable directory mtime — GNU uses `stat -c %Y`, BSD/macOS uses
+# `stat -f %m`. Prints seconds-since-epoch, or nothing on failure.
+_lock_dir_mtime() {
+  stat -c %Y "$LOCK_DIR" 2>/dev/null || stat -f %m "$LOCK_DIR" 2>/dev/null
+}
+
 # Break the lock if its heartbeat is older than the staleness threshold,
-# or if the heartbeat file is missing entirely (legacy lock from before
-# this change, or one created by a crash between mkdir and write). Logs
-# the break so operators can see why a lock disappeared.
+# or if the heartbeat file is missing AND the lock dir itself is older
+# than the grace window (catches legacy locks and crashes between mkdir
+# and heartbeat write, without racing a healthy peer still mid-acquire).
+# Logs the break so operators can see why a lock disappeared.
 _break_stale_lock() {
-  local hb_age now hb_ts
+  local hb_age now hb_ts dir_mtime dir_age
   now="$(date +%s 2>/dev/null)"
   [ -z "$now" ] && return 1
 
   if [ ! -f "$LOCK_HEARTBEAT" ]; then
-    echo "$TS WARN hub-sync: breaking lock with no heartbeat (legacy or crashed mid-acquire)" >>"$LOG"
-    release_lock
-    return 0
+    dir_mtime="$(_lock_dir_mtime)"
+    case "$dir_mtime" in ''|*[!0-9]*) dir_mtime=0 ;; esac
+    if [ "$dir_mtime" -eq 0 ]; then
+      # Can't determine dir age — fail closed (don't break). Peer
+      # will come around again and eventually resolve.
+      return 1
+    fi
+    dir_age=$((now - dir_mtime))
+    if [ "$dir_age" -gt "$HIVE_MIND_LOCK_NO_HB_GRACE_SECS" ]; then
+      echo "$TS WARN hub-sync: breaking lock with no heartbeat (age ${dir_age}s, legacy or crashed mid-acquire)" >>"$LOG"
+      release_lock
+      return 0
+    fi
+    return 1
   fi
 
   hb_ts="$(cat "$LOCK_HEARTBEAT" 2>/dev/null)"
@@ -123,7 +180,7 @@ while ! acquire_lock; do
   fi
   _lock_retries=$((_lock_retries + 1))
   [ "$_lock_retries" -ge 5 ] && exit 0
-  sleep 2
+  sleep "$HIVE_MIND_LOCK_RETRY_SLEEP_SEC"
 done
 trap 'release_lock' EXIT
 
@@ -184,6 +241,7 @@ declare -a HUB_PROJECT_CONTENT_GLOBS=()
 declare -a HUB_PROJECT_CONTENT_RULES=()
 
 # --- phase: harvest --------------------------------------------------------
+refresh_lock_heartbeat
 # Bootstrap project-id sidecars BEFORE hub_harvest runs. mirror-projects
 # walks each flat-layout adapter's projects/<encoded-cwd>/ tree and
 # writes the <variant>/.hive-mind sidecar (at the variant root) that
@@ -308,6 +366,7 @@ fi
 _has_changes=0
 [ -n "$(git status --porcelain 2>/dev/null)" ] && _has_changes=1
 
+refresh_lock_heartbeat
 # --- phase: git pull-rebase ------------------------------------------------
 if [ "$_has_changes" -eq 1 ] || [ "$_early_unpushed" -eq 1 ] || [ "$_remote_ahead" -eq 1 ]; then
   _pull_branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)"
@@ -495,6 +554,7 @@ if ! git diff --cached --quiet; then
   git commit -q -m "$MSG" 2>>"$LOG"
 fi
 
+refresh_lock_heartbeat
 # --- phase: rate-limited push ---------------------------------------------
 need_push=0
 current_branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)"
@@ -557,6 +617,7 @@ if [ "$need_push" -eq 1 ]; then
   fi
 fi
 
+refresh_lock_heartbeat
 # --- phase: fan-out --------------------------------------------------------
 # Re-load each adapter so ADAPTER_HUB_MAP + ADAPTER_PROJECT_CONTENT_RULES
 # are in scope when hub_fan_out consults them. The HUB_* array names

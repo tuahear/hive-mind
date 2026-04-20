@@ -3,10 +3,11 @@
 #
 # The lock is a directory created via `mkdir` (atomic). On successful
 # acquire, sync.sh writes a heartbeat file inside with the acquisition
-# timestamp. If a prior sync crashed before its EXIT trap could release
-# the lock, the heartbeat is how a subsequent sync tells the lock is
-# stale and safe to break — without this, one crash turns into hours of
-# silent no-op syncs hitting the retry cap.
+# timestamp and refreshes it at phase boundaries. If a prior sync
+# crashed before its EXIT trap could release the lock, the heartbeat
+# is how a subsequent sync tells the lock is stale and safe to break —
+# without this, one crash turns into hours of silent no-op syncs
+# hitting the retry cap.
 #
 # Each test runs sync.sh against a hub with no adapters attached, so
 # sync bails early after the lock phase. That keeps these tests tightly
@@ -39,6 +40,18 @@ run_sync() {
   bash "$HUB_SYNC"
 }
 
+# Portable "set directory mtime to N minutes ago" for the grace-window
+# tests. GNU `touch -d "N min ago"` works on Linux/MSYS; BSD/macOS
+# needs the `-v-<N>M` flag via `date`.
+_backdate_dir() {
+  local path="$1" ago="$2"
+  touch -d "$ago" "$path" 2>/dev/null && return 0
+  # BSD/macOS fallback — translate "1 hour ago" into -1H.
+  case "$ago" in
+    "1 hour ago") touch -t "$(date -v-1H +%Y%m%d%H%M.%S 2>/dev/null)" "$path" 2>/dev/null ;;
+  esac
+}
+
 @test "clean acquire: heartbeat file written, released on exit" {
   run run_sync
   [ "$status" -eq 0 ]
@@ -57,16 +70,31 @@ run_sync() {
   grep -q "breaking stale lock" "$LOG"
 }
 
-@test "legacy lock with no heartbeat file is broken" {
+@test "legacy lock with no heartbeat is broken once past grace window" {
   # A lock created by the old code (pre-heartbeat) has no heartbeat
-  # file. Treat it as stale — it's from before this feature shipped or
-  # was created by a crash between mkdir and the heartbeat write.
+  # file. Once the lock dir itself is older than the grace window,
+  # treat it as stale. Force mtime backward so we don't wait 10s.
   mkdir -p "$LOCK_DIR"
+  _backdate_dir "$LOCK_DIR" "1 hour ago"
 
   run run_sync
   [ "$status" -eq 0 ]
   [ ! -d "$LOCK_DIR" ]
   grep -q "no heartbeat" "$LOG"
+}
+
+@test "missing heartbeat within grace window is NOT broken (concurrent acquire race)" {
+  # Simulate a peer that just mkdir'd the lock but hasn't written the
+  # heartbeat yet. We must not break this lock — the peer is healthy.
+  # HIVE_MIND_LOCK_RETRY_SLEEP_SEC=0 keeps the 5-retry loop instant.
+  mkdir -p "$LOCK_DIR"
+
+  HIVE_MIND_LOCK_RETRY_SLEEP_SEC=0 run run_sync
+  [ "$status" -eq 0 ]
+  # Lock must still be there after our retries gave up.
+  [ -d "$LOCK_DIR" ]
+  run grep "breaking" "$LOG"
+  [ "$status" -ne 0 ]
 }
 
 @test "HIVE_MIND_LOCK_STALE_SECS env override tightens the threshold" {
@@ -80,16 +108,31 @@ run_sync() {
   grep -q "breaking stale lock" "$LOG"
 }
 
-@test "fresh lock is respected: sync exits 0 without breaking" {
+@test "non-numeric HIVE_MIND_LOCK_STALE_SECS falls back to default, doesn't error" {
+  # If the env var is mangled, we must not emit arithmetic errors or
+  # crash — fall back to the default 300s.
+  mkdir -p "$LOCK_DIR"
+  echo "$(( $(date +%s) - 600 ))" > "$LOCK_DIR/heartbeat"
+
+  HIVE_MIND_LOCK_STALE_SECS=not-a-number run run_sync
+  [ "$status" -eq 0 ]
+  # 600s > default 300s → stale → break.
+  [ ! -d "$LOCK_DIR" ]
+  grep -q "breaking stale lock" "$LOG"
+  # Nothing that looks like an arithmetic-syntax error leaked to stderr/log.
+  run grep -E "integer expression|syntax error" "$LOG"
+  [ "$status" -ne 0 ]
+}
+
+@test "fresh lock is respected: sync exits 0 without breaking (retry sleep=0)" {
   # Heartbeat from now → not stale under default 300s threshold.
-  # sync.sh will hit the 5-retry cap (5 × 2s = ~10s) and exit 0 with
-  # the lock still held. That's unchanged behaviour vs. pre-fix; what
-  # matters is that we don't accidentally break a live lock.
+  # HIVE_MIND_LOCK_RETRY_SLEEP_SEC=0 keeps this test fast — without it
+  # the 5-retry loop would burn ~10s on every run.
   mkdir -p "$LOCK_DIR"
   date +%s > "$LOCK_DIR/heartbeat"
   pre_hb="$(cat "$LOCK_DIR/heartbeat")"
 
-  run run_sync
+  HIVE_MIND_LOCK_RETRY_SLEEP_SEC=0 run run_sync
   [ "$status" -eq 0 ]
   # Lock must still be there.
   [ -d "$LOCK_DIR" ]
@@ -98,4 +141,20 @@ run_sync() {
   # No "breaking" log line.
   run grep "breaking" "$LOG"
   [ "$status" -ne 0 ]
+}
+
+@test "acquire_lock treats a pre-existing FILE at lock path as unacquirable" {
+  # Smoke test for the "acquire failure leaves no stray state" branch.
+  # Pre-seed $LOCK_DIR as a regular FILE — mkdir fails, acquire_lock
+  # returns 1, the retry loop runs, _break_stale_lock can't remove a
+  # file, and sync exits cleanly after 5 retries without corrupting
+  # the pre-existing file.
+  mkdir -p "$(dirname "$LOCK_DIR")"
+  echo "not a lock" > "$LOCK_DIR"
+
+  HIVE_MIND_LOCK_RETRY_SLEEP_SEC=0 run run_sync
+  [ "$status" -eq 0 ]
+  # File survived untouched (no conversion to a directory).
+  [ -f "$LOCK_DIR" ]
+  [ "$(cat "$LOCK_DIR")" = "not a lock" ]
 }
