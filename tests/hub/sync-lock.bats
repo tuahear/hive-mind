@@ -52,31 +52,18 @@ _backdate_dir() {
   esac
 }
 
-@test "clean acquire writes a heartbeat file inside the lock dir" {
-  # Sanity-check the heartbeat write path by running sync under a
-  # wrapper that pauses between acquire and release so we can inspect
-  # the lock while it's held. Confirms the heartbeat is an integer
-  # timestamp, not empty or garbage.
-  hb_before="$(date +%s)"
-  # Use a subshell that holds the lock via the same logic sync.sh
-  # uses, then exits. Source just the acquire block by invoking sync
-  # with no adapters — it acquires, hits the no-adapters branch, and
-  # exits. The EXIT trap removes the lock, so to observe the
-  # heartbeat we intercept via strace-less means: create a Stop-like
-  # gap with bats' background feature.
-  bash "$HUB_SYNC" &
-  sync_pid=$!
-  wait "$sync_pid"
-  # After exit, the lock must be gone (trap).
+@test "clean sync acquires and releases the lock directory" {
+  # Run sync against a hub with no adapters attached. This still
+  # exercises the acquire path (mkdir + heartbeat write) and the
+  # EXIT-trap release path; sync exits cleanly once it reaches the
+  # no-adapters branch. The heartbeat file's contents are covered
+  # end-to-end by the stale-lock tests below, which read the file
+  # back through the staleness check and break the lock when the
+  # timestamp is past the threshold — if the acquire path didn't
+  # write a valid integer heartbeat, those tests would fail.
+  run run_sync
+  [ "$status" -eq 0 ]
   [ ! -d "$LOCK_DIR" ]
-  # Read the heartbeat-age lower bound: a clean acquire would have
-  # written a value >= hb_before. We can't inspect the live value
-  # after release, so instead assert via the log in the stale path
-  # tests below (they cover the heartbeat round-trip end-to-end).
-  # Here we only prove the acquire path ran without error.
-  [ -f "$LOG" ] || true
-  hb_after="$(date +%s)"
-  [ "$hb_after" -ge "$hb_before" ]
 }
 
 @test "stale lock is broken: heartbeat older than HIVE_MIND_LOCK_STALE_SECS" {
@@ -174,16 +161,24 @@ _backdate_dir() {
 @test "pre-existing FILE at lock path is never mistaken for a lock" {
   # Smoke test for the "acquire failure leaves no stray state" branch.
   # Pre-seed $LOCK_DIR as a regular FILE. mkdir fails, so acquire_lock
-  # returns 1 and the retry loop runs. The file has no stale heartbeat
-  # that would trigger lock breaking, and there's no grace-window mtime
-  # check path that applies to it, so sync exits cleanly after 5
-  # retries without corrupting the pre-existing file.
+  # returns 1 and the retry loop runs. _break_stale_lock's `[ -d ]`
+  # guard rejects non-directory paths up front, so the pre-existing
+  # file is never considered for rm -rf even if its mtime is outside
+  # any grace window. Sync exits cleanly after 5 retries with the
+  # file intact.
   mkdir -p "$(dirname "$LOCK_DIR")"
   echo "not a lock" > "$LOCK_DIR"
+  # Force mtime 1 hour into the past — past both the 10s grace and
+  # 300s stale window. Without the `-d` guard, this age would cause
+  # _break_stale_lock to rm -rf the file.
+  _backdate_dir "$LOCK_DIR" "1 hour ago"
 
   HIVE_MIND_LOCK_RETRY_SLEEP_SEC=0 run run_sync
   [ "$status" -eq 0 ]
-  # File survived untouched (no conversion to a directory).
+  # File survived untouched (no conversion to a directory, no removal).
   [ -f "$LOCK_DIR" ]
   [ "$(cat "$LOCK_DIR")" = "not a lock" ]
+  # Nothing in the log about breaking this "lock".
+  run grep -E "broke stale lock|broke lock with no heartbeat" "$LOG"
+  [ "$status" -ne 0 ]
 }

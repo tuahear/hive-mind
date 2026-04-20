@@ -141,6 +141,14 @@ _lock_dir_mtime() {
 # Logs the break so operators can see why a lock disappeared.
 _break_stale_lock() {
   local hb_age now hb_ts dir_mtime dir_age
+  # Only operate on real directories. If something else sits at
+  # $LOCK_DIR (regular file, symlink, etc.), release_lock's `rm -rf`
+  # would silently remove it — that contradicts the intent of the
+  # staleness check, which is strictly about breaking abandoned lock
+  # *directories*. Defer to the retry loop; acquire_lock already
+  # handles "path-exists-but-isn't-acquirable" by failing mkdir and
+  # sleeping.
+  [ -d "$LOCK_DIR" ] || return 1
   now="$(date +%s 2>/dev/null)"
   [ -z "$now" ] && return 1
 
