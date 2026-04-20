@@ -709,21 +709,26 @@ EOF
 
 @test "dirname fallback: glob-looking variant name does not expand against the cwd" {
   # Regression for an unquoted array split in _decode_walk. An encoded
-  # dirname containing glob metacharacters like `*` must not pathname-
-  # expand against whatever cwd the script is in — mirror-projects cd's
-  # into $ADAPTER_DIR ($HOME/.claude here), so a buggy glob would
-  # expand `*` against files there and could corrupt the token list
-  # (or surface a matching git checkout that the walk might then
-  # mis-identify). Seed a real git checkout adjacent to projects/
-  # whose name MATCHES the glob pattern; with the bug, decoding could
-  # incorrectly succeed and write the decoy's project-id as the
-  # marker. The decode must fail closed (no marker written), and the
-  # decoy git checkout must be left intact.
-  mkvariant '-tmp-does-not-exist-*'
-  printf 'x\n' > "$HOME/.claude/projects/-tmp-does-not-exist-*/memory/MEMORY.md"
+  # dirname containing glob metacharacters must not pathname-expand
+  # against whatever cwd the script is in — mirror-projects cd's into
+  # $ADAPTER_DIR ($HOME/.claude here), so a buggy glob would expand
+  # against files there and could corrupt the token list or surface a
+  # matching git checkout that the walk might then mis-identify.
+  #
+  # Use a bracket-class `[m]` pattern rather than `*`. `*` isn't a
+  # legal NTFS filename character, so a `*`-bearing variant dir can't
+  # be created on Windows/MSYS/Cygwin and the test would vacuously
+  # pass without exercising anything. `[m]` is still a glob
+  # metacharacter under pathname expansion (a buggy unquoted split
+  # would expand `[m]atch` against cwd basenames and match the
+  # literal `match`), but `[` and `]` are legal in NTFS filenames.
+  variant='-tmp-does-not-exist-[m]atch'
+  mkvariant "$variant"
+  printf 'x\n' > "$HOME/.claude/projects/$variant/memory/MEMORY.md"
 
-  # Seeded in $ADAPTER_DIR so a `*` glob expanded from the cwd would
-  # catch this basename. Name matches `tmp-does-not-exist-*`.
+  # Seed a decoy git checkout whose basename matches the bracket-class
+  # glob. With the bug, decoding could surface this directory and
+  # stamp its origin as the marker.
   mkdir -p "$HOME/.claude/tmp-does-not-exist-match"
   git -c init.defaultBranch=main init -q "$HOME/.claude/tmp-does-not-exist-match"
   git -C "$HOME/.claude/tmp-does-not-exist-match" remote add origin git@github.com:decoy/match.git
@@ -731,7 +736,7 @@ EOF
   run run_mirror
   [ "$status" -eq 0 ]
   # No marker — decoding must not have silently picked up the decoy.
-  [ ! -f "$HOME/.claude/projects/-tmp-does-not-exist-*/$MARKER" ]
+  [ ! -f "$HOME/.claude/projects/$variant/$MARKER" ]
   # Decoy untouched.
   [ -d "$HOME/.claude/tmp-does-not-exist-match" ]
 }
