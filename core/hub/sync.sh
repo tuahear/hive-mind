@@ -123,13 +123,18 @@ LOCK_HEARTBEAT="$LOCK_DIR/heartbeat"
 # or fails visibly.
 acquire_lock() {
   mkdir "$LOCK_DIR" 2>/dev/null || return 1
-  if ! date +%s > "$LOCK_HEARTBEAT" 2>/dev/null; then
-    # Genuine acquire failure (read-only fs, permissions, disk full).
-    # Log a WARN so "silent no-op" can't mask this — otherwise we'd
-    # just hit the 5-retry cap and exit 0 indistinguishably from
-    # "peer is working."
+  # Group the write so bash's own errors from opening/truncating
+  # $LOCK_HEARTBEAT (readonly fs, permissions, disk full) get
+  # captured to $LOG rather than leaking to the hook caller's
+  # stderr. A plain `date ... > path 2>/dev/null` would only
+  # suppress date's stderr, not the shell's redirection failure
+  # message.
+  if ! { date +%s > "$LOCK_HEARTBEAT"; } 2>>"$LOG"; then
+    # Genuine acquire failure. Log a WARN so "silent no-op" can't
+    # mask this — otherwise we'd just hit the 5-retry cap and exit 0
+    # indistinguishably from "peer is working."
     echo "$TS WARN hub-sync: acquired lock dir but heartbeat write failed ($LOCK_HEARTBEAT) -- releasing and retrying" >>"$LOG"
-    if ! rm -rf "$LOCK_DIR" 2>/dev/null; then
+    if ! rm -rf "$LOCK_DIR" 2>>"$LOG"; then
       echo "$TS WARN hub-sync: rollback rm -rf $LOCK_DIR after heartbeat failure also failed" >>"$LOG"
     fi
     return 1
@@ -162,10 +167,12 @@ refresh_lock_heartbeat() {
   [ ! -L "$LOCK_HEARTBEAT" ] || return 0
   # Surface write failures — a silent heartbeat-refresh failure can
   # let a peer consider the still-running sync stale and break the
-  # lock. Operator-visible WARN is enough here; we don't escalate to
+  # lock. Operator-visible WARN is enough; don't escalate to
   # release+abort because a transient fs hiccup shouldn't kill an
-  # otherwise-healthy sync.
-  if ! date +%s > "$LOCK_HEARTBEAT" 2>/dev/null; then
+  # otherwise-healthy sync. Group the write so bash's own errors from
+  # opening/truncating $LOCK_HEARTBEAT get captured to $LOG rather
+  # than leaking to the hook caller's stderr.
+  if ! { date +%s > "$LOCK_HEARTBEAT"; } 2>>"$LOG"; then
     echo "$TS WARN hub-sync: heartbeat refresh failed ($LOCK_HEARTBEAT) -- peer may break the lock if this persists" >>"$LOG"
     return 1
   fi
