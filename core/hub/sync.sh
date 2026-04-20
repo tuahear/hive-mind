@@ -113,6 +113,10 @@ acquire_lock() {
 }
 release_lock() {
   rm -rf "$LOCK_DIR" 2>/dev/null
+  # Report removal success so callers in the retry loop don't burn a
+  # tight `continue` spin when the unlink actually failed (readonly fs,
+  # permissions, path shadowed by a non-directory file).
+  [ ! -e "$LOCK_DIR" ]
 }
 
 # Refresh the heartbeat so long-running phases (git fetch/pull/push,
@@ -150,9 +154,15 @@ _break_stale_lock() {
     fi
     dir_age=$((now - dir_mtime))
     if [ "$dir_age" -gt "$HIVE_MIND_LOCK_NO_HB_GRACE_SECS" ]; then
-      echo "$TS WARN hub-sync: breaking lock with no heartbeat (age ${dir_age}s, legacy or crashed mid-acquire)" >>"$LOG"
-      release_lock
-      return 0
+      if release_lock; then
+        echo "$TS WARN hub-sync: broke lock with no heartbeat (age ${dir_age}s, legacy or crashed mid-acquire)" >>"$LOG"
+        return 0
+      fi
+      # Unlink failed — fall through to the normal retry/sleep so we
+      # don't spin on `continue`. Log so the operator can see what's
+      # blocking cleanup.
+      echo "$TS WARN hub-sync: could not remove stale lock $LOCK_DIR (no heartbeat, age ${dir_age}s) -- retrying" >>"$LOG"
+      return 1
     fi
     return 1
   fi
@@ -163,9 +173,12 @@ _break_stale_lock() {
   esac
   hb_age=$((now - hb_ts))
   if [ "$hb_age" -gt "$HIVE_MIND_LOCK_STALE_SECS" ]; then
-    echo "$TS WARN hub-sync: breaking stale lock (age ${hb_age}s > ${HIVE_MIND_LOCK_STALE_SECS}s)" >>"$LOG"
-    release_lock
-    return 0
+    if release_lock; then
+      echo "$TS WARN hub-sync: broke stale lock (age ${hb_age}s > ${HIVE_MIND_LOCK_STALE_SECS}s)" >>"$LOG"
+      return 0
+    fi
+    echo "$TS WARN hub-sync: could not remove stale lock $LOCK_DIR (age ${hb_age}s) -- retrying" >>"$LOG"
+    return 1
   fi
   return 1
 }
