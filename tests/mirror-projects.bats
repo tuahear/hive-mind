@@ -661,6 +661,32 @@ EOF
   [ ! -f "$HOME/.claude/projects/-nonexistent-path-here-abc123/$MARKER" ]
 }
 
+@test "dirname fallback: ambiguous decoded path → no marker written" {
+  # Both of these real paths encode to the same variant dirname:
+  #   .../Repo/my-project   (literal '-' in segment)
+  #   .../Repo/my/project   (two nested segments)
+  # The fallback must detect the ambiguity and refuse to guess — silently
+  # picking one would stamp the variant with a wrong project-id.
+  proj_dir_dash="$HOME/Repo/my-project"
+  proj_dir_nested="$HOME/Repo/my/project"
+  mkdir -p "$proj_dir_dash" "$proj_dir_nested"
+  git -c init.defaultBranch=main init -q "$proj_dir_dash"
+  git -C "$proj_dir_dash" remote add origin git@github.com:alice/my-project.git
+  git -c init.defaultBranch=main init -q "$proj_dir_nested"
+  git -C "$proj_dir_nested" remote add origin git@github.com:bob/my-project.git
+
+  # Sanity check: both real paths encode to the same variant name.
+  variant_name="$(printf '%s' "$proj_dir_dash" | tr '/' '-')"
+  [ "$variant_name" = "$(printf '%s' "$proj_dir_nested" | tr '/' '-')" ]
+
+  mkvariant "$variant_name"
+  printf 'ambiguous memory\n' > "$HOME/.claude/projects/$variant_name/memory/MEMORY.md"
+
+  run run_mirror
+  [ "$status" -eq 0 ]
+  [ ! -f "$HOME/.claude/projects/$variant_name/$MARKER" ]
+}
+
 @test "dirname fallback: jsonl takes precedence when both are resolvable" {
   # Variant has BOTH a jsonl (pointing at one repo) and a decodable
   # dirname (pointing at another). jsonl-derived id must win — jsonl is

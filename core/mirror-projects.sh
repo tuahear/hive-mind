@@ -89,22 +89,22 @@ derive_id_from_cwd() {
   return 1
 }
 
-# Greedy-longest-match decode of a Claude-encoded variant dirname back to
-# a real filesystem path. The encoding (claude-code) replaces /, \, and :
-# with `-`, which is lossy when a path component itself contains `-`
-# (e.g. `my-project`). Recover by walking down from the filesystem root,
-# consuming the longest token-join that names a real subdir at each level.
+# Decode a Claude-encoded variant dirname back to a real filesystem
+# path. The encoding (claude-code) replaces /, \, and : with `-`, which
+# is lossy when a path component itself contains `-` (e.g. `my-project`
+# and `my/project` encode to the same dirname). Enumerate every path
+# that resolves on disk; succeed only if exactly one does.
 #
 # Input:  "c--Users-alice-Repo-my-project"  or  "-Users-alice-Repo-my-project"
 # Output: "C:/Users/alice/Repo/my-project"  or  "/Users/alice/Repo/my-project"
 #
-# Returns empty on: no matching directory, ambiguous match (two different
-# longest prefixes both resolve), or encoding that doesn't start with a
+# Returns empty on: no matching directory, ambiguous match (two or more
+# distinct full paths resolve), or encoding that doesn't start with a
 # recognized root prefix. Silence over guessing: a wrong decoding would
 # write a wrong project-id into the sidecar.
 _decode_variant_dirname() {
   local name="$1"
-  local root rest
+  local root rest results count
 
   if [[ "$name" =~ ^([a-zA-Z])--(.*)$ ]]; then
     # Windows: `c--Users-...` → root `C:/`, rest `Users-...`
@@ -120,18 +120,28 @@ _decode_variant_dirname() {
     return 1
   fi
 
-  _decode_walk "$root" "$rest"
+  # Enumerate every full-path decoding that resolves on disk. Dedup,
+  # then require exactly one — anything else is ambiguous and must not
+  # silently pick a decoding.
+  results="$(_decode_walk "$root" "$rest" | awk 'NF' | sort -u)"
+  count="$(printf '%s\n' "$results" | awk 'NF' | wc -l | tr -d ' ')"
+  if [ "$count" = "1" ]; then
+    printf '%s' "$results"
+    return 0
+  fi
+  return 1
 }
 
-# Walk from $current down through the `-`-split tokens of $remaining.
-# At each level try the longest token-join first; on dead end, backtrack
-# to a shorter join. Emit the resolved path (without trailing slash) on
-# success; empty on failure.
+# Walk from $current down through the `-`-split tokens of $remaining,
+# emitting every full-path decoding that resolves on disk (one per
+# line). Explores all split points at each level, not just the greedy
+# longest — the caller decides whether >1 distinct result means the
+# encoding is ambiguous.
 _decode_walk() {
   local current="$1" remaining="$2"
 
   if [ -z "$remaining" ]; then
-    [ -d "$current" ] && printf '%s' "${current%/}"
+    [ -d "$current" ] && printf '%s\n' "${current%/}"
     return
   fi
 
@@ -143,13 +153,12 @@ _decode_walk() {
   local n=${#parts[@]}
   [ "$n" -eq 0 ] && return
 
-  local i segment joined tail candidate sep result
-  # Join the first $i tokens with '-', test if the resulting dir exists.
-  # Longest-first so deeper nested names like "my-project" win over
-  # a bare "my".
+  local i j segment tail candidate sep
+  # Iteration order (longest-first) is not load-bearing — every split
+  # point is explored. Ambiguity is detected by emitting all resolved
+  # paths and letting the caller count distinct results.
   for (( i = n; i >= 1; i-- )); do
     segment=""
-    local j
     for (( j = 0; j < i; j++ )); do
       if [ -z "$segment" ]; then
         segment="${parts[j]}"
@@ -163,8 +172,8 @@ _decode_walk() {
     [ -d "$candidate" ] || continue
 
     if [ "$i" -eq "$n" ]; then
-      printf '%s' "${candidate%/}"
-      return 0
+      printf '%s\n' "${candidate%/}"
+      continue
     fi
 
     tail=""
@@ -175,13 +184,8 @@ _decode_walk() {
         tail="${tail}-${parts[j]}"
       fi
     done
-    result="$(_decode_walk "$candidate" "$tail")"
-    if [ -n "$result" ]; then
-      printf '%s' "$result"
-      return 0
-    fi
+    _decode_walk "$candidate" "$tail"
   done
-  return 1
 }
 
 # Fallback identity path when no session jsonl is available. Decode the
