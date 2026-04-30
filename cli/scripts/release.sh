@@ -48,6 +48,12 @@ if ! git -C "$REPO_ROOT" diff --quiet || ! git -C "$REPO_ROOT" diff --quiet --ca
 fi
 
 # --- bump version ---
+# Bump cli/package.json AND repo-root VERSION in lockstep. The latter is
+# bundled into the tarball by bundle-assets.mjs, copied to
+# ~/.hive-mind/hive-mind/VERSION by `hivemind init/restage`, and read by
+# setup.sh as PREV_HIVE_MIND_VERSION for adapter_migrate. Skipping the
+# repo-root bump leaves every install reporting the same stale core
+# version forever and silently breaks any future version-gated migration.
 echo "--> bumping cli/package.json to $VERSION"
 node -e '
   const fs = require("node:fs");
@@ -55,6 +61,8 @@ node -e '
   p.version = process.argv[1];
   fs.writeFileSync("package.json", JSON.stringify(p, null, 2) + "\n");
 ' "$VERSION"
+echo "--> bumping $REPO_ROOT/VERSION to $VERSION"
+printf '%s\n' "$VERSION" > "$REPO_ROOT/VERSION"
 
 # --- clean build ---
 echo "--> cleaning dist/ and assets/"
@@ -153,7 +161,7 @@ Release artifacts ready. Next steps (you drive):
        \$EDITOR '$DRAFT'
 
   2. Commit the version bump (and CHANGELOG entry if you add one):
-       git -C '$REPO_ROOT' add cli/package.json CHANGELOG.md
+       git -C '$REPO_ROOT' add cli/package.json VERSION CHANGELOG.md
        git -C '$REPO_ROOT' commit -m "cli: release v$VERSION"
        git -C '$REPO_ROOT' push
 
