@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-05-15
+
+### Fixed
+
+- **`hivemind attach codex` now actually installs hive-mind's hook entries into a pre-existing `~/.codex/hooks.json` ([#38](https://github.com/tuahear/hive-mind/pull/38)).** The codex adapter's jq merge filter was missing a closing `)` — jq aborted at compile time, the error was swallowed by `2>/dev/null`, `adapter_install_hooks` silently returned 1, and the user's `hooks.json` was left untouched. Attach reported success but Stop / SessionStart hooks never fired hive-mind's sync. Only affected machines where `hooks.json` already existed (e.g. installed alongside [hindsight](https://github.com/saoudrizwan/hindsight) or any other tool that writes its own hooks); fresh machines hit the "no existing hooks.json" branch which worked fine. Idempotent — re-running `hivemind attach codex` on an upgraded install merges in the missing entries while preserving any other hooks already there.
+- **Codex test setup re-enables `errexit` after `load_adapter`.** The adapter loader's save/restore of `set -o` state captured `bats`'s default errexit-off, ran the adapter (which sets `errexit` on internally), and then restored errexit-off back into the test body — silently disabling every middle-of-test assertion in adapter test suites. Without this fix the broken jq filter above would have been caught at PR time; with it pinned, future regressions of that shape fail loudly. Scoped to `adapters/codex/tests/adapter.bats` only — the loader-level fix has broader blast radius and is deferred.
+
 ## [0.3.2] - 2026-04-20
 
 ### Fixed
