@@ -765,16 +765,30 @@ _hub_gitignore_match() {
 # _hub_sync_file above (multi-adapter setups where only some adapters
 # populate this subtree). Top-level dst is preserved even if empty.
 #
-# Gitignore filter: if $src_dir/.gitignore exists, files matching its
-# patterns are skipped in BOTH the copy and the delete passes. Skipping
-# the copy keeps transient state (caches, logs) out of the hub working
-# tree; skipping the delete is the critical safety: on machine B after
-# pulling a fresh hub, the hub-side gitignored paths don't exist
-# locally, and without this filter the delete pass would wipe legitimate
-# tool-side files (e.g. ~/.hermes/cache/*) that the user expects to
-# survive across syncs.
+# Optional 3rd arg: direction = "fanout" (default) or "harvest". Drives
+# the .gitignore-aware DELETE pass, which is asymmetric by direction:
+#
+#   - fanout (hub → tool): preserve ignored files in dst. The tool dir
+#     is a live user space; ~/.hermes/cache/* is legitimate local
+#     transient state, and a machine B pulling a fresh hub doesn't have
+#     them in src — without this skip the delete pass would wipe them.
+#
+#   - harvest (tool → hub): do NOT preserve ignored files in dst. If a
+#     file was committed to the hub before a later .gitignore rule
+#     added it (e.g. cache/blob committed, then `cache/` added to
+#     .gitignore), the harvest delete pass should clean it out of the
+#     hub. Otherwise the stale file is tracked forever, defeating the
+#     point of the rule.
+#
+# Default is "fanout" because that's the safer mode under accidental
+# misuse (preserves user data); harvest call sites must opt in
+# explicitly.
+#
+# The COPY pass always skips ignored files in both directions — the
+# rule is "this content is transient, neither side should propagate it"
+# regardless of which way the sync is running.
 _hub_sync_dir() {
-  local src_dir="$1" dst_dir="$2"
+  local src_dir="$1" dst_dir="$2" direction="${3:-fanout}"
   if [ ! -d "$src_dir" ]; then
     return 0
   fi
@@ -800,7 +814,8 @@ _hub_sync_dir() {
   (cd "$dst_dir" && find . -type f -print0 2>/dev/null) \
     | while IFS= read -r -d '' rel; do
         rel="${rel#./}"
-        if [ -n "$gi" ] && _hub_gitignore_match "$rel" "$gi"; then
+        if [ "$direction" = "fanout" ] && [ -n "$gi" ] \
+           && _hub_gitignore_match "$rel" "$gi"; then
           continue
         fi
         [ -f "$src_dir/$rel" ] || rm -f "$dst_dir/$rel"
@@ -1042,7 +1057,7 @@ _hub_apply_project_rules() {
             done
       fi
     else
-      _hub_sync_dir "$hub_proj/$hub_rel" "$tool_variant/$tool_rel"
+      _hub_sync_dir "$hub_proj/$hub_rel" "$tool_variant/$tool_rel" fanout
     fi
   done < <(hub_parse_project_rules "$rules")
 
@@ -1246,7 +1261,7 @@ hub_harvest() {
           _hub_snapshot_write "$src" "$snap"
         fi
       else
-        _hub_sync_dir "$src" "$dst"
+        _hub_sync_dir "$src" "$dst" harvest
       fi
     fi
   done < <(hub_parse_map "${ADAPTER_HUB_MAP:-}")
@@ -1353,7 +1368,7 @@ hub_fan_out() {
         _hub_snapshot_write "$dst" \
           "$(_hub_snapshot_path "$tool_dir" "$tool_spec")"
       else
-        _hub_sync_dir "$src" "$dst"
+        _hub_sync_dir "$src" "$dst" fanout
       fi
     fi
   done < <(hub_parse_map "${ADAPTER_HUB_MAP:-}")

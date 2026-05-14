@@ -736,7 +736,7 @@ GIT
   [ ! -e "$dst/sub/run.log" ]
 }
 
-@test "_hub_sync_dir: delete pass preserves dst files matching src/.gitignore" {
+@test "_hub_sync_dir: fanout delete pass preserves dst files matching src/.gitignore" {
   src="$HOME/src" dst="$HOME/dst"
   mkdir -p "$src" "$dst/cache" "$dst/sub"
   cat > "$src/.gitignore" <<'GIT'
@@ -751,12 +751,42 @@ GIT
   echo "local"    > "$dst/cache/blob"
   echo "local"    > "$dst/sub/build.log"
 
-  _hub_sync_dir "$src" "$dst"
+  _hub_sync_dir "$src" "$dst" fanout
 
   [ -f "$dst/keep.md" ]
   [ -f "$dst/.env" ]
   [ -f "$dst/cache/blob" ]
   [ -f "$dst/sub/build.log" ]
+}
+
+@test "_hub_sync_dir: harvest delete pass cleans stale ignored files from dst" {
+  # The asymmetric half of the gitignore filter. Scenario: an earlier
+  # sync committed cache/blob to the hub before the .gitignore rule
+  # `cache/` was added. On the next harvest, the copy pass already
+  # skips cache/blob (src filtered), but the delete pass must STILL
+  # remove the stale hub-side copy — otherwise the file lingers in the
+  # tracked tree forever, defeating the rule. Symmetric to the fanout
+  # test above but with opposite expected behavior.
+  src="$HOME/src" dst="$HOME/dst"
+  mkdir -p "$src" "$dst/cache" "$dst/sub"
+  cat > "$src/.gitignore" <<'GIT'
+.env
+cache/
+*.log
+GIT
+  echo "from-src" > "$src/keep.md"
+  # Pre-existing committed-stale dst files (the hub got them before the
+  # gitignore rule landed). Harvest must remove them.
+  echo "stale"    > "$dst/.env"
+  echo "stale"    > "$dst/cache/blob"
+  echo "stale"    > "$dst/sub/build.log"
+
+  _hub_sync_dir "$src" "$dst" harvest
+
+  [ -f "$dst/keep.md" ]
+  [ ! -f "$dst/.env" ]
+  [ ! -f "$dst/cache/blob" ]
+  [ ! -f "$dst/sub/build.log" ]
 }
 
 @test "_hub_sync_dir: no .gitignore means original mirror semantics" {
