@@ -12,6 +12,16 @@ setup() {
   export HOME
   source "$LOADER"
   load_adapter "codex"
+  # The adapter loader's save/restore of `set -o` state captures the
+  # caller's pre-load opts. bats invokes setup() with errexit OFF (it
+  # uses its own trap-based failure detection), so without this re-enable
+  # every mid-test `[ ... ]` assertion would be silently ignored — a
+  # missing `)` in adapter_install_hooks's jq filter once shipped to main
+  # because the failure mode it produced (rc=1, hooks.json untouched)
+  # passed the merge test that called the function then asserted on the
+  # resulting file. Force errexit on here so future regressions of that
+  # shape actually fail the suite.
+  set -e
 }
 
 teardown() {
