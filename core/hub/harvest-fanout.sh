@@ -1254,8 +1254,16 @@ hub_harvest() {
   # Skills: content-file rename (SKILL.md ↔ content.md). Handled here
   # instead of via an ADAPTER_HUB_MAP dir-mirror entry because the
   # generic _hub_sync_dir has no rename support.
-  local tool_skills="${ADAPTER_SKILL_ROOT:-$tool_dir/skills}"
-  _hub_sync_skills harvest "$tool_skills" "$hub_dir/skills" "$tool_dir"
+  #
+  # An adapter that declares ADAPTER_SKILL_ROOT="" explicitly opts OUT of
+  # the shared `hub/skills/` tier (Hermes is the first such adapter — its
+  # skills live inside the whole-dir blob and must not bleed into
+  # Claude/Codex). The `:+` form distinguishes unset (loader rejects it)
+  # from explicitly-empty (opt-out) from non-empty (use that path) — only
+  # the third case runs the skill sync.
+  if [ -n "${ADAPTER_SKILL_ROOT:+x}" ] && [ -n "$ADAPTER_SKILL_ROOT" ]; then
+    _hub_sync_skills harvest "$ADAPTER_SKILL_ROOT" "$hub_dir/skills" "$tool_dir"
+  fi
 
   # Per-project content. Claude uses projects/<encoded-cwd>/; the sidecar
   # at <variant>/memory/.hive-mind exposes project-id. Skip variants that
@@ -1351,8 +1359,11 @@ hub_fan_out() {
   done < <(hub_parse_map "${ADAPTER_HUB_MAP:-}")
 
   # Skills: content-file rename (content.md → SKILL.md on fan-out).
-  local tool_skills="${ADAPTER_SKILL_ROOT:-$tool_dir/skills}"
-  _hub_sync_skills fanout "$hub_dir/skills" "$tool_skills" "$tool_dir"
+  # Explicit-empty ADAPTER_SKILL_ROOT opts out — see hub_harvest's
+  # symmetric branch for the rationale.
+  if [ -n "${ADAPTER_SKILL_ROOT:+x}" ] && [ -n "$ADAPTER_SKILL_ROOT" ]; then
+    _hub_sync_skills fanout "$hub_dir/skills" "$ADAPTER_SKILL_ROOT" "$tool_dir"
+  fi
 
   # Per-project: walk the tool's variants. Each variant's sidecar
   # (at variant root or legacy memory/.hive-mind) maps it to a hub

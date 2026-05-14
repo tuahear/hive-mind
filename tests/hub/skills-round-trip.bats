@@ -147,6 +147,33 @@ seed_two_adapter_skill() {
   [ "$pre_mtime" = "$post_mtime" ]
 }
 
+@test "empty ADAPTER_SKILL_ROOT opts out of the shared hub/skills/ tier on harvest" {
+  # Regression: empty string used to fall back to "$tool_dir/skills"
+  # because the engine did ${ADAPTER_SKILL_ROOT:-$tool_dir/skills}.
+  # That silently mirrored an opt-out adapter's skills into the shared
+  # hub tier (and on fan-out, planted every other adapter's skills into
+  # this adapter's dir). Empty must mean "skip skill sync entirely".
+  mkdir -p "$TOOL_A/skills/leaky"
+  printf 'should-not-leak\n' > "$TOOL_A/skills/leaky/SKILL.md"
+
+  ADAPTER_SKILL_ROOT="" hub_harvest "$TOOL_A" "$HUB"
+
+  [ ! -e "$HUB/skills/leaky" ]
+  [ ! -e "$HUB/skills/leaky/content.md" ]
+}
+
+@test "empty ADAPTER_SKILL_ROOT opts out of the shared hub/skills/ tier on fan-out" {
+  # Symmetric to the harvest case: a hub with skills must NOT plant
+  # them into the opt-out adapter's tool dir.
+  mkdir -p "$HUB/skills/from-elsewhere"
+  printf 'from-claude\n' > "$HUB/skills/from-elsewhere/content.md"
+
+  ADAPTER_SKILL_ROOT="" hub_fan_out "$HUB" "$TOOL_A"
+
+  [ ! -e "$TOOL_A/skills/from-elsewhere" ]
+  [ ! -e "$TOOL_A/skills/from-elsewhere/SKILL.md" ]
+}
+
 @test "fan-out writes a snapshot so the next harvest skips unchanged files" {
   mkdir -p "$HUB/skills/foo"
   printf 'hub-content\n' > "$HUB/skills/foo/content.md"
