@@ -1,0 +1,7 @@
+# Reserved template for a tool-dir git repo. The hub topology does not
+# git-init ~/.hermes/, but keeping the template here documents the
+# intended conflict behavior if Hermes-side files are ever versioned
+# directly.
+
+.gitignore          merge=union
+.gitattributes      merge=union

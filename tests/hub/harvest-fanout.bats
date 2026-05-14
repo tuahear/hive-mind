@@ -684,3 +684,122 @@ EOF
   run cat "$TOOL/AGENTS.override.md"
   [ "$output" = "existing body" ]
 }
+
+# === source-side .gitignore filter in _hub_sync_dir ========================
+
+@test "_hub_gitignore_pattern_match: literal basename" {
+  run _hub_gitignore_pattern_match ".env" ".env"
+  [ "$status" -eq 0 ]
+  run _hub_gitignore_pattern_match "sub/.env" ".env"
+  [ "$status" -eq 0 ]
+  run _hub_gitignore_pattern_match ".env.example" ".env"
+  [ "$status" -ne 0 ]
+}
+
+@test "_hub_gitignore_pattern_match: trailing-slash directory pattern" {
+  run _hub_gitignore_pattern_match "cache/blob" "cache/"
+  [ "$status" -eq 0 ]
+  run _hub_gitignore_pattern_match "sub/cache/blob" "cache/"
+  [ "$status" -eq 0 ]
+  run _hub_gitignore_pattern_match "cached-data" "cache/"
+  [ "$status" -ne 0 ]
+}
+
+@test "_hub_gitignore_pattern_match: glob extension" {
+  run _hub_gitignore_pattern_match "run.log" "*.log"
+  [ "$status" -eq 0 ]
+  run _hub_gitignore_pattern_match "sub/run.log" "*.log"
+  [ "$status" -eq 0 ]
+  run _hub_gitignore_pattern_match "run.txt" "*.log"
+  [ "$status" -ne 0 ]
+}
+
+@test "_hub_sync_dir: harvest skips files matching src/.gitignore" {
+  src="$HOME/src" dst="$HOME/dst"
+  mkdir -p "$src/cache" "$src/sub"
+  cat > "$src/.gitignore" <<'GIT'
+.env
+cache/
+*.log
+GIT
+  echo "secret" > "$src/.env"
+  echo "kept"   > "$src/keep.md"
+  echo "trash"  > "$src/cache/blob"
+  echo "trash"  > "$src/sub/run.log"
+
+  _hub_sync_dir "$src" "$dst"
+
+  [ -f "$dst/keep.md" ]
+  [ -f "$dst/.gitignore" ]
+  [ ! -e "$dst/.env" ]
+  [ ! -e "$dst/cache/blob" ]
+  [ ! -e "$dst/sub/run.log" ]
+}
+
+@test "_hub_sync_dir: fanout delete pass preserves dst files matching src/.gitignore" {
+  src="$HOME/src" dst="$HOME/dst"
+  mkdir -p "$src" "$dst/cache" "$dst/sub"
+  cat > "$src/.gitignore" <<'GIT'
+.env
+cache/
+*.log
+GIT
+  echo "from-src" > "$src/keep.md"
+  # Pre-existing dst files that match src/.gitignore. Without the filter
+  # the delete pass would wipe them because they aren't in src.
+  echo "local"    > "$dst/.env"
+  echo "local"    > "$dst/cache/blob"
+  echo "local"    > "$dst/sub/build.log"
+
+  _hub_sync_dir "$src" "$dst" fanout
+
+  [ -f "$dst/keep.md" ]
+  [ -f "$dst/.env" ]
+  [ -f "$dst/cache/blob" ]
+  [ -f "$dst/sub/build.log" ]
+}
+
+@test "_hub_sync_dir: harvest delete pass cleans stale ignored files from dst" {
+  # The asymmetric half of the gitignore filter. Scenario: an earlier
+  # sync committed cache/blob to the hub before the .gitignore rule
+  # `cache/` was added. On the next harvest, the copy pass already
+  # skips cache/blob (src filtered), but the delete pass must STILL
+  # remove the stale hub-side copy — otherwise the file lingers in the
+  # tracked tree forever, defeating the rule. Symmetric to the fanout
+  # test above but with opposite expected behavior.
+  src="$HOME/src" dst="$HOME/dst"
+  mkdir -p "$src" "$dst/cache" "$dst/sub"
+  cat > "$src/.gitignore" <<'GIT'
+.env
+cache/
+*.log
+GIT
+  echo "from-src" > "$src/keep.md"
+  # Pre-existing committed-stale dst files (the hub got them before the
+  # gitignore rule landed). Harvest must remove them.
+  echo "stale"    > "$dst/.env"
+  echo "stale"    > "$dst/cache/blob"
+  echo "stale"    > "$dst/sub/build.log"
+
+  _hub_sync_dir "$src" "$dst" harvest
+
+  [ -f "$dst/keep.md" ]
+  [ ! -f "$dst/.env" ]
+  [ ! -f "$dst/cache/blob" ]
+  [ ! -f "$dst/sub/build.log" ]
+}
+
+@test "_hub_sync_dir: no .gitignore means original mirror semantics" {
+  # Regression guard: claude-code and codex use dir mirrors (e.g.
+  # memory/ → memory/) and none of those source dirs carry a .gitignore.
+  # The pre-existing strict mirror behavior must hold for them.
+  src="$HOME/src" dst="$HOME/dst"
+  mkdir -p "$src" "$dst"
+  echo "fresh" > "$src/a"
+  echo "stale" > "$dst/b"
+
+  _hub_sync_dir "$src" "$dst"
+
+  [ -f "$dst/a" ]
+  [ ! -f "$dst/b" ]
+}

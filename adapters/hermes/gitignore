@@ -1,0 +1,11 @@
+# Reserved template for a tool-dir git repo. The hub topology does not
+# git-init ~/.hermes/, but the adapter contract requires the template.
+# Hermes ships its own ~/.hermes/.gitignore at runtime; the hub's blob
+# mirror honors that file via _hub_sync_dir's gitignore filter.
+
+/*
+
+!/.gitignore
+!/.gitattributes
+
+**/.DS_Store

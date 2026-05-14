@@ -35,6 +35,7 @@ Lowercase filenames signal "hive-mind canonical"; each adapter maps them to tool
 |---|---|---|
 | [`claude-code`](/adapters/claude-code) | [Claude Code](https://claude.com/claude-code) | Shipped |
 | `codex` | [OpenAI Codex CLI](https://github.com/openai/codex) | Planned ([#11](https://github.com/tuahear/hive-mind/issues/11)) |
+| `hermes` | [Hermes Agent](https://github.com/NousResearch/hermes-agent) | Planned ([#36](https://github.com/tuahear/hive-mind/issues/36)) — standalone blob mirror, no shared `content.md` |
 | `qwen` | [Qwen CLI](https://github.com/QwenLM/qwen-code) | Planned ([#19](https://github.com/tuahear/hive-mind/issues/19)) |
 | `kimi` | [Kimi CLI](https://github.com/MoonshotAI/kimi-cli) | Planned ([#23](https://github.com/tuahear/hive-mind/issues/23)) |
 
