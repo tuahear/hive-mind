@@ -30,6 +30,14 @@
 !/skills/
 !/skills/**
 
+# Hermes (Nous Research hermes-agent) blob mirror. Hermes does not
+# participate in the shared `content.md` tier; its whole tool dir is
+# mirrored verbatim. The adapter's blob mirror also carries the tool's
+# own `.gitignore`, so anything Hermes itself wants ignored (cache/,
+# logs/, .env, ...) is filtered at this layer too.
+!/hermes/
+!/hermes/**
+
 # Canonical config: reserved env vars.
 !/config/
 !/config/env.sh

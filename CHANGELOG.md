@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Hermes adapter** (`adapters/hermes/`) — attaches [Hermes Agent](https://github.com/NousResearch/hermes-agent) to the hub as a standalone blob mirror. `~/.hermes/` (or `$HERMES_HOME`) round-trips verbatim with `hub/hermes/`, with **no** participation in the shared `content.md` tier and **no** routing through the provider-agnostic `hub/skills/` tier — Hermes state stays isolated from Claude / Codex memory. No hook system (`ADAPTER_FALLBACK_STRATEGY=manual`); sync piggybacks on another attached adapter's Stop hook or a manual `hivemind sync`. `.env` declared as a secret file. ([#36](https://github.com/tuahear/hive-mind/issues/36))
+- **Directory mirror now respects source-side `.gitignore`** — `_hub_sync_dir` reads `$src_dir/.gitignore` and skips matching files in BOTH the copy pass and the delete pass. The delete-pass behavior is the critical cross-machine safety: machine B pulling a fresh hub gets the committed files but not the gitignored paths; without the filter the fan-out delete pass would wipe legitimate tool-side files (e.g. `~/.hermes/cache/*`). Backward compatible — existing dir-mirror adapters (Claude's `memory/`, etc.) don't ship a `.gitignore` so the behavior matches the previous strict mirror.
+
 ## [0.3.2] - 2026-04-20
 
 ### Fixed

@@ -706,24 +706,90 @@ _hub_sync_file() {
   cp "$src" "$dst"
 }
 
+# Test a single gitignore pattern against a relative path. Handles the
+# subset of gitignore syntax that real adapter source trees use today:
+#   - blank / comment lines (caller already filters, but defended here)
+#   - trailing-slash directory patterns (`cache/`)
+#   - leading-slash anchored patterns (`/foo.txt`)
+#   - basename / glob patterns (`.env`, `*.log`)
+# Returns 0 on match, 1 otherwise. Negation (`!`) and `**` recursion are
+# intentionally NOT implemented — kept the matcher small and predictable
+# rather than half-supporting full gitignore semantics. If a future
+# adapter needs them, swap in `git check-ignore` against a real repo.
+_hub_gitignore_pattern_match() {
+  local rel="$1" pat="$2"
+  # shellcheck disable=SC2254
+  case "$pat" in
+    */)
+      local dir="${pat%/}"
+      case "$rel" in
+        "$dir"|"$dir"/*|*/"$dir"|*/"$dir"/*) return 0 ;;
+      esac
+      ;;
+    /*)
+      local anchored="${pat#/}"
+      case "$rel" in
+        "$anchored"|"$anchored"/*) return 0 ;;
+      esac
+      ;;
+    *)
+      local base="${rel##*/}"
+      case "$base" in $pat) return 0 ;; esac
+      case "$rel" in $pat|*/"$pat") return 0 ;; esac
+      ;;
+  esac
+  return 1
+}
+
+# Return 0 if $rel matches any non-comment line in $gitignore.
+_hub_gitignore_match() {
+  local rel="$1" gitignore="$2"
+  [ -f "$gitignore" ] || return 1
+  local pattern
+  while IFS= read -r pattern || [ -n "$pattern" ]; do
+    pattern="${pattern%$'\r'}"
+    case "$pattern" in
+      ''|'#'*|'!'*) continue ;;
+    esac
+    if _hub_gitignore_pattern_match "$rel" "$pattern"; then
+      return 0
+    fi
+  done < "$gitignore"
+  return 1
+}
+
 # Mirror a directory tree src → dst. When src_dir EXISTS, files present
 # in src overwrite dst and files in dst with no counterpart in src are
 # removed — the user's intent within an active tree is unambiguous.
 # When src_dir is ABSENT, leave dst alone: same rationale as
 # _hub_sync_file above (multi-adapter setups where only some adapters
 # populate this subtree). Top-level dst is preserved even if empty.
+#
+# Gitignore filter: if $src_dir/.gitignore exists, files matching its
+# patterns are skipped in BOTH the copy and the delete passes. Skipping
+# the copy keeps transient state (caches, logs) out of the hub working
+# tree; skipping the delete is the critical safety: on machine B after
+# pulling a fresh hub, the hub-side gitignored paths don't exist
+# locally, and without this filter the delete pass would wipe legitimate
+# tool-side files (e.g. ~/.hermes/cache/*) that the user expects to
+# survive across syncs.
 _hub_sync_dir() {
   local src_dir="$1" dst_dir="$2"
   if [ ! -d "$src_dir" ]; then
     return 0
   fi
   mkdir -p "$dst_dir"
+  local gi=""
+  [ -f "$src_dir/.gitignore" ] && gi="$src_dir/.gitignore"
   # src → dst. Skip the cp when dst already matches — see _hub_sync_file
   # for the rationale (Windows/MSYS cp is ~150ms and a dir tree easily
   # fires dozens of redundant cp's per sync otherwise).
   (cd "$src_dir" && find . -type f -print0 2>/dev/null) \
     | while IFS= read -r -d '' rel; do
         rel="${rel#./}"
+        if [ -n "$gi" ] && _hub_gitignore_match "$rel" "$gi"; then
+          continue
+        fi
         if [ -f "$dst_dir/$rel" ] && cmp -s "$src_dir/$rel" "$dst_dir/$rel"; then
           continue
         fi
@@ -734,6 +800,9 @@ _hub_sync_dir() {
   (cd "$dst_dir" && find . -type f -print0 2>/dev/null) \
     | while IFS= read -r -d '' rel; do
         rel="${rel#./}"
+        if [ -n "$gi" ] && _hub_gitignore_match "$rel" "$gi"; then
+          continue
+        fi
         [ -f "$src_dir/$rel" ] || rm -f "$dst_dir/$rel"
       done
   # Prune empty subdirs (keep dst_dir itself).
