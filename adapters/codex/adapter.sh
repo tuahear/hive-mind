@@ -361,6 +361,7 @@ adapter_install_hooks() {
             })
           | add
       )
+    )
   ' "$stripped" "$rendered" > "$tmp" 2>/dev/null; then
     mv "$tmp" "$hooks"
     rm -f "$rendered" "$stripped"
