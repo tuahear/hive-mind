@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.4] - 2026-11-19
+
 ### Fixed
 
 - **A tool's own folders in its skills root no longer stop sync between machines.** The Claude app keeps the skills it downloads in `~/.claude/skills/synced` and their old versions in `~/.claude/skills/.trash`. Harvest took both for the user's skills, so two machines each committed their own copy, every pull-rebase conflicted, and no push went through again. Only a folder with its content file at its root (`SKILL.md` tool-side, `content.md` in the hub) is a skill now: anything else in a skills root is never harvested, fanned out or pruned. The hub's `.gitignore` names the two folders, so an install not yet updated cannot add them back. A hub already stuck: remove `skills/synced` and `skills/.trash` from it, merge and push once. Update every machine before its next sync: an install without this fix, pulling a hub that no longer holds `skills/synced`, empties the tool's own folder.
