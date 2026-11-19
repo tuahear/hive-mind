@@ -45,3 +45,9 @@
 /.install-state/
 /.hive-mind-state/
 /.sync-error.log
+
+# A tool's own folders in its skills root (an app's downloaded skills, its
+# trash): each machine has its own copy, and syncing them conflicts on every
+# pull. Harvest leaves them alone; this stops an older install re-adding them.
+/skills/synced/
+/skills/.trash/

@@ -155,6 +155,18 @@ _hub_is_filelike() {
 # writes are already narrow; dir mirroring has its own diff behavior).
 
 _hub_snapshot_path() {
+  _hub_snapshot_set "$1" "$2"
+  printf '%s' "$_hub_snap"
+}
+
+# Starting a process costs a tenth of a second and more on some Windows
+# machines, and a sync ran close to a thousand (cmp, mkdir, dirname, a
+# subshell per snapshot path): minutes a sync, past the lock's stale
+# threshold, so syncs piled up. The helpers below do the same in the
+# shell itself.
+
+# _hub_snapshot_path without the subshell: the path lands in $_hub_snap.
+_hub_snapshot_set() {
   local tool_dir="$1" rel="$2"
   # Strip trailing slash before extracting the basename — a caller that
   # passed "/path/to/.codex/" would otherwise yield base="" and collapse
@@ -163,8 +175,27 @@ _hub_snapshot_path() {
   # file already applies.
   local normalized="${tool_dir%/}"
   local base="${normalized##*/}"
-  printf '%s/.hive-mind-state/fanout-snapshots/%s/%s' \
-    "${HIVE_MIND_HUB_DIR:-$HOME/.hive-mind}" "$base" "$rel"
+  _hub_snap="${HIVE_MIND_HUB_DIR:-$HOME/.hive-mind}/.hive-mind-state/fanout-snapshots/$base/$rel"
+}
+
+# cmp -s for two existing files. A file with a NUL byte, or of 16 KiB or
+# more, goes to cmp: the shell cannot hold the first and reads the second
+# slower than cmp starts.
+_hub_same() {
+  local a b
+  [ -f "$1" ] && [ -f "$2" ] || return 1
+  if IFS= read -r -d '' -n 16384 a < "$1" || IFS= read -r -d '' -n 16384 b < "$2"; then
+    cmp -s "$1" "$2"
+    return
+  fi
+  [ "$a" = "$b" ]
+}
+
+# mkdir -p of a file's folder, only when it is missing.
+_hub_mkparent() {
+  case "$1" in
+    */*) [ -d "${1%/*}" ] || mkdir -p "${1%/*}" 2>/dev/null ;;
+  esac
 }
 
 # Return 0 (match) iff the tool file and its snapshot both exist and are
@@ -172,9 +203,7 @@ _hub_snapshot_path() {
 # content differs) returns non-zero so harvest proceeds as usual.
 _hub_tool_file_unchanged() {
   local tool_file="$1" snap="$2"
-  [ -f "$tool_file" ] || return 1
-  [ -f "$snap" ] || return 1
-  cmp -s "$tool_file" "$snap"
+  _hub_same "$tool_file" "$snap"
 }
 
 # Record the current tool file as the "last-synced" snapshot. Creates
@@ -184,7 +213,8 @@ _hub_tool_file_unchanged() {
 _hub_snapshot_write() {
   local tool_file="$1" snap="$2"
   [ -f "$tool_file" ] || return 0
-  mkdir -p "$(dirname "$snap")" 2>/dev/null
+  _hub_same "$tool_file" "$snap" && return 0
+  _hub_mkparent "$snap"
   cp "$tool_file" "$snap"
 }
 
@@ -526,7 +556,7 @@ _hub_content_fanout_to_file() {
     return 0
   fi
 
-  mkdir -p "$(dirname "$dst")" 2>/dev/null
+  _hub_mkparent "$dst"
   local tmp
   tmp="$(mktemp)"
 
@@ -579,7 +609,7 @@ EOF
 _hub_content_harvest_from_file() {
   local src="$1" sel="$2" dst="$3"
   [ -f "$src" ] || return 0
-  mkdir -p "$(dirname "$dst")" 2>/dev/null
+  _hub_mkparent "$dst"
 
   # Validate markers up front only for selectors that drive a marker-
   # based parse: a literal "*" (wildcard, expands from the tool file's
@@ -690,7 +720,7 @@ _hub_sync_file() {
   # cost on every sync even when nothing changed. cmp is cheap for the
   # common case (sizes diverge → early exit). Also avoids the mtime
   # churn that causes downstream tools to flag the file as "modified".
-  if [ -f "$dst" ] && cmp -s "$src" "$dst"; then
+  if _hub_same "$src" "$dst"; then
     return 0
   fi
 
@@ -702,7 +732,7 @@ _hub_sync_file() {
     return 0
   fi
 
-  mkdir -p "$(dirname "$dst")" 2>/dev/null
+  _hub_mkparent "$dst"
   cp "$src" "$dst"
 }
 
@@ -724,10 +754,10 @@ _hub_sync_dir() {
   (cd "$src_dir" && find . -type f -print0 2>/dev/null) \
     | while IFS= read -r -d '' rel; do
         rel="${rel#./}"
-        if [ -f "$dst_dir/$rel" ] && cmp -s "$src_dir/$rel" "$dst_dir/$rel"; then
+        if _hub_same "$src_dir/$rel" "$dst_dir/$rel"; then
           continue
         fi
-        mkdir -p "$dst_dir/$(dirname "$rel")" 2>/dev/null
+        _hub_mkparent "$dst_dir/$rel"
         cp "$src_dir/$rel" "$dst_dir/$rel"
       done
   # Remove dst files not in src.
@@ -819,7 +849,7 @@ _hub_harvest_hooks_dir() {
 _hub_fan_out_hooks_dir() {
   local hub_dir="$1" tool_file="$2" jsonpath="$3"
   [ -d "$hub_dir" ] || return 0
-  mkdir -p "$(dirname "$tool_file")" 2>/dev/null
+  _hub_mkparent "$tool_file"
   [ -f "$tool_file" ] || printf '{}\n' > "$tool_file"
 
   local event_path event_dir event entries_json
@@ -877,7 +907,7 @@ _hub_fan_out_hooks_dir() {
 _hub_harvest_text_list() {
   local tool_file="$1" jsonpath="$2" hub_file="$3"
   [ -f "$tool_file" ] || return 0
-  mkdir -p "$(dirname "$hub_file")" 2>/dev/null
+  _hub_mkparent "$hub_file"
   local arr
   arr="$(jq -r --arg jp "$jsonpath" '
     getpath($jp | split(".")) // [] | .[]?
@@ -893,7 +923,7 @@ _hub_harvest_text_list() {
 _hub_fan_out_text_list() {
   local hub_file="$1" tool_file="$2" jsonpath="$3"
   [ -f "$hub_file" ] || return 0
-  mkdir -p "$(dirname "$tool_file")" 2>/dev/null
+  _hub_mkparent "$tool_file"
   [ -f "$tool_file" ] || printf '{}\n' > "$tool_file"
   local tmp
   tmp="$(mktemp)"
@@ -1007,10 +1037,20 @@ _hub_apply_project_rules() {
 # SKILL.md over the hub content.md that the first adapter just
 # updated from a real user edit. Parallels the ADAPTER_HUB_MAP
 # harvest-stomp guard in hub_harvest's sectioned + plain-file paths.
+#
+# A skill is a folder with its content file at its root. Anything else in
+# a skills root belongs to the tool (an app's own downloaded skills, its
+# trash) and is left alone in both directions: synced, two machines each
+# commit their own copy and every pull conflicts; pruned, fan-out deletes
+# what the tool put there.
 _hub_sync_skills() {
   local direction="$1" src_root="$2" dst_root="$3" tool_dir="${4:-}"
   [ -d "$src_root" ] || return 0
   mkdir -p "$dst_root" 2>/dev/null
+  local src_content="SKILL.md" dst_content="content.md"
+  if [ "$direction" = "fanout" ]; then
+    src_content="content.md" dst_content="SKILL.md"
+  fi
 
   # Pre-create every dst skill dir so the per-file loop below never has
   # to check or mkdir inside a hot path. One glob, N mkdirs, done.
@@ -1019,7 +1059,8 @@ _hub_sync_skills() {
     [ -d "$skill_src" ] || continue
     skill_name="${skill_src%/}"
     skill_name="${skill_name##*/}"
-    mkdir -p "$dst_root/$skill_name" 2>/dev/null
+    [ -f "$skill_src$src_content" ] || continue
+    [ -d "$dst_root/$skill_name" ] || mkdir -p "$dst_root/$skill_name" 2>/dev/null
   done
 
   # Single recursive find across the entire skills tree. Prior code
@@ -1033,6 +1074,7 @@ _hub_sync_skills() {
     rel="${f#"$src_root/"}"
     first_slash="${rel%%/*}"
     skill_name="$first_slash"
+    [ -f "$src_root/$skill_name/$src_content" ] || continue
     # Strip the leading "<skill>/" so rel is the in-skill relative path.
     rel="${rel#"$skill_name/"}"
     skill_dst="$dst_root/$skill_name"
@@ -1057,7 +1099,8 @@ _hub_sync_skills() {
         tool_file_for_snap="$skill_dst/$dst_name"
         tool_rel_for_snap="$dst_name"
       fi
-      snap="$(_hub_snapshot_path "$tool_dir" "skills/$skill_name/$tool_rel_for_snap")"
+      _hub_snapshot_set "$tool_dir" "skills/$skill_name/$tool_rel_for_snap"
+      snap="$_hub_snap"
     fi
     # Harvest-stomp guard: if the tool file is byte-identical to its
     # last fan-out snapshot, the user didn't edit this adapter's copy
@@ -1069,18 +1112,18 @@ _hub_sync_skills() {
     fi
     # Fan-out guards (see doc block above).
     if [ "$direction" = "fanout" ] && [ -f "$skill_dst/$dst_name" ]; then
-      if cmp -s "$f" "$skill_dst/$dst_name"; then
+      if _hub_same "$f" "$skill_dst/$dst_name"; then
         [ -n "$snap" ] && _hub_snapshot_write "$tool_file_for_snap" "$snap"
         continue
       fi
       if [ -n "$snap" ] && [ -f "$snap" ] \
-         && ! cmp -s "$skill_dst/$dst_name" "$snap"; then
+         && ! _hub_same "$skill_dst/$dst_name" "$snap"; then
         continue
       fi
     fi
     # Nested subdirs inside a skill need parent mkdirs on demand; the
     # top-level skill dir was pre-created above.
-    case "$rel" in */*) mkdir -p "$(dirname "$skill_dst/$dst_name")" 2>/dev/null ;; esac
+    case "$rel" in */*) _hub_mkparent "$skill_dst/$dst_name" ;; esac
     cp "$f" "$skill_dst/$dst_name"
     [ -n "$snap" ] && _hub_snapshot_write "$tool_file_for_snap" "$snap"
   done < <(find "$src_root" -mindepth 2 -type f -print0 2>/dev/null)
@@ -1088,11 +1131,25 @@ _hub_sync_skills() {
   # Prune dst files/dirs not in src — fan-out only. Again: one find
   # across the whole dst tree, not one per skill.
   if [ "$direction" = "fanout" ]; then
+    # Whole skills first: once its content file is pruned a folder no
+    # longer reads as a skill.
+    local kept=()
+    for skill_dst in "$dst_root"/*/; do
+      [ -f "$skill_dst$dst_content" ] || continue
+      skill_name="${skill_dst%/}"
+      skill_name="${skill_name##*/}"
+      if [ -f "$src_root/$skill_name/$src_content" ]; then
+        kept+=("${skill_dst%/}")
+      else
+        rm -rf "$skill_dst"
+      fi
+    done
     local src_name
     while IFS= read -r -d '' f; do
       rel="${f#"$dst_root/"}"
       first_slash="${rel%%/*}"
       skill_name="$first_slash"
+      [ -f "$dst_root/$skill_name/$dst_content" ] || continue
       rel="${rel#"$skill_name/"}"
       src_name="$rel"
       if [ "$rel" = "SKILL.md" ]; then
@@ -1100,15 +1157,9 @@ _hub_sync_skills() {
       fi
       [ -f "$src_root/$skill_name/$src_name" ] || rm -f "$f"
     done < <(find "$dst_root" -mindepth 2 -type f -print0 2>/dev/null)
-    # Remove empty subdirs across every skill in one pass.
-    find "$dst_root" -mindepth 2 -type d -empty -delete 2>/dev/null || true
-    # Remove dst skill dirs not in src.
-    for skill_dst in "$dst_root"/*/; do
-      [ -d "$skill_dst" ] || continue
-      skill_name="${skill_dst%/}"
-      skill_name="${skill_name##*/}"
-      [ -d "$src_root/$skill_name" ] || rm -rf "$skill_dst"
-    done
+    if [ ${#kept[@]} -gt 0 ]; then
+      find "${kept[@]}" -mindepth 1 -type d -empty -delete 2>/dev/null || true
+    fi
   fi
 }
 
@@ -1142,7 +1193,8 @@ hub_harvest() {
       local hub_file sel snap
       hub_file="${sec_pair%%$'\t'*}"
       sel="${sec_pair#*$'\t'}"
-      snap="$(_hub_snapshot_path "$tool_dir" "$tool_spec")"
+      _hub_snapshot_set "$tool_dir" "$tool_spec"
+      snap="$_hub_snap"
       # Skip harvest when the tool file is byte-identical to its last
       # fan-out snapshot — the user didn't edit this adapter's surface
       # since the previous sync, so there's nothing to contribute. This
@@ -1169,7 +1221,8 @@ hub_harvest() {
       local dst="$hub_dir/$hub_rel"
       if _hub_is_filelike "$hub_rel"; then
         local snap
-        snap="$(_hub_snapshot_path "$tool_dir" "$tool_spec")"
+        _hub_snapshot_set "$tool_dir" "$tool_spec"
+        snap="$_hub_snap"
         # Same harvest-stomp guard as the sectioned path — skip when
         # the tool file matches its last fan-out snapshot.
         if ! _hub_tool_file_unchanged "$src" "$snap"; then

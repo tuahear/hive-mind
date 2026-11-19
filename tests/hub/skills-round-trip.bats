@@ -166,3 +166,64 @@ seed_two_adapter_skill() {
   run cat "$HUB/skills/foo/content.md"
   [ "$output" = "HUB-SENTINEL" ]
 }
+
+# A tool keeps folders of its own beside the user's skills (an app's
+# downloaded skills, its trash). Two machines each committed their own
+# copy of those and no pull ever merged again.
+@test "a folder in the skills root with no SKILL.md is the tool's: never harvested, never pruned" {
+  mkdir -p "$TOOL_A/skills/mine/scripts" "$TOOL_A/skills/synced/acct/docx" "$TOOL_A/skills/.trash/1/docx"
+  printf 'mine\n' > "$TOOL_A/skills/mine/SKILL.md"
+  printf 'helper\n' > "$TOOL_A/skills/mine/scripts/run.sh"
+  printf 'app\n' > "$TOOL_A/skills/synced/acct/docx/SKILL.md"
+  printf '{}\n' > "$TOOL_A/skills/synced/acct/manifest.json"
+  printf 'old\n' > "$TOOL_A/skills/.trash/1/docx/SKILL.md"
+
+  ADAPTER_SKILL_ROOT="$TOOL_A/skills" hub_harvest "$TOOL_A" "$HUB"
+
+  [ -f "$HUB/skills/mine/content.md" ]
+  [ -f "$HUB/skills/mine/scripts/run.sh" ]
+  [ ! -e "$HUB/skills/synced" ]
+  [ ! -e "$HUB/skills/.trash" ]
+
+  ADAPTER_SKILL_ROOT="$TOOL_A/skills" hub_fan_out "$HUB" "$TOOL_A"
+
+  [ -f "$TOOL_A/skills/synced/acct/docx/SKILL.md" ]
+  [ -f "$TOOL_A/skills/synced/acct/manifest.json" ]
+  [ -f "$TOOL_A/skills/.trash/1/docx/SKILL.md" ]
+}
+
+@test "fan-out: a skill removed from the hub is removed from the tool, folder and all" {
+  mkdir -p "$HUB/skills/kept" "$TOOL_A/skills/kept/old" "$TOOL_A/skills/gone/scripts"
+  printf 'k\n' > "$HUB/skills/kept/content.md"
+  printf 'k\n' > "$TOOL_A/skills/kept/SKILL.md"
+  printf 'x\n' > "$TOOL_A/skills/kept/old/stale.txt"
+  printf 'g\n' > "$TOOL_A/skills/gone/SKILL.md"
+  printf 'g\n' > "$TOOL_A/skills/gone/scripts/run.sh"
+
+  ADAPTER_SKILL_ROOT="$TOOL_A/skills" hub_fan_out "$HUB" "$TOOL_A"
+
+  [ ! -e "$TOOL_A/skills/gone" ]
+  [ -f "$TOOL_A/skills/kept/SKILL.md" ]
+  [ ! -e "$TOOL_A/skills/kept/old" ]
+}
+
+# Every "did this file change" in a sync goes through _hub_same: wrong
+# once and an edit is never harvested, or a file is copied every sync.
+@test "_hub_same agrees with cmp on text, line endings, binary and large files" {
+  cd "$HOME"
+  printf 'a\nb\n' > lf; printf 'a\nb\n' > lf2; printf 'a\nb' > no-eol
+  printf 'a\r\nb\r\n' > crlf; printf 'a\nb\n\n' > extra-eol; : > empty; : > empty2
+  printf 'a\0b' > nul; printf 'a\0b' > nul2; printf 'a\0c' > nul3
+  printf '\377\376\200x\n' > bytes; printf '\377\376\201x\n' > bytes2
+  printf 'a\b * $x\n' > glob; printf 'a\b * $x\n' > glob2
+  head -c 40000 /dev/zero | tr '\0' 'x' > big; cp big big2; cp big big3; printf 'y' >> big3
+  local a b
+  for a in lf lf2 no-eol crlf extra-eol empty empty2 nul nul2 nul3 bytes bytes2 glob glob2 big big2 big3 missing; do
+    for b in lf lf2 no-eol crlf extra-eol empty empty2 nul nul2 nul3 bytes bytes2 glob glob2 big big2 big3 missing; do
+      local want=1 got=1
+      cmp -s "$a" "$b" 2>/dev/null && want=0
+      _hub_same "$a" "$b" && got=0
+      [ "$want" = "$got" ] || { echo "$a vs $b: cmp says $want, _hub_same $got"; return 1; }
+    done
+  done
+}

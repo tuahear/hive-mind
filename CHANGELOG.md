@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A tool's own folders in its skills root no longer stop sync between machines.** The Claude app keeps the skills it downloads in `~/.claude/skills/synced` and their old versions in `~/.claude/skills/.trash`. Harvest took both for the user's skills, so two machines each committed their own copy, every pull-rebase conflicted, and no push went through again. Only a folder with its content file at its root (`SKILL.md` tool-side, `content.md` in the hub) is a skill now: anything else in a skills root is never harvested, fanned out or pruned. The hub's `.gitignore` names the two folders, so an install not yet updated cannot add them back. A hub already stuck: remove `skills/synced` and `skills/.trash` from it, merge and push once. Update every machine before its next sync: an install without this fix, pulling a hub that no longer holds `skills/synced`, empties the tool's own folder.
+- **A sync no longer takes minutes where starting a process is slow.** On a Windows machine that takes 0.1–0.25 s to start one, a sync started close to a thousand (`cmp`, `mkdir`, `dirname`, a subshell per snapshot path) and ran 7 minutes: past the lock's 300 s stale threshold, so later syncs broke the lock and ran beside it, and the machine ran out of forks (`fork: retry: Resource temporarily unavailable`). Files under 16 KiB are compared in the shell, a folder is made only when missing, and an unchanged snapshot is not rewritten: the same sync takes 30–40 s.
+
 ## [0.3.3] - 2026-05-15
 
 ### Fixed
